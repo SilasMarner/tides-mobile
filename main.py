@@ -7,6 +7,7 @@ import os
 import ssl
 import threading
 import urllib.request
+import webbrowser
 from datetime import datetime, date, timedelta
 
 _APP_VERSION = "1.0"
@@ -179,6 +180,24 @@ class _RefreshBtn(ButtonBehavior, Widget):
                 tx - hl * math.cos(ta) - hw * math.sin(ta),
                 ty - hl * math.sin(ta) + hw * math.cos(ta),
             ])
+
+
+class _LinkLabel(ButtonBehavior, Label):
+    """Tappable label that opens a URL or mailto: URI."""
+    def __init__(self, text, url, color=None, font_size=11, **kw):
+        if color is None:
+            color = C_BLUE
+        super().__init__(
+            text=text, font_size=sp(font_size), color=color,
+            size_hint_y=None, halign="left",
+            **kw,
+        )
+        self._url = url
+        self.bind(size=lambda w, v: setattr(w, "text_size", (v[0], None)))
+        self.bind(texture_size=lambda w, v: setattr(w, "height", v[1] + dp(4)))
+
+    def on_release(self):
+        webbrowser.open(self._url)
 
 
 class _StationCard(ButtonBehavior, BoxLayout):
@@ -1495,7 +1514,7 @@ class AboutScreen(Screen):
                             C_DIM, 11))
 
         # Release link row
-        body.add_widget(row(f"Releases:  {_RELEASES_URL}", C_BLUE, 11))
+        body.add_widget(_LinkLabel(f"Releases:  {_RELEASES_URL}", _RELEASES_URL))
         body.add_widget(Widget(size_hint_y=None, height=dp(4)))
 
         # Update check
@@ -1513,7 +1532,9 @@ class AboutScreen(Screen):
         body.add_widget(divider())
         body.add_widget(hdg("Developer"))
         body.add_widget(row("Matt Bettinger"))
-        body.add_widget(row("tides-mobile.human695@passmail.com", C_DIM, 11))
+        body.add_widget(_LinkLabel("tides-mobile.human695@passmail.com",
+                                   "mailto:tides-mobile.human695@passmail.com",
+                                   color=C_DIM))
         body.add_widget(Widget(size_hint_y=None, height=dp(6)))
 
         # Data sources + licenses
