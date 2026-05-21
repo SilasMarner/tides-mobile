@@ -218,6 +218,26 @@ def _fetch_obs(station_id, product):
         return None
 
 
+def _fetch_pressure_trend(station_id):
+    """Return +1 rising, -1 falling, 0 steady — based on last 3h of pressure."""
+    url = (
+        "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
+        f"?station={station_id}&product=air_pressure"
+        "&range=3&units=english&time_zone=lst_ldt&format=json"
+    )
+    data = _get(url)
+    if not data or "data" not in data:
+        return 0
+    pts = data["data"]
+    if len(pts) < 2:
+        return 0
+    try:
+        diff = float(pts[-1]["v"]) - float(pts[0]["v"])
+        return 1 if diff > 0.5 else -1 if diff < -0.5 else 0
+    except (KeyError, ValueError, TypeError):
+        return 0
+
+
 def _fetch_water_level(station_id):
     url = (
         "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
@@ -373,10 +393,11 @@ def fetch_all_data(station_id, lat, lon, target_date=None, met_id=None):
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
         f_hourly = ex.submit(_fetch_predictions, station_id, date_str, "h")
         f_hilo   = ex.submit(_fetch_predictions, station_id, date_str, "hilo")
-        f_air    = ex.submit(_fetch_obs, mid,        "air_temperature")
-        f_wind   = ex.submit(_fetch_obs, mid,        "wind")
-        f_pres   = ex.submit(_fetch_obs, mid,        "air_pressure")
-        f_wtemp  = ex.submit(_fetch_obs, station_id, "water_temperature")
+        f_air    = ex.submit(_fetch_obs,             mid,        "air_temperature")
+        f_wind   = ex.submit(_fetch_obs,             mid,        "wind")
+        f_pres   = ex.submit(_fetch_obs,             mid,        "air_pressure")
+        f_ptrend = ex.submit(_fetch_pressure_trend,  mid)
+        f_wtemp  = ex.submit(_fetch_obs,             station_id, "water_temperature")
         f_wlev   = ex.submit(_fetch_water_level,     station_id)
         f_nws    = ex.submit(_fetch_nws, lat, lon)
 
@@ -390,6 +411,7 @@ def fetch_all_data(station_id, lat, lon, target_date=None, met_id=None):
     hourly = _parse_hourly(f_hourly.result() or [])
     hilo   = _parse_hilo(f_hilo.result() or [])
     cond   = _parse_conditions(obs_raw)
+    cond["pressure_trend"] = f_ptrend.result()
     nws    = _parse_nws(f_nws.result())
 
     sunrise, sunset, solar_noon = sun_times(target_date, lat, lon, utc_off)

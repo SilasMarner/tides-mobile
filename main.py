@@ -133,7 +133,8 @@ class _StyledButton(ButtonBehavior, BoxLayout):
             self._ri = RoundedRectangle(pos=self.pos, size=self.size,
                                         radius=[dp(radius)] * 4)
         self.bind(pos=self._upd, size=self._upd)
-        lbl = Label(text=text, font_size=font_size, color=color, halign="center")
+        lbl = Label(text=text, font_size=font_size, color=color,
+                    halign="center", valign="middle")
         lbl.bind(size=lambda w, v: setattr(w, "text_size", v))
         self.add_widget(lbl)
         self._lbl = lbl
@@ -374,13 +375,16 @@ class SearchScreen(Screen):
         self.wave = WaveHeader(size_hint_y=None, height=dp(150))
         root.add_widget(self.wave)
 
-        # Exit button — top-right corner of header
-        exit_btn = _btn("X", on_press=self._exit_app,
-                        size_hint=(None, None), width=dp(34), height=dp(30),
-                        radius=6,
-                        bg=(0.22, 0.07, 0.07, 0.85),
-                        bg_hi=(0.40, 0.12, 0.12, 0.95))
-        exit_btn.pos_hint = {"right": 0.98, "top": 0.97}
+        # Exit button — transparent, top-right of wave header
+        from kivy.uix.button import Button as _KivyBtn
+        exit_btn = _KivyBtn(
+            text="X", font_size=sp(20), bold=True, color=C_DIM,
+            background_color=(0, 0, 0, 0), background_normal="",
+            background_down="",
+            size_hint=(None, None), width=dp(44), height=dp(44),
+        )
+        exit_btn.pos_hint = {"right": 1.0, "top": 1.0}
+        exit_btn.bind(on_press=self._exit_app)
         self.wave.add_widget(exit_btn)
 
         # ── Search bar ─────────────────────────────────────────────────────────
@@ -604,12 +608,14 @@ class TideChartWidget(Widget):
         return lbl.texture
 
     def _interp(self, fh):
-        h0   = int(fh) % 24
-        h1   = (h0 + 1) % 24
-        t    = fh - int(fh)
-        mu   = (1 - math.cos(t * math.pi)) / 2
-        minh = min(self.hourly.values()) if self.hourly else 0
-        return self.hourly.get(h0, minh) * (1 - mu) + self.hourly.get(h1, minh) * mu
+        # Catmull-Rom spline — C1 continuous, no kinks at hourly joints
+        h0 = int(fh) % 24
+        t  = fh - int(fh)
+        def hv(h): return self.hourly.get(h % 24, 0)
+        p0, p1, p2, p3 = hv(h0 - 1), hv(h0), hv(h0 + 1), hv(h0 + 2)
+        return 0.5 * ((2*p1) + (-p0 + p2)*t +
+                      (2*p0 - 5*p1 + 4*p2 - p3)*t**2 +
+                      (-p0 + 3*p1 - 3*p2 + p3)*t**3)
 
     def _redraw(self, *_):
         self.canvas.clear()
@@ -651,14 +657,14 @@ class TideChartWidget(Widget):
                           pos=(cx - tex.width - dp(3), gy - tex.height / 2),
                           size=tex.size)
 
-            # Wave interpolation
-            N, wave = 240, []
+            # Wave interpolation — 600 pts for smooth Catmull-Rom curve
+            N, wave = 600, []
             for i in range(N + 1):
                 fh = i / N * 23.9999
                 v  = self._interp(fh)
                 wave.append((cx + (i / N) * cw, cy + ((v - min_h) / rng) * ch))
 
-            # Gradient mesh: 3 color bands stacked
+            # Gradient mesh helper
             def band_mesh(wave_pts, lo_frac, hi_frac, color):
                 lo_y = cy + lo_frac * ch
                 hi_y = cy + hi_frac * ch
@@ -672,9 +678,26 @@ class TideChartWidget(Widget):
                 Color(*color)
                 Mesh(vertices=verts, indices=idxs, mode="triangles", fmt=_MESH_FMT)
 
-            band_mesh(wave, 0.00, 0.33, (0.08, 0.20, 0.50, 0.80))  # deep
-            band_mesh(wave, 0.33, 0.66, (0.10, 0.35, 0.70, 0.75))  # mid
-            band_mesh(wave, 0.66, 1.00, (0.14, 0.50, 0.85, 0.70))  # surface
+            # Lighter blue gradient bands
+            band_mesh(wave, 0.00, 0.33, (0.12, 0.30, 0.72, 0.72))  # deep
+            band_mesh(wave, 0.33, 0.66, (0.16, 0.46, 0.84, 0.68))  # mid
+            band_mesh(wave, 0.66, 1.00, (0.22, 0.62, 0.96, 0.62))  # surface
+
+            # Yellow fill for below-zero tide sections
+            if min_h < 0 < max_h:
+                zero_y = cy + ((0 - min_h) / rng) * ch
+                verts, idxs = [], []
+                for i, (px, py) in enumerate(wave):
+                    top_y = min(py, zero_y)   # cap at zero line
+                    verts += [px, top_y, 0, 1, px, cy, 0, 0]
+                for i in range(len(wave) - 1):
+                    b = i * 2
+                    idxs += [b, b+1, b+2, b+1, b+3, b+2]
+                Color(0.95, 0.78, 0.12, 0.68)
+                Mesh(vertices=verts, indices=idxs, mode="triangles", fmt=_MESH_FMT)
+                # Zero reference line
+                Color(0.95, 0.78, 0.12, 0.55)
+                Line(points=[cx, zero_y, cx + cw, zero_y], width=dp(1))
 
             # Wave crest line
             flat = [c for pt in wave for c in pt]
@@ -1081,10 +1104,15 @@ class TideScreen(Screen):
         ws     = c.get("wind_speed") or 0
         wc     = C_GREEN if ws < 10 else C_YELLOW if ws < 15 else C_RED
 
+        pt     = c.get("pressure_trend", 0)
+        p_arrow = " ↑" if pt > 0 else " ↓" if pt < 0 else ""
+        p_col   = C_GREEN if pt > 0 else C_AMBER if pt < 0 else C_TEXT
+        p_str   = val(c["pressure"], "{:.1f}", " mb") + p_arrow
+
         body.add_widget(kv_row([
-            ("Air Temp",    val(c["air_temp"],    "{:.0f}", "°F"), at_col),
-            ("Water Temp",  val(c["water_temp"],  "{:.1f}", "°F"), wt_col),
-            ("Pressure",    val(c["pressure"],    "{:.1f}", " mb"), C_TEXT),
+            ("Air Temp",    val(c["air_temp"],    "{:.0f}", "F"), at_col),
+            ("Water Temp",  val(c["water_temp"],  "{:.1f}", "F"), wt_col),
+            ("Pressure",    p_str,                                p_col),
             ("Water Level", val(c["water_level"], "{:+.2f}", " ft"), wl_col),
         ], height=44))
 
@@ -1466,15 +1494,35 @@ class TidesApp(App):
     def build(self):
         Window.clearcolor = C_BG
         self.title = "Tides"
-        # Tell tides_data where to store favorites on Android
         android_private = os.environ.get('ANDROID_PRIVATE')
         if android_private:
             td.set_data_dir(android_private)
+        Window.bind(on_keyboard=self._on_keyboard)
         sm = ScreenManager()
         sm.add_widget(SearchScreen(name="search"))
         sm.add_widget(TideScreen(name="tides"))
         sm.add_widget(AboutScreen(name="about"))
         return sm
+
+    def _on_keyboard(self, window, key, *args):
+        # Android back key (27 = Escape, maps to KEYCODE_BACK)
+        if key == 27:
+            sm = self.root
+            if sm.current == "tides":
+                sm.transition = SlideTransition(direction="right")
+                sm.current = "search"
+                return True  # consumed
+            elif sm.current == "about":
+                sm.transition = SlideTransition(direction="right")
+                sm.current = "search"
+                return True
+        return False
+
+    def on_pause(self):
+        return True  # keep app alive, GL context preserved by Kivy
+
+    def on_resume(self):
+        pass
 
     def open_station(self, station):
         sm   = self.root
