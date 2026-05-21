@@ -32,8 +32,7 @@ android.archs = arm64-v8a, x86_64
 # Enable AndroidX
 android.enable_androidx = True
 
-# Splash / icon (place tides_icon.png in project root for a custom icon)
-# icon.filename = %(source.dir)s/tides_icon.png
+icon.filename = %(source.dir)s/tides_icon.png
 
 # Fullscreen — False keeps the system status bar visible
 fullscreen = 0
