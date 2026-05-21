@@ -17,7 +17,7 @@ from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.text import Label as CoreLabel
 from kivy.core.window import Window
-from kivy.graphics import Color, Ellipse, Line, Mesh, Rectangle, RoundedRectangle
+from kivy.graphics import Color, Ellipse, Line, Mesh, Rectangle, RoundedRectangle, Triangle
 from kivy.metrics import dp, sp
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
@@ -146,6 +146,39 @@ class _StyledButton(ButtonBehavior, BoxLayout):
 
     def on_press(self):    self._ci.rgba = self._bg_hi_color
     def on_release(self):  self._ci.rgba = self._bg_color
+
+
+class _RefreshBtn(ButtonBehavior, Widget):
+    """Circular arrow refresh icon — drawn entirely on canvas."""
+    def __init__(self, **kw):
+        super().__init__(size_hint=(None, None),
+                         width=dp(42), height=dp(40), **kw)
+        self.bind(pos=self._draw, size=self._draw,
+                  state=lambda *_: self._draw())
+
+    def _draw(self, *_):
+        self.canvas.clear()
+        cx, cy = self.center_x, self.center_y
+        r  = dp(10)
+        col = C_BTN_HI if self.state == "down" else C_DIM
+        with self.canvas:
+            Color(*col)
+            # Arc ~300 ° (gap at ~45° where arrowhead sits)
+            Line(circle=(cx, cy, r, 45, 345), width=dp(2.2), cap="none")
+            # Arrowhead tip at 45 °
+            a   = math.radians(45)
+            tx  = cx + r * math.cos(a)
+            ty  = cy + r * math.sin(a)
+            # Tangent = clockwise direction = rotate radius by -90 °
+            ta  = a - math.pi / 2
+            hw, hl = dp(4.5), dp(7)
+            Triangle(points=[
+                tx,  ty,
+                tx - hl * math.cos(ta) + hw * math.sin(ta),
+                ty - hl * math.sin(ta) - hw * math.cos(ta),
+                tx - hl * math.cos(ta) - hw * math.sin(ta),
+                ty - hl * math.sin(ta) + hw * math.cos(ta),
+            ])
 
 
 class _StationCard(ButtonBehavior, BoxLayout):
@@ -868,11 +901,12 @@ class TideScreen(Screen):
         bar.add_widget(_btn("< Back", on_press=self._go_back,
                             size_hint_x=None, width=dp(80), height=40, radius=6))
         self.title_lbl = Label(text="", font_size=sp(13), bold=True,
-                               color=C_CYAN, halign="center")
+                               color=C_CYAN, halign="center", valign="middle")
         self.title_lbl.bind(size=lambda w, v: setattr(w, "text_size", v))
         bar.add_widget(self.title_lbl)
-        bar.add_widget(_btn("Ref", on_press=self._refresh,
-                            size_hint_x=None, width=dp(42), height=40, radius=6))
+        ref_btn = _RefreshBtn()
+        ref_btn.bind(on_press=self._refresh)
+        bar.add_widget(ref_btn)
         root.add_widget(bar)
 
         # Date navigation bar
