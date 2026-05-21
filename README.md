@@ -2,9 +2,9 @@
 
 ## Screenshots
 
-| Search | Conditions & Chart | Tide Detail | About |
-|---|---|---|---|
-| ![Search](screenshots/search_result.png) | ![Tide Screen](screenshots/tide_screen.png) | ![Tide Data](screenshots/tide_data.png) | ![About](screenshots/about_top.png) |
+| Search | Tide Detail | About |
+|---|---|---|
+| ![Search](screenshots/search_result.png) | ![Tide Data](screenshots/tide_data.png) | ![About](screenshots/about_top.png) |
 
 ---
 
