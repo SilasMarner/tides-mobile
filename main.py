@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 """Tides — Android NOAA tide dashboard (Kivy)"""
 
+import json
 import math
 import os
+import ssl
 import threading
+import urllib.request
 from datetime import datetime, date, timedelta
+
+_APP_VERSION = "1.0"
+_RELEASES_URL = "https://github.com/SilasMarner/tides-mobile/releases"
+_RELEASES_API = "https://api.github.com/repos/SilasMarner/tides-mobile/releases/latest"
 
 from kivy.app import App
 from kivy.clock import Clock
@@ -19,6 +26,7 @@ from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
+from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import Screen, ScreenManager, SlideTransition
 from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
@@ -366,6 +374,15 @@ class SearchScreen(Screen):
         self.wave = WaveHeader(size_hint_y=None, height=dp(150))
         root.add_widget(self.wave)
 
+        # Exit button — top-right corner of header
+        exit_btn = _btn("X", on_press=self._exit_app,
+                        size_hint=(None, None), width=dp(34), height=dp(30),
+                        radius=6,
+                        bg=(0.22, 0.07, 0.07, 0.85),
+                        bg_hi=(0.40, 0.12, 0.12, 0.95))
+        exit_btn.pos_hint = {"right": 0.98, "top": 0.97}
+        self.wave.add_widget(exit_btn)
+
         # ── Search bar ─────────────────────────────────────────────────────────
         bar = BoxLayout(size_hint_y=None, height=dp(52),
                         padding=(dp(10), dp(6)), spacing=dp(8))
@@ -422,6 +439,9 @@ class SearchScreen(Screen):
 
     def _open_about(self, *_):
         App.get_running_app().open_about()
+
+    def _exit_app(self, *_):
+        App.get_running_app().stop()
 
     # ── Location detection ─────────────────────────────────────────────────────
 
@@ -1089,14 +1109,73 @@ class TideScreen(Screen):
             r2.add_widget(_lbl("NWS", font_size=10, color=C_DIM,
                                size_hint_x=None, width=dp(50)))
             r2.add_widget(_lbl(
-                f"{cc}  ·  {n.get('temp','')}°F  ·  Rain {n.get('rain_pct',0)}%",
+                f"{cc}  -  {n.get('temp','')}F  -  Rain {n.get('rain_pct',0)}%",
                 font_size=13, bold=True, color=ccol))
             body.add_widget(r2)
 
-            for p in (n.get("periods") or []):
-                body.add_widget(_lbl(
-                    f"{p['name']}: {p['detail']}", font_size=11, color=C_DIM))
+            if n.get("periods"):
+                body.add_widget(_btn(
+                    "View Full NWS Forecast  >",
+                    on_press=lambda *_, _n=n: self._show_nws_popup(_n),
+                    height=34, radius=6,
+                    bg=(0.10, 0.18, 0.32, 1), bg_hi=(0.16, 0.28, 0.46, 1)))
         return outer
+
+    def _show_nws_popup(self, nws):
+        content = BoxLayout(orientation="vertical", spacing=dp(8),
+                            padding=(dp(10), dp(10), dp(10), dp(10)))
+        with content.canvas.before:
+            Color(*C_BG)
+            _pb = Rectangle(pos=content.pos, size=content.size)
+        content.bind(pos=lambda w, v: setattr(_pb, "pos", v),
+                     size=lambda w, v: setattr(_pb, "size", v))
+
+        sv = ScrollView(do_scroll_x=False)
+        inner = BoxLayout(orientation="vertical", size_hint_y=None,
+                          spacing=dp(12), padding=(0, dp(4), 0, dp(8)))
+        inner.bind(minimum_height=inner.setter("height"))
+
+        for p in (nws.get("periods") or []):
+            card = BoxLayout(orientation="vertical", size_hint_y=None,
+                             padding=(dp(10), dp(10), dp(10), dp(10)), spacing=dp(6))
+            with card.canvas.before:
+                Color(*C_PANEL)
+                _cr = RoundedRectangle(pos=card.pos, size=card.size, radius=[dp(8)]*4)
+            card.bind(pos=lambda w, v, r=_cr: setattr(r, "pos", v),
+                      size=lambda w, v, r=_cr: setattr(r, "size", v))
+            card.bind(minimum_height=card.setter("height"))
+
+            name_lbl = Label(text=p["name"], font_size=sp(15), bold=True,
+                             color=C_YELLOW, size_hint_y=None, halign="left")
+            name_lbl.bind(size=lambda w, v: setattr(w, "text_size", (v[0], None)))
+            name_lbl.bind(texture_size=lambda w, v: setattr(w, "height", v[1] + dp(2)))
+
+            detail_lbl = Label(text=p["detail"], font_size=sp(14), color=C_TEXT,
+                               size_hint_y=None, halign="left")
+            detail_lbl.bind(size=lambda w, v: setattr(w, "text_size", (v[0], None)))
+            detail_lbl.bind(texture_size=lambda w, v: setattr(w, "height", v[1] + dp(4)))
+
+            card.add_widget(name_lbl)
+            card.add_widget(detail_lbl)
+            inner.add_widget(card)
+
+        sv.add_widget(inner)
+        content.add_widget(sv)
+
+        close_btn = _btn("Close", height=44, radius=8)
+        content.add_widget(close_btn)
+
+        popup = Popup(
+            title="NWS Forecast",
+            title_size=sp(15),
+            content=content,
+            size_hint=(0.93, 0.82),
+            background_color=(*C_HEADER[:3], 1),
+            title_color=C_CYAN,
+            separator_color=C_CYAN,
+        )
+        close_btn.bind(on_press=popup.dismiss)
+        popup.open()
 
     # ── Chart ─────────────────────────────────────────────────────────────────
 
@@ -1276,8 +1355,23 @@ class AboutScreen(Screen):
 
         # App identity
         body.add_widget(hdg("~ TIDES", C_CYAN))
-        body.add_widget(row("Version 1.0  -  Live NOAA tide data for Android", C_DIM, 11))
-        body.add_widget(Widget(size_hint_y=None, height=dp(6)))
+        body.add_widget(row(f"Version {_APP_VERSION}  -  Live NOAA tide data for Android",
+                            C_DIM, 11))
+
+        # Release link row
+        body.add_widget(row(f"Releases:  {_RELEASES_URL}", C_BLUE, 11))
+        body.add_widget(Widget(size_hint_y=None, height=dp(4)))
+
+        # Update check
+        self._upd_status = row("", C_DIM, 11)
+        upd_row = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(8))
+        self._upd_btn = _btn("Check for Updates", on_press=self._check_updates,
+                             height=38, radius=6,
+                             bg=(0.10, 0.20, 0.34, 1), bg_hi=(0.16, 0.30, 0.48, 1))
+        upd_row.add_widget(self._upd_btn)
+        body.add_widget(upd_row)
+        body.add_widget(self._upd_status)
+        body.add_widget(Widget(size_hint_y=None, height=dp(4)))
 
         # Developer
         body.add_widget(divider())
@@ -1326,6 +1420,44 @@ class AboutScreen(Screen):
     def _go_back(self, *_):
         self.manager.transition = SlideTransition(direction="right")
         self.manager.current = "search"
+
+    def _check_updates(self, *_):
+        self._upd_btn._lbl.text = "Checking..."
+        self._upd_status.text = ""
+        threading.Thread(target=self._update_thread, daemon=True).start()
+
+    def _update_thread(self):
+        try:
+            ctx = ssl.create_default_context()
+            try:
+                import certifi
+                ctx = ssl.create_default_context(cafile=certifi.where())
+            except Exception:
+                pass
+            req = urllib.request.Request(
+                _RELEASES_API,
+                headers={"User-Agent": "tides-android/1.0"})
+            with urllib.request.urlopen(req, context=ctx, timeout=8) as resp:
+                data = json.loads(resp.read().decode())
+            latest = data.get("tag_name", "").lstrip("v")
+            if latest == _APP_VERSION:
+                msg = f"You are up to date  (v{_APP_VERSION})"
+                col = C_GREEN
+            elif latest:
+                msg = f"Update available: v{latest}  -  {_RELEASES_URL}"
+                col = C_YELLOW
+            else:
+                msg = "Could not determine latest version"
+                col = C_DIM
+        except Exception:
+            msg = "Could not reach update server"
+            col = C_DIM
+
+        def _apply(dt):
+            self._upd_btn._lbl.text = "Check for Updates"
+            self._upd_status.text  = msg
+            self._upd_status.color = col
+        Clock.schedule_once(_apply)
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
