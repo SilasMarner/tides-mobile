@@ -397,14 +397,13 @@ class SearchScreen(Screen):
                  size=lambda w, v: setattr(_bb, "size", v))
 
         self.search_input = TextInput(
-            hint_text="Search by city, station name, or state...",
+            hint_text="city, station, or state",
             multiline=False, font_size=sp(15),
             foreground_color=C_TEXT,
             background_color=(0.08, 0.13, 0.24, 1),
             cursor_color=C_CYAN,
             hint_text_color=C_DIM,
-            halign="center",
-            padding=[dp(10), dp(10)],
+            padding=[dp(12), dp(10)],
             size_hint_x=0.77,
         )
         self.search_input.bind(on_text_validate=self._do_search)
