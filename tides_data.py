@@ -153,13 +153,22 @@ _STATIONS_URL = (
 )
 
 
+_stations_cache = None  # populated on first fetch, reused for autocomplete
+
+
+def _load_stations():
+    global _stations_cache
+    if _stations_cache is None:
+        data = _get(_STATIONS_URL, timeout=15)
+        if data and "stations" in data:
+            _stations_cache = data["stations"]
+    return _stations_cache or []
+
+
 def search_stations(query):
-    data = _get(_STATIONS_URL, timeout=15)
-    if not data or "stations" not in data:
-        return []
     q = query.lower()
     out = []
-    for s in data["stations"]:
+    for s in _load_stations():
         name  = s.get("name", "")
         state = s.get("state", "")
         if q in name.lower() or q in state.lower():

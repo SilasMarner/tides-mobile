@@ -403,9 +403,12 @@ class SearchScreen(Screen):
             background_color=(0.08, 0.13, 0.24, 1),
             cursor_color=C_CYAN,
             hint_text_color=C_DIM,
+            halign="center",
+            padding=[dp(10), dp(10)],
             size_hint_x=0.77,
         )
         self.search_input.bind(on_text_validate=self._do_search)
+        self.search_input.bind(text=self._on_text_change)
         bar.add_widget(self.search_input)
         bar.add_widget(_btn("Search", on_press=self._do_search,
                             size_hint_x=0.20, height=40, radius=6))
@@ -413,6 +416,17 @@ class SearchScreen(Screen):
                             size_hint_x=None, width=dp(36), height=40, radius=6,
                             bg=(0.10, 0.18, 0.32, 1), bg_hi=(0.16, 0.28, 0.46, 1)))
         root.add_widget(bar)
+
+        # ── Autocomplete suggestion panel ──────────────────────────────────────
+        self._sugg_panel = BoxLayout(orientation="vertical",
+                                     size_hint_y=None, height=0, spacing=0)
+        with self._sugg_panel.canvas.before:
+            Color(0.07, 0.11, 0.20, 0.97)
+            _spbg = Rectangle(pos=self._sugg_panel.pos, size=self._sugg_panel.size)
+        self._sugg_panel.bind(pos=lambda w, v: setattr(_spbg, "pos", v),
+                              size=lambda w, v: setattr(_spbg, "size", v))
+        root.add_widget(self._sugg_panel)
+        self._sugg_timer = None
 
         # ── Status strip ───────────────────────────────────────────────────────
         self.status = _lbl("  Detecting your location...", font_size=11,
@@ -440,12 +454,72 @@ class SearchScreen(Screen):
 
     def on_leave(self):
         self.wave.stop_animation()
+        self._clear_suggestions()
 
     def _open_about(self, *_):
         App.get_running_app().open_about()
 
     def _exit_app(self, *_):
         App.get_running_app().stop()
+
+    # ── Autocomplete ──────────────────────────────────────────────────────────
+
+    def _on_text_change(self, instance, value):
+        if self._sugg_timer:
+            self._sugg_timer.cancel()
+            self._sugg_timer = None
+        text = value.strip()
+        if len(text) < 2:
+            self._clear_suggestions()
+            return
+        self._sugg_timer = Clock.schedule_once(
+            lambda dt: threading.Thread(
+                target=self._suggest_thread, args=(text,), daemon=True
+            ).start(),
+            0.45,
+        )
+
+    def _suggest_thread(self, query):
+        results = td.search_stations(query)[:7]
+        Clock.schedule_once(lambda dt: self._show_suggestions(results))
+
+    def _show_suggestions(self, results):
+        self._sugg_panel.clear_widgets()
+        if not results:
+            self._sugg_panel.height = 0
+            return
+        row_h = dp(46)
+        for s in results:
+            from kivy.uix.button import Button as _KB
+            row = _KB(
+                text=s["name"], font_size=sp(13), color=C_TEXT,
+                halign="left", valign="middle",
+                background_color=(0.09, 0.14, 0.25, 1),
+                background_normal="", background_down="",
+                size_hint_y=None, height=row_h,
+                padding=(dp(16), 0),
+            )
+            row.bind(size=lambda w, v: setattr(w, "text_size", v))
+            row.bind(on_press=lambda b, st=s: self._select_suggestion(st))
+            # Separator line
+            sep = Widget(size_hint_y=None, height=dp(1))
+            with sep.canvas:
+                Color(0.14, 0.22, 0.36, 1)
+                _sl = Rectangle(pos=sep.pos, size=sep.size)
+            sep.bind(pos=lambda w, v: setattr(_sl, "pos", v),
+                     size=lambda w, v: setattr(_sl, "size", v))
+            self._sugg_panel.add_widget(row)
+            self._sugg_panel.add_widget(sep)
+        self._sugg_panel.height = (row_h + dp(1)) * len(results)
+
+    def _clear_suggestions(self):
+        self._sugg_panel.clear_widgets()
+        self._sugg_panel.height = 0
+
+    def _select_suggestion(self, station):
+        self.search_input.text = station["name"]
+        self._clear_suggestions()
+        App.get_running_app().open_station(station)
 
     # ── Location detection ─────────────────────────────────────────────────────
 
@@ -522,6 +596,7 @@ class SearchScreen(Screen):
         query = self.search_input.text.strip()
         if not query:
             return
+        self._clear_suggestions()
         self.status.text = f"  Searching for \"{query}\"..."
         threading.Thread(target=self._search_thread, args=(query,),
                          daemon=True).start()
