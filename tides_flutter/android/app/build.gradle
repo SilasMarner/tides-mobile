@@ -6,15 +6,8 @@ plugins {
 
 android {
     namespace "com.mattbettinger.tides"
-    compileSdk 35
-
-    defaultConfig {
-        applicationId "com.mattbettinger.tides"
-        minSdk 21
-        targetSdk 35
-        versionCode flutterVersionCode.toInteger()
-        versionName flutterVersionName
-    }
+    compileSdk flutter.compileSdkVersion
+    ndkVersion flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
@@ -22,17 +15,24 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = '17'
+        jvmTarget = JavaVersion.VERSION_17
+    }
+
+    defaultConfig {
+        applicationId "com.mattbettinger.tides"
+        minSdk flutter.minSdkVersion
+        targetSdk flutter.targetSdkVersion
+        versionCode flutter.versionCode
+        versionName flutter.versionName
     }
 
     buildTypes {
         release {
             signingConfig signingConfigs.debug
-            minifyEnabled false
         }
     }
 }
 
 flutter {
-    source '../..'
+    source "../.."
 }

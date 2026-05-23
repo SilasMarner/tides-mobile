@@ -108,7 +108,7 @@ SunInfo sunTimes(DateTime d, double lat, double lon, double utcOff) {
     return SunInfo(
       sunrise: 'N/A',
       sunset: 'N/A',
-      noon: _fmtHhmm(noonUtc + utcOff),
+      noon: fmtHhmm(noonUtc + utcOff),
       golden: 'N/A',
     );
   }
