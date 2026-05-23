@@ -32,10 +32,11 @@ class DetailScreen extends ConsumerWidget {
         title: Text(station.name.toUpperCase(),
             style: const TextStyle(color: kCyan, fontSize: 14)),
         actions: [
-          TextButton(
+          IconButton(
+            icon: const Icon(Icons.sync, color: kCyan),
+            tooltip: 'About',
             onPressed: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const AboutScreen())),
-            child: const Text('Ref', style: TextStyle(color: kCyan)),
           ),
         ],
       ),

@@ -414,6 +414,86 @@ NwsForecast? _parseNws(Map<String, dynamic>? raw) {
   );
 }
 
+// ── Hourly interpolation from hi/lo (for subordinate stations) ────────────────
+
+Map<int, double> _interpolateHourlyFromHilo(List<TidePrediction> hilo) {
+  if (hilo.length < 2) return {};
+  final sorted = [...hilo]..sort((a, b) => a.time.compareTo(b.time));
+  // Convert to (fractional hour, height) pairs, adding synthetic boundary
+  // points one full tidal period (~12.4h) before first and after last.
+  final pts = <(double, double)>[];
+  final period = 12.42; // avg tidal period in hours
+  final first = sorted.first;
+  final last = sorted.last;
+  final firstH = first.time.hour + first.time.minute / 60.0;
+  final lastH = last.time.hour + last.time.minute / 60.0;
+  // Mirror boundary points so edges of the day are covered.
+  pts.add((firstH - period, first.height));
+  for (final p in sorted) {
+    pts.add((p.time.hour + p.time.minute / 60.0, p.height));
+  }
+  pts.add((lastH + period, last.height));
+
+  final out = <int, double>{};
+  for (var hour = 0; hour < 24; hour++) {
+    final h = hour.toDouble();
+    // Find the two bracketing points.
+    int? lo, hi;
+    for (var i = 0; i < pts.length; i++) {
+      if (pts[i].$1 <= h) lo = i;
+      if (pts[i].$1 >= h && hi == null) hi = i;
+    }
+    if (lo == null || hi == null || lo == hi) {
+      out[hour] = lo != null ? pts[lo].$2 : pts[hi!].$2;
+    } else {
+      final t1 = pts[lo].$1, t2 = pts[hi].$1;
+      final h1 = pts[lo].$2, h2 = pts[hi].$2;
+      final frac = (h - t1) / (t2 - t1);
+      // Cosine interpolation mirrors the sinusoidal tide curve.
+      out[hour] = h1 + (h2 - h1) * (1 - cos(pi * frac)) / 2;
+    }
+  }
+  return out;
+}
+
+// ── NWS conditions supplement ─────────────────────────────────────────────────
+
+Conditions _supplementFromNws(Conditions c, NwsForecast? nws) {
+  if (nws == null) return c;
+  // Only fill fields that NOAA obs couldn't provide.
+  if (c.airTemp != null && c.windSpeed != null) return c;
+
+  double? nwsWind;
+  String? nwsWindDir;
+  String? nwsBeaufort;
+  if (c.windSpeed == null && nws.windSpeed.isNotEmpty) {
+    // NWS gives "7 mph" or "7 to 12 mph" — take first number.
+    final m = RegExp(r'(\d+)').firstMatch(nws.windSpeed);
+    if (m != null) {
+      nwsWind = double.tryParse(m.group(1)!);
+      if (nwsWind != null) nwsBeaufort = beaufort(nwsWind);
+    }
+  }
+  if (c.windDirStr == null && nws.windDir.isNotEmpty) {
+    nwsWindDir = nws.windDir;
+  }
+
+  return Conditions(
+    airTemp:      c.airTemp      ?? (nws.temp > 0 ? nws.temp.toDouble() : null),
+    waterTemp:    c.waterTemp,
+    windSpeed:    c.windSpeed    ?? nwsWind,
+    windDir:      c.windDir,
+    windGust:     c.windGust,
+    windDirStr:   c.windDirStr   ?? nwsWindDir,
+    beaufortStr:  c.beaufortStr  ?? nwsBeaufort,
+    pressure:     c.pressure,
+    waterLevel:   c.waterLevel,
+    pressureTrend: c.pressureTrend,
+  );
+}
+
+// ── Master fetch ───────────────────────────────────────────────────────────────
+
 Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
   final date = targetDate ?? DateTime.now();
   final dateOnly = DateTime(date.year, date.month, date.day);
@@ -440,9 +520,14 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
   final pressureTrend = results[5] as int;
   final nwsRaw = results[8] as Map<String, dynamic>?;
 
+  // Build hourly map; fall back to cosine interpolation from hi/lo when the
+  // station is a subordinate that only publishes hi/lo predictions.
   final hourly = <int, double>{};
   for (final p in hourlyList) {
     hourly[p.time.hour] = p.height;
+  }
+  if (hourly.isEmpty && hilo.isNotEmpty) {
+    hourly.addAll(_interpolateHourlyFromHilo(hilo));
   }
 
   final obsRaw = <String, dynamic?>{
@@ -452,8 +537,12 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
     'water_temperature': results[6],
     'water_level': results[7],
   };
-  final conditions = _parseConditions(obsRaw, pressureTrend);
+  var conditions = _parseConditions(obsRaw, pressureTrend);
   final nws = _parseNws(nwsRaw);
+
+  // Fill missing NOAA obs fields from NWS for stations without met sensors.
+  conditions = _supplementFromNws(conditions, nws);
+
   final sun = sunTimes(dateOnly, lat, lon, utcOff);
   final moon = moonPhase(dateOnly);
   final solunar = solunarTimes(dateOnly, lon, utcOff);
