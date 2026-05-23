@@ -27,7 +27,7 @@ Android app version of [console-tides](../console-tides) — same live NOAA data
 
 ## Download
 
-**[tides-v1.apk](https://github.com/SilasMarner/tides-mobile/releases/tag/v1.0)** — latest release
+**[tides-1.2-arm64-v8a_x86_64-release.apk](https://github.com/SilasMarner/tides-mobile/releases/tag/v1.2)** — latest release (v1.2)
 
 Fat APK: contains both **arm64-v8a** (real phones) and **x86_64** (emulator) slices. Android selects the correct one at install time — no separate builds needed.
 
