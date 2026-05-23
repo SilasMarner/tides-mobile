@@ -55,6 +55,14 @@ class TideChart extends StatelessWidget {
                   FlLine(color: Colors.white10, strokeWidth: 1),
             ),
             borderData: FlBorderData(show: false),
+            lineTouchData: LineTouchData(
+              touchTooltipData: LineTouchTooltipData(
+                getTooltipItems: (spots) => spots.map((s) => LineTooltipItem(
+                  '${s.y.toStringAsFixed(2)} ft',
+                  const TextStyle(color: kCyan, fontWeight: FontWeight.bold, fontSize: 12),
+                )).toList(),
+              ),
+            ),
             titlesData: FlTitlesData(
               leftTitles: AxisTitles(
                 sideTitles: SideTitles(
