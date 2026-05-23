@@ -6,3 +6,7 @@ bin/
 *.apk
 *.aab
 .env
+
+# Signing
+*.keystore
+*.jks

@@ -10,7 +10,7 @@ source.dir = .
 source.include_exts = py,kv,json,png,jpg
 source.exclude_dirs = tests, bin, __pycache__
 
-version = 1.0
+version = 1.1
 
 # Dependencies — stdlib only; Kivy ships its own Python on Android
 requirements = python3,kivy
@@ -36,6 +36,16 @@ icon.filename = %(source.dir)s/tides_icon.png
 
 # Fullscreen — False keeps the system status bar visible
 fullscreen = 0
+
+# Force APK output (not AAB) so the file can be sideloaded
+android.release_artifact = apk
+
+# Release signing — keystore is NOT committed to the public repo
+# Copy tides.keystore here from gitea.local.lan/matt/tides-keys before building
+android.keystore = tides.keystore
+android.keystore_password = jodxEFHXPY0SfimofScXwGRc
+android.keyalias = tides
+android.keyalias_password = jodxEFHXPY0SfimofScXwGRc
 
 [buildozer]
 log_level = 2

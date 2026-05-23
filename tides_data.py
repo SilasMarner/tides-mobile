@@ -277,7 +277,7 @@ def _fetch_nws(lat, lon):
     if forecast_url:
         fc = _get(forecast_url, timeout=8, headers=hdr)
         if fc:
-            result["forecast"] = fc.get("properties", {}).get("periods", [])[:2]
+            result["forecast"] = fc.get("properties", {}).get("periods", [])
     return result or None
 
 
@@ -351,8 +351,8 @@ def _parse_nws(raw):
         r["wind_dir"]   = cur.get("windDirection", "")
     if raw.get("forecast"):
         r["periods"] = [
-            {"name": p.get("name", ""), "detail": p.get("detailedForecast", "")[:120]}
-            for p in raw["forecast"][:2]
+            {"name": p.get("name", ""), "detail": p.get("detailedForecast", "")}
+            for p in raw["forecast"]
         ]
     return r
 
@@ -578,3 +578,26 @@ def remove_favorite(station_id):
         save_favorites(new)
         return True
     return False
+
+
+# ── Settings (theme, etc.) ────────────────────────────────────────────────────
+
+def _settings_path():
+    p = fav_path().parent
+    return p / "settings.json"
+
+
+def load_settings():
+    try:
+        return json.loads(_settings_path().read_text())
+    except Exception:
+        return {}
+
+
+def save_settings(updates):
+    s = load_settings()
+    s.update(updates)
+    try:
+        _settings_path().write_text(json.dumps(s, indent=2))
+    except Exception:
+        pass

@@ -10,7 +10,7 @@ import urllib.request
 import webbrowser
 from datetime import datetime, date, timedelta
 
-_APP_VERSION = "1.0"
+_APP_VERSION = "1.1"
 _RELEASES_URL = "https://github.com/SilasMarner/tides-mobile/releases"
 _RELEASES_API = "https://api.github.com/repos/SilasMarner/tides-mobile/releases/latest"
 
@@ -34,24 +34,130 @@ from kivy.uix.widget import Widget
 
 import tides_data as td
 
+# ── Themes ────────────────────────────────────────────────────────────────────
+THEMES = {
+    "Deep Sea": {
+        "C_BG":     (0.05, 0.08, 0.14, 1),
+        "C_PANEL":  (0.09, 0.13, 0.22, 1),
+        "C_CARD":   (0.10, 0.15, 0.26, 1),
+        "C_HEADER": (0.11, 0.19, 0.36, 1),
+        "C_TEXT":   (0.93, 0.95, 0.99, 1),
+        "C_DIM":    (0.52, 0.63, 0.78, 1),
+        "C_CYAN":   (0.22, 0.74, 1.00, 1),
+        "C_YELLOW": (1.00, 0.85, 0.20, 1),
+        "C_BLUE":   (0.18, 0.52, 1.00, 1),
+        "C_AMBER":  (1.00, 0.72, 0.10, 1),
+        "C_GREEN":  (0.18, 0.82, 0.44, 1),
+        "C_RED":    (1.00, 0.35, 0.35, 1),
+        "C_PURPLE": (0.65, 0.35, 1.00, 1),
+        "C_BTN":    (0.13, 0.21, 0.38, 1),
+        "C_BTN_HI": (0.20, 0.32, 0.54, 1),
+        "C_NEARBY": (0.10, 0.30, 0.20, 1),
+        "C_FAV":    (0.20, 0.16, 0.06, 1),
+    },
+    "Midnight": {
+        "C_BG":     (0.00, 0.00, 0.02, 1),
+        "C_PANEL":  (0.06, 0.06, 0.10, 1),
+        "C_CARD":   (0.08, 0.08, 0.14, 1),
+        "C_HEADER": (0.04, 0.04, 0.08, 1),
+        "C_TEXT":   (0.92, 0.92, 0.96, 1),
+        "C_DIM":    (0.42, 0.44, 0.58, 1),
+        "C_CYAN":   (0.10, 0.80, 1.00, 1),
+        "C_YELLOW": (1.00, 0.88, 0.20, 1),
+        "C_BLUE":   (0.30, 0.60, 1.00, 1),
+        "C_AMBER":  (1.00, 0.68, 0.10, 1),
+        "C_GREEN":  (0.20, 0.88, 0.48, 1),
+        "C_RED":    (1.00, 0.32, 0.32, 1),
+        "C_PURPLE": (0.70, 0.38, 1.00, 1),
+        "C_BTN":    (0.10, 0.10, 0.20, 1),
+        "C_BTN_HI": (0.18, 0.18, 0.32, 1),
+        "C_NEARBY": (0.06, 0.18, 0.12, 1),
+        "C_FAV":    (0.18, 0.12, 0.02, 1),
+    },
+    "Sunrise": {
+        "C_BG":     (0.08, 0.05, 0.03, 1),
+        "C_PANEL":  (0.15, 0.09, 0.05, 1),
+        "C_CARD":   (0.18, 0.11, 0.06, 1),
+        "C_HEADER": (0.20, 0.13, 0.06, 1),
+        "C_TEXT":   (0.96, 0.90, 0.80, 1),
+        "C_DIM":    (0.60, 0.46, 0.32, 1),
+        "C_CYAN":   (1.00, 0.72, 0.18, 1),
+        "C_YELLOW": (1.00, 0.88, 0.10, 1),
+        "C_BLUE":   (0.95, 0.55, 0.12, 1),
+        "C_AMBER":  (1.00, 0.55, 0.05, 1),
+        "C_GREEN":  (0.68, 0.92, 0.28, 1),
+        "C_RED":    (1.00, 0.35, 0.20, 1),
+        "C_PURPLE": (0.90, 0.45, 0.80, 1),
+        "C_BTN":    (0.24, 0.14, 0.06, 1),
+        "C_BTN_HI": (0.36, 0.20, 0.08, 1),
+        "C_NEARBY": (0.14, 0.20, 0.06, 1),
+        "C_FAV":    (0.24, 0.16, 0.04, 1),
+    },
+    "Overcast": {
+        "C_BG":     (0.10, 0.11, 0.14, 1),
+        "C_PANEL":  (0.16, 0.17, 0.22, 1),
+        "C_CARD":   (0.18, 0.20, 0.25, 1),
+        "C_HEADER": (0.13, 0.15, 0.19, 1),
+        "C_TEXT":   (0.82, 0.84, 0.88, 1),
+        "C_DIM":    (0.48, 0.52, 0.60, 1),
+        "C_CYAN":   (0.42, 0.72, 0.92, 1),
+        "C_YELLOW": (0.88, 0.80, 0.32, 1),
+        "C_BLUE":   (0.36, 0.58, 0.84, 1),
+        "C_AMBER":  (0.88, 0.66, 0.22, 1),
+        "C_GREEN":  (0.36, 0.76, 0.52, 1),
+        "C_RED":    (0.88, 0.38, 0.36, 1),
+        "C_PURPLE": (0.62, 0.38, 0.88, 1),
+        "C_BTN":    (0.18, 0.20, 0.28, 1),
+        "C_BTN_HI": (0.26, 0.29, 0.40, 1),
+        "C_NEARBY": (0.12, 0.20, 0.16, 1),
+        "C_FAV":    (0.20, 0.17, 0.08, 1),
+    },
+    "High Noon": {
+        "C_BG":     (0.93, 0.95, 0.97, 1),
+        "C_PANEL":  (0.84, 0.87, 0.93, 1),
+        "C_CARD":   (0.88, 0.91, 0.96, 1),
+        "C_HEADER": (0.76, 0.82, 0.91, 1),
+        "C_TEXT":   (0.08, 0.10, 0.16, 1),
+        "C_DIM":    (0.35, 0.42, 0.55, 1),
+        "C_CYAN":   (0.00, 0.40, 0.75, 1),
+        "C_YELLOW": (0.60, 0.44, 0.00, 1),
+        "C_BLUE":   (0.08, 0.32, 0.78, 1),
+        "C_AMBER":  (0.76, 0.44, 0.00, 1),
+        "C_GREEN":  (0.04, 0.52, 0.24, 1),
+        "C_RED":    (0.80, 0.10, 0.08, 1),
+        "C_PURPLE": (0.48, 0.18, 0.80, 1),
+        "C_BTN":    (0.70, 0.76, 0.88, 1),
+        "C_BTN_HI": (0.58, 0.66, 0.82, 1),
+        "C_NEARBY": (0.76, 0.90, 0.82, 1),
+        "C_FAV":    (0.96, 0.92, 0.76, 1),
+    },
+}
+THEME_ORDER = ["Deep Sea", "Midnight", "Sunrise", "Overcast", "High Noon"]
+
+def _load_theme():
+    name = td.load_settings().get("theme", "Deep Sea")
+    return name, THEMES.get(name, THEMES["Deep Sea"])
+
+_THEME_NAME, _t = _load_theme()
+
 # ── Palette ───────────────────────────────────────────────────────────────────
-C_BG      = (0.05, 0.08, 0.14, 1)
-C_PANEL   = (0.09, 0.13, 0.22, 1)
-C_CARD    = (0.10, 0.15, 0.26, 1)
-C_HEADER  = (0.11, 0.19, 0.36, 1)
-C_TEXT    = (0.93, 0.95, 0.99, 1)
-C_DIM     = (0.52, 0.63, 0.78, 1)
-C_CYAN    = (0.22, 0.74, 1.00, 1)
-C_YELLOW  = (1.00, 0.85, 0.20, 1)
-C_BLUE    = (0.18, 0.52, 1.00, 1)
-C_AMBER   = (1.00, 0.72, 0.10, 1)
-C_GREEN   = (0.18, 0.82, 0.44, 1)
-C_RED     = (1.00, 0.35, 0.35, 1)
-C_PURPLE  = (0.65, 0.35, 1.00, 1)
-C_BTN     = (0.13, 0.21, 0.38, 1)
-C_BTN_HI  = (0.20, 0.32, 0.54, 1)
-C_NEARBY  = (0.10, 0.30, 0.20, 1)   # teal-green tint for nearby cards
-C_FAV     = (0.20, 0.16, 0.06, 1)   # warm gold tint for favourite cards
+C_BG      = _t["C_BG"]
+C_PANEL   = _t["C_PANEL"]
+C_CARD    = _t["C_CARD"]
+C_HEADER  = _t["C_HEADER"]
+C_TEXT    = _t["C_TEXT"]
+C_DIM     = _t["C_DIM"]
+C_CYAN    = _t["C_CYAN"]
+C_YELLOW  = _t["C_YELLOW"]
+C_BLUE    = _t["C_BLUE"]
+C_AMBER   = _t["C_AMBER"]
+C_GREEN   = _t["C_GREEN"]
+C_RED     = _t["C_RED"]
+C_PURPLE  = _t["C_PURPLE"]
+C_BTN     = _t["C_BTN"]
+C_BTN_HI  = _t["C_BTN_HI"]
+C_NEARBY  = _t["C_NEARBY"]
+C_FAV     = _t["C_FAV"]
 
 _MESH_FMT = [('vPosition', 2, 'float'), ('vTexCoords0', 2, 'float')]
 
@@ -1232,7 +1338,7 @@ class TideScreen(Screen):
         wc     = C_GREEN if ws < 10 else C_YELLOW if ws < 15 else C_RED
 
         pt     = c.get("pressure_trend", 0)
-        p_arrow = " ↑" if pt > 0 else " ↓" if pt < 0 else ""
+        p_arrow = " ▲" if pt > 0 else " ▼" if pt < 0 else ""
         p_col   = C_GREEN if pt > 0 else C_AMBER if pt < 0 else C_TEXT
         p_str   = val(c["pressure"], "{:.1f}", " mb") + p_arrow
 
@@ -1277,6 +1383,9 @@ class TideScreen(Screen):
         return outer
 
     def _show_nws_popup(self, nws):
+        # Pre-calculate wrap width: popup is 93% of window, minus card padding
+        wrap_w = Window.width * 0.93 - dp(40)
+
         content = BoxLayout(orientation="vertical", spacing=dp(8),
                             padding=(dp(10), dp(10), dp(10), dp(10)))
         with content.canvas.before:
@@ -1301,13 +1410,13 @@ class TideScreen(Screen):
             card.bind(minimum_height=card.setter("height"))
 
             name_lbl = Label(text=p["name"], font_size=sp(15), bold=True,
-                             color=C_YELLOW, size_hint_y=None, halign="left")
-            name_lbl.bind(size=lambda w, v: setattr(w, "text_size", (v[0], None)))
+                             color=C_YELLOW, size_hint_y=None, halign="left",
+                             text_size=(wrap_w, None))
             name_lbl.bind(texture_size=lambda w, v: setattr(w, "height", v[1] + dp(2)))
 
-            detail_lbl = Label(text=p["detail"], font_size=sp(14), color=C_TEXT,
-                               size_hint_y=None, halign="left")
-            detail_lbl.bind(size=lambda w, v: setattr(w, "text_size", (v[0], None)))
+            detail_lbl = Label(text=p["detail"], font_size=sp(13), color=C_TEXT,
+                               size_hint_y=None, halign="left",
+                               text_size=(wrap_w, None))
             detail_lbl.bind(texture_size=lambda w, v: setattr(w, "height", v[1] + dp(4)))
 
             card.add_widget(name_lbl)
@@ -1324,7 +1433,7 @@ class TideScreen(Screen):
             title="NWS Forecast",
             title_size=sp(15),
             content=content,
-            size_hint=(0.93, 0.82),
+            size_hint=(0.93, 0.88),
             background_color=(*C_HEADER[:3], 1),
             title_color=C_CYAN,
             separator_color=C_CYAN,
@@ -1528,6 +1637,21 @@ class AboutScreen(Screen):
         body.add_widget(self._upd_status)
         body.add_widget(Widget(size_hint_y=None, height=dp(4)))
 
+        # Theme picker
+        body.add_widget(divider())
+        body.add_widget(hdg("Theme"))
+        theme_row = BoxLayout(size_hint_y=None, height=dp(46), spacing=dp(6))
+        for name in THEME_ORDER:
+            is_active = (name == _THEME_NAME)
+            btn = _btn(name,
+                       height=40, radius=20,
+                       bg=C_BTN_HI if is_active else C_BTN,
+                       bg_hi=C_BTN_HI)
+            btn.bind(on_press=lambda _, n=name: self._set_theme(n))
+            theme_row.add_widget(btn)
+        body.add_widget(theme_row)
+        body.add_widget(Widget(size_hint_y=None, height=dp(4)))
+
         # Developer
         body.add_widget(divider())
         body.add_widget(hdg("Developer"))
@@ -1577,6 +1701,33 @@ class AboutScreen(Screen):
     def _go_back(self, *_):
         self.manager.transition = SlideTransition(direction="right")
         self.manager.current = "search"
+
+    def _set_theme(self, name):
+        if name == _THEME_NAME:
+            return
+        td.save_settings({"theme": name})
+        content = BoxLayout(orientation="vertical", spacing=dp(12),
+                            padding=(dp(16), dp(16), dp(16), dp(16)))
+        content.add_widget(Label(
+            text=f'Theme set to "{name}".\nRestart the app to apply.',
+            font_size=sp(14), color=C_TEXT, halign="center",
+            size_hint_y=None, height=dp(60)))
+        btn = _btn("Close & Restart", height=44, radius=8)
+        content.add_widget(btn)
+        popup = Popup(title="Theme Changed", title_size=sp(14),
+                      content=content, size_hint=(0.80, None), height=dp(200),
+                      background_color=(*C_HEADER[:3], 1),
+                      title_color=C_CYAN, separator_color=C_CYAN)
+        def _restart(*_):
+            popup.dismiss()
+            import sys
+            try:
+                import android  # noqa — only on device
+                App.get_running_app().stop()
+            except ImportError:
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+        btn.bind(on_press=_restart)
+        popup.open()
 
     def _check_updates(self, *_):
         self._upd_btn._lbl.text = "Checking..."
