@@ -10,7 +10,7 @@ import urllib.request
 import webbrowser
 from datetime import datetime, date, timedelta
 
-_APP_VERSION = "1.1"
+_APP_VERSION = "1.2"
 _RELEASES_URL = "https://github.com/SilasMarner/tides-mobile/releases"
 _RELEASES_API = "https://api.github.com/repos/SilasMarner/tides-mobile/releases/latest"
 
@@ -138,6 +138,35 @@ def _load_theme():
     name = td.load_settings().get("theme", "Deep Sea")
     return name, THEMES.get(name, THEMES["Deep Sea"])
 
+def _apply_theme(name=None):
+    """Re-read settings (or apply name directly) and update all C_* globals in-place.
+    Called in build() after set_data_dir() so Android uses the correct path."""
+    global _THEME_NAME, _t
+    global C_BG, C_PANEL, C_CARD, C_HEADER, C_TEXT, C_DIM
+    global C_CYAN, C_YELLOW, C_BLUE, C_AMBER, C_GREEN, C_RED, C_PURPLE
+    global C_BTN, C_BTN_HI, C_NEARBY, C_FAV
+    if name is None:
+        name = td.load_settings().get("theme", "Deep Sea")
+    _THEME_NAME = name
+    _t = THEMES.get(name, THEMES["Deep Sea"])
+    C_BG      = _t["C_BG"]
+    C_PANEL   = _t["C_PANEL"]
+    C_CARD    = _t["C_CARD"]
+    C_HEADER  = _t["C_HEADER"]
+    C_TEXT    = _t["C_TEXT"]
+    C_DIM     = _t["C_DIM"]
+    C_CYAN    = _t["C_CYAN"]
+    C_YELLOW  = _t["C_YELLOW"]
+    C_BLUE    = _t["C_BLUE"]
+    C_AMBER   = _t["C_AMBER"]
+    C_GREEN   = _t["C_GREEN"]
+    C_RED     = _t["C_RED"]
+    C_PURPLE  = _t["C_PURPLE"]
+    C_BTN     = _t["C_BTN"]
+    C_BTN_HI  = _t["C_BTN_HI"]
+    C_NEARBY  = _t["C_NEARBY"]
+    C_FAV     = _t["C_FAV"]
+
 _THEME_NAME, _t = _load_theme()
 
 # ── Palette ───────────────────────────────────────────────────────────────────
@@ -164,10 +193,10 @@ _MESH_FMT = [('vPosition', 2, 'float'), ('vTexCoords0', 2, 'float')]
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
 
-def _lbl(text, font_size=14, color=C_TEXT, bold=False,
+def _lbl(text, font_size=14, color=None, bold=False,
          halign="left", height=None, **kw):
-    l = Label(text=text, font_size=sp(font_size), color=color, bold=bold,
-              halign=halign, valign="middle", **kw)
+    l = Label(text=text, font_size=sp(font_size), color=color if color is not None else C_TEXT,
+              bold=bold, halign=halign, valign="middle", **kw)
     if height is not None:
         l.size_hint_y = None
         l.height = dp(height)
@@ -176,9 +205,11 @@ def _lbl(text, font_size=14, color=C_TEXT, bold=False,
 
 
 def _btn(text, on_press=None, font_size=14, height=44,
-         bg=C_BTN, bg_hi=C_BTN_HI, radius=8, **kw):
+         bg=None, bg_hi=None, radius=8, **kw):
     b = _StyledButton(text=text, font_size=sp(font_size), color=C_TEXT,
-                      bg_color=bg, bg_hi_color=bg_hi, radius=radius,
+                      bg_color=bg if bg is not None else C_BTN,
+                      bg_hi_color=bg_hi if bg_hi is not None else C_BTN_HI,
+                      radius=radius,
                       size_hint_y=None, height=dp(height), **kw)
     if on_press:
         b.bind(on_press=on_press)
@@ -229,14 +260,15 @@ class _SectionHeader(BoxLayout):
 
 
 class _StyledButton(ButtonBehavior, BoxLayout):
-    def __init__(self, text="", font_size=sp(14), color=C_TEXT,
-                 bg_color=C_BTN, bg_hi_color=C_BTN_HI, radius=8, **kw):
+    def __init__(self, text="", font_size=sp(14), color=None,
+                 bg_color=None, bg_hi_color=None, radius=8, **kw):
         super().__init__(**kw)
-        self._bg_color    = bg_color
-        self._bg_hi_color = bg_hi_color
+        self._bg_color    = bg_color    if bg_color    is not None else C_BTN
+        self._bg_hi_color = bg_hi_color if bg_hi_color is not None else C_BTN_HI
+        color = color if color is not None else C_TEXT
         self._radius      = radius
         with self.canvas.before:
-            self._ci = Color(*bg_color)
+            self._ci = Color(*self._bg_color)
             self._ri = RoundedRectangle(pos=self.pos, size=self.size,
                                         radius=[dp(radius)] * 4)
         self.bind(pos=self._upd, size=self._upd)
@@ -570,8 +602,7 @@ class SearchScreen(Screen):
         bar.add_widget(_btn("Search", on_press=self._do_search,
                             size_hint_x=0.20, height=40, radius=6))
         bar.add_widget(_btn("i", on_press=self._open_about,
-                            size_hint_x=None, width=dp(36), height=40, radius=6,
-                            bg=(0.10, 0.18, 0.32, 1), bg_hi=(0.16, 0.28, 0.46, 1)))
+                            size_hint_x=None, width=dp(36), height=40, radius=6))
         root.add_widget(bar)
 
         # ── Autocomplete suggestion panel ──────────────────────────────────────
@@ -1223,8 +1254,7 @@ class TideScreen(Screen):
             info_box.add_widget(_btn(
                 "Save to favorites",
                 on_press=lambda *_: self._save_and_rebuild(),
-                height=36, radius=6,
-                bg=(0.10, 0.20, 0.12, 1), bg_hi=(0.15, 0.30, 0.18, 1)))
+                height=36, radius=6))
         self._content.add_widget(info_box)
 
         self._content.add_widget(self._build_conditions(d))
@@ -1378,8 +1408,7 @@ class TideScreen(Screen):
                 body.add_widget(_btn(
                     "View Full NWS Forecast  >",
                     on_press=lambda *_, _n=n: self._show_nws_popup(_n),
-                    height=34, radius=6,
-                    bg=(0.10, 0.18, 0.32, 1), bg_hi=(0.16, 0.28, 0.46, 1)))
+                    height=34, radius=6))
         return outer
 
     def _show_nws_popup(self, nws):
@@ -1630,8 +1659,7 @@ class AboutScreen(Screen):
         self._upd_status = row("", C_DIM, 11)
         upd_row = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(8))
         self._upd_btn = _btn("Check for Updates", on_press=self._check_updates,
-                             height=38, radius=6,
-                             bg=(0.10, 0.20, 0.34, 1), bg_hi=(0.16, 0.30, 0.48, 1))
+                             height=38, radius=6)
         upd_row.add_widget(self._upd_btn)
         body.add_widget(upd_row)
         body.add_widget(self._upd_status)
@@ -1720,11 +1748,18 @@ class AboutScreen(Screen):
                       title_color=C_CYAN, separator_color=C_CYAN)
         def _restart(*_):
             popup.dismiss()
-            import sys
+            import sys, signal
             try:
-                import android  # noqa — only on device
-                App.get_running_app().stop()
-            except ImportError:
+                from jnius import autoclass  # noqa — only on Android
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                Intent = autoclass('android.content.Intent')
+                mActivity = PythonActivity.mActivity
+                intent = mActivity.getPackageManager().getLaunchIntentForPackage(
+                    mActivity.getPackageName())
+                intent.addFlags(0x10000000 | 0x40000000)  # NEW_TASK | CLEAR_TOP
+                mActivity.startActivity(intent)
+                os.kill(os.getpid(), signal.SIGKILL)  # hard-kill so Python state resets
+            except Exception:
                 os.execv(sys.executable, [sys.executable] + sys.argv)
         btn.bind(on_press=_restart)
         popup.open()
@@ -1772,11 +1807,12 @@ class AboutScreen(Screen):
 
 class TidesApp(App):
     def build(self):
-        Window.clearcolor = C_BG
         self.title = "Tides"
-        android_private = os.environ.get('ANDROID_PRIVATE')
-        if android_private:
-            td.set_data_dir(android_private)
+        # user_data_dir is Kivy-guaranteed writable on every platform.
+        # Set it before _apply_theme() so load_settings() finds the right file.
+        td.set_data_dir(self.user_data_dir)
+        _apply_theme()
+        Window.clearcolor = C_BG
         Window.bind(on_keyboard=self._on_keyboard)
         sm = ScreenManager()
         sm.add_widget(SearchScreen(name="search"))

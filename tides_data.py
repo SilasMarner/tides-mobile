@@ -583,8 +583,7 @@ def remove_favorite(station_id):
 # ── Settings (theme, etc.) ────────────────────────────────────────────────────
 
 def _settings_path():
-    p = fav_path().parent
-    return p / "settings.json"
+    return fav_path().parent / "settings.json"
 
 
 def load_settings():
@@ -597,7 +596,12 @@ def load_settings():
 def save_settings(updates):
     s = load_settings()
     s.update(updates)
+    p = _settings_path()
     try:
-        _settings_path().write_text(json.dumps(s, indent=2))
+        data = json.dumps(s, indent=2)
+        with open(p, 'w') as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
     except Exception:
         pass

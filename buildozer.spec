@@ -10,7 +10,7 @@ source.dir = .
 source.include_exts = py,kv,json,png,jpg
 source.exclude_dirs = tests, bin, __pycache__
 
-version = 1.1
+version = 1.2
 
 # Dependencies — stdlib only; Kivy ships its own Python on Android
 requirements = python3,kivy
