@@ -1,0 +1,18 @@
+services:
+  flutter-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flutter-dev
+    restart: unless-stopped
+    ports:
+      - "8082:8080"       # VS Code in browser → http://10.0.0.13:8082
+    volumes:
+      - /u02/docker/flutter-dev/workspace:/workspace         # project files
+      - /u02/docker/flutter-dev/pub-cache:/data/pub-cache    # dart pub cache
+      - /u02/docker/flutter-dev/gradle:/root/.gradle          # gradle build cache
+      - /u02/docker/flutter-dev/android-sdk:/opt/android     # android sdk (persist between rebuilds)
+    environment:
+      - TZ=America/New_York
+    devices:
+      - /dev/bus/usb:/dev/bus/usb   # USB ADB passthrough (optional — remove if not needed)
