@@ -17,6 +17,8 @@ final tideDataProvider = FutureProvider<TideData?>((ref) async {
   return fetchAllData(station, targetDate: date);
 });
 
+final showWeekProvider = StateProvider<bool>((_) => false);
+
 final weekDataProvider = FutureProvider<List<TidePrediction>>((ref) async {
   final station = ref.watch(selectedStationProvider);
   if (station == null) return [];

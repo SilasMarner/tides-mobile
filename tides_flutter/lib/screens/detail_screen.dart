@@ -24,6 +24,7 @@ class DetailScreen extends ConsumerWidget {
     final isFav = ref.watch(favoritesProvider).any((s) => s.id == station.id);
     final date = ref.watch(selectedDateProvider);
     final weekAsync = ref.watch(weekDataProvider);
+    final showWeek = ref.watch(showWeekProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -34,6 +35,14 @@ class DetailScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.sync, color: kCyan),
+            tooltip: 'Refresh',
+            onPressed: () {
+              ref.invalidate(tideDataProvider);
+              ref.invalidate(weekDataProvider);
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.info_outline, color: kCyan),
             tooltip: 'About',
             onPressed: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const AboutScreen())),
@@ -45,17 +54,30 @@ class DetailScreen extends ConsumerWidget {
           _DateNav(date: date),
           _ViewToggle(),
           Expanded(
-            child: tideAsync.when(
-              data: (data) => data == null
-                  ? const Center(
-                      child: Text('No data', style: TextStyle(color: Colors.white54)))
-                  : _TodayView(data: data, station: station),
-              loading: () => const Center(
-                  child: CircularProgressIndicator(color: kCyan)),
-              error: (e, _) => Center(
-                  child: Text('Error: $e',
-                      style: const TextStyle(color: Colors.red))),
-            ),
+            child: showWeek
+                ? weekAsync.when(
+                    data: (preds) => _WeekView(
+                      predictions: preds,
+                      nws: tideAsync.valueOrNull?.nws,
+                    ),
+                    loading: () => const Center(
+                        child: CircularProgressIndicator(color: kCyan)),
+                    error: (e, _) => Center(
+                        child: Text('Error: $e',
+                            style: const TextStyle(color: Colors.red))),
+                  )
+                : tideAsync.when(
+                    data: (data) => data == null
+                        ? const Center(
+                            child: Text('No data',
+                                style: TextStyle(color: Colors.white54)))
+                        : _TodayView(data: data, station: station),
+                    loading: () => const Center(
+                        child: CircularProgressIndicator(color: kCyan)),
+                    error: (e, _) => Center(
+                        child: Text('Error: $e',
+                            style: const TextStyle(color: Colors.red))),
+                  ),
           ),
           if (!isFav)
             Padding(
@@ -96,8 +118,27 @@ class DetailScreen extends ConsumerWidget {
 class _ViewToggle extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // simple bool provider for today/week toggle
-    return const SizedBox.shrink(); // TODO: add SegmentedButton Today/Week
+    final showWeek = ref.watch(showWeekProvider);
+    return Container(
+      color: kNavyLight,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: SegmentedButton<bool>(
+        style: SegmentedButton.styleFrom(
+          backgroundColor: kNavy,
+          foregroundColor: Colors.white54,
+          selectedForegroundColor: kCyan,
+          selectedBackgroundColor: kNavyLight,
+          side: const BorderSide(color: kCyan, width: 1),
+        ),
+        segments: const [
+          ButtonSegment(value: false, label: Text('TODAY')),
+          ButtonSegment(value: true, label: Text('WEEK')),
+        ],
+        selected: {showWeek},
+        onSelectionChanged: (s) =>
+            ref.read(showWeekProvider.notifier).state = s.first,
+      ),
+    );
   }
 }
 
@@ -341,6 +382,164 @@ class _SunMoonCard extends StatelessWidget {
           ],
         ),
       );
+}
+
+final _weekDayFmt = DateFormat('EEE, MMM d');
+final _weekTimeFmt = DateFormat('h:mm a');
+
+class _WeekView extends StatefulWidget {
+  final List<TidePrediction> predictions;
+  final NwsForecast? nws;
+  const _WeekView({required this.predictions, this.nws});
+
+  @override
+  State<_WeekView> createState() => _WeekViewState();
+}
+
+class _WeekViewState extends State<_WeekView> {
+  final Set<DateTime> _expanded = {};
+
+  @override
+  Widget build(BuildContext context) {
+    final predictions = widget.predictions;
+    final nws = widget.nws;
+    if (predictions.isEmpty) {
+      return const Center(
+        child: Text('No week data', style: TextStyle(color: Colors.white38)),
+      );
+    }
+
+    // Group NWS periods by day name (skip "Night" periods for the day header)
+    final Map<String, NwsPeriod> nwsByDay = {};
+    for (final p in (nws?.periods ?? [])) {
+      // Store daytime periods keyed by their name (e.g. "Monday")
+      if (!p.name.toLowerCase().contains('night') &&
+          !p.name.toLowerCase().contains('tonight')) {
+        nwsByDay[p.name.toLowerCase()] = p;
+      }
+    }
+    // Group tide predictions by calendar date
+    final Map<DateTime, List<TidePrediction>> byDay = {};
+    for (final p in predictions) {
+      final day = DateTime(p.time.year, p.time.month, p.time.day);
+      byDay.putIfAbsent(day, () => []).add(p);
+    }
+    final days = byDay.keys.toList()..sort();
+
+    final _dayNameFmt = DateFormat('EEEE'); // full day name for NWS lookup
+
+    return ListView.builder(
+      itemCount: days.length,
+      itemBuilder: (_, i) {
+        final day = days[i];
+        final preds = byDay[day]!;
+        final today = DateTime.now();
+        final isToday = day.year == today.year &&
+            day.month == today.month &&
+            day.day == today.day;
+
+        // Find matching NWS period for this day
+        final dayName = isToday ? 'today' : _dayNameFmt.format(day).toLowerCase();
+        final nwsPeriod = nwsByDay[dayName];
+
+        final isExpanded = _expanded.contains(day);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            InkWell(
+              onTap: nwsPeriod != null
+                  ? () => setState(() {
+                        if (isExpanded) {
+                          _expanded.remove(day);
+                        } else {
+                          _expanded.add(day);
+                        }
+                      })
+                  : null,
+              child: Container(
+                color: kCardBg,
+                padding: const EdgeInsets.fromLTRB(16, 10, 12, 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isToday
+                          ? 'TODAY — ${_weekDayFmt.format(day)}'
+                          : _weekDayFmt.format(day).toUpperCase(),
+                      style: TextStyle(
+                        color: isToday ? kCyan : Colors.white70,
+                        fontSize: 11,
+                        letterSpacing: 1.5,
+                        fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                    if (nwsPeriod != null) ...[
+                      const SizedBox(height: 4),
+                      Row(children: [
+                        Text(
+                          '${nwsPeriod.temp}°F  ',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold),
+                        ),
+                        Expanded(
+                          child: Text(
+                            nwsPeriod.shortForecast,
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Icon(
+                          isExpanded
+                              ? Icons.expand_less
+                              : Icons.expand_more,
+                          color: Colors.white38,
+                          size: 18,
+                        ),
+                      ]),
+                      if (isExpanded) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          nwsPeriod.detail,
+                          style: const TextStyle(
+                              color: Colors.white60, fontSize: 12, height: 1.4),
+                        ),
+                      ],
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            ...preds.map((p) {
+              final isHigh = p.type == 'H';
+              return ListTile(
+                dense: true,
+                leading: Icon(
+                  isHigh ? Icons.arrow_upward : Icons.arrow_downward,
+                  color: isHigh ? kHighTide : kLowTide,
+                  size: 18,
+                ),
+                title: Text(
+                  _weekTimeFmt.format(p.time),
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                ),
+                trailing: Text(
+                  '${p.height >= 0 ? '+' : ''}${p.height.toStringAsFixed(2)} ft',
+                  style: TextStyle(
+                    color: isHigh ? kHighTide : kLowTide,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              );
+            }),
+            const Divider(color: Colors.white10, height: 1),
+          ],
+        );
+      },
+    );
+  }
 }
 
 class _FishingCard extends StatelessWidget {

@@ -27,6 +27,15 @@ class ConditionsCard extends StatelessWidget {
                   _cell('Water Level', _fmt(c.waterLevel, ' ft')),
                 ],
               ),
+              if (c.salinity != null) ...[
+                const SizedBox(height: 8),
+                Row(children: [
+                  _cell('Salinity', '${c.salinity!.toStringAsFixed(1)} ppt'),
+                  const Expanded(child: SizedBox()),
+                  const Expanded(child: SizedBox()),
+                  const Expanded(child: SizedBox()),
+                ]),
+              ],
               const SizedBox(height: 8),
               _windRow(),
             ],

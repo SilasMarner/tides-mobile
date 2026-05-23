@@ -367,6 +367,7 @@ Conditions _parseConditions(Map<String, dynamic?> obs, int pressureTrend) {
   final pres = obs['air_pressure'];
   final water = obs['water_temperature'];
   final wlev = obs['water_level'];
+  final sal = obs['salinity'];
 
   double? windSpeed, windDir, windGust;
   String? windDirStr, beaufortStr;
@@ -388,6 +389,7 @@ Conditions _parseConditions(Map<String, dynamic?> obs, int pressureTrend) {
     beaufortStr: beaufortStr,
     pressure: tryParse(pres?['v']),
     waterLevel: tryParse(wlev?['v']),
+    salinity: tryParse(sal?['s']),
     pressureTrend: pressureTrend,
   );
 }
@@ -401,7 +403,9 @@ NwsForecast? _parseNws(Map<String, dynamic>? raw) {
   for (final p in (raw['forecast'] as List? ?? [])) {
     periods.add(NwsPeriod(
       name: p['name'] as String? ?? '',
+      shortForecast: p['shortForecast'] as String? ?? '',
       detail: p['detailedForecast'] as String? ?? '',
+      temp: (p['temperature'] as num?)?.toInt() ?? 0,
     ));
   }
   return NwsForecast(
@@ -488,6 +492,7 @@ Conditions _supplementFromNws(Conditions c, NwsForecast? nws) {
     beaufortStr:  c.beaufortStr  ?? nwsBeaufort,
     pressure:     c.pressure,
     waterLevel:   c.waterLevel,
+    salinity:     c.salinity,
     pressureTrend: c.pressureTrend,
   );
 }
@@ -513,6 +518,7 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
     _fetchObs(id, 'water_temperature'),        // 6
     _fetchWaterLevel(id),                      // 7
     _fetchNws(lat, lon),                       // 8
+    _fetchObs(id, 'salinity'),                 // 9
   ]);
 
   final hourlyList = results[0] as List<TidePrediction>;
@@ -536,6 +542,7 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
     'air_pressure': results[4],
     'water_temperature': results[6],
     'water_level': results[7],
+    'salinity': results[9],
   };
   var conditions = _parseConditions(obsRaw, pressureTrend);
   final nws = _parseNws(nwsRaw);

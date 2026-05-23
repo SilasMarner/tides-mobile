@@ -16,6 +16,7 @@ class Conditions {
   final double? windGust;
   final double? pressure;
   final double? waterLevel;
+  final double? salinity; // PSU (ppt) — null when station has no sensor
   final String? windDirStr;
   final String? beaufortStr;
   final int pressureTrend; // +1 rising, -1 falling, 0 steady
@@ -28,6 +29,7 @@ class Conditions {
     this.windGust,
     this.pressure,
     this.waterLevel,
+    this.salinity,
     this.windDirStr,
     this.beaufortStr,
     this.pressureTrend = 0,
@@ -36,9 +38,16 @@ class Conditions {
 
 class NwsPeriod {
   final String name;
+  final String shortForecast;
   final String detail;
+  final int temp;
 
-  const NwsPeriod({required this.name, required this.detail});
+  const NwsPeriod({
+    required this.name,
+    required this.shortForecast,
+    required this.detail,
+    required this.temp,
+  });
 }
 
 class NwsForecast {
