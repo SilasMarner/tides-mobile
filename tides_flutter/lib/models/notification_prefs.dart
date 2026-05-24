@@ -1,0 +1,61 @@
+import 'dart:convert';
+
+class NotificationPrefs {
+  final bool enabled;
+  final int leadMinutes;        // 15, 30, 45, or 60
+  final bool notifyTides;       // hi/lo tide events
+  final bool notifySolunarMajor; // major feeding windows
+  final bool notifyFishing;     // fishing rating 4+ stars
+  final Set<String> stations;   // station IDs with notifications on
+
+  const NotificationPrefs({
+    this.enabled = false,
+    this.leadMinutes = 30,
+    this.notifyTides = true,
+    this.notifySolunarMajor = true,
+    this.notifyFishing = true,
+    this.stations = const {},
+  });
+
+  NotificationPrefs copyWith({
+    bool? enabled,
+    int? leadMinutes,
+    bool? notifyTides,
+    bool? notifySolunarMajor,
+    bool? notifyFishing,
+    Set<String>? stations,
+  }) =>
+      NotificationPrefs(
+        enabled: enabled ?? this.enabled,
+        leadMinutes: leadMinutes ?? this.leadMinutes,
+        notifyTides: notifyTides ?? this.notifyTides,
+        notifySolunarMajor: notifySolunarMajor ?? this.notifySolunarMajor,
+        notifyFishing: notifyFishing ?? this.notifyFishing,
+        stations: stations ?? this.stations,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'enabled': enabled,
+        'leadMinutes': leadMinutes,
+        'notifyTides': notifyTides,
+        'notifySolunarMajor': notifySolunarMajor,
+        'notifyFishing': notifyFishing,
+        'stations': stations.toList(),
+      };
+
+  factory NotificationPrefs.fromJson(Map<String, dynamic> j) =>
+      NotificationPrefs(
+        enabled: j['enabled'] as bool? ?? false,
+        leadMinutes: j['leadMinutes'] as int? ?? 30,
+        notifyTides: j['notifyTides'] as bool? ?? true,
+        notifySolunarMajor: j['notifySolunarMajor'] as bool? ?? true,
+        notifyFishing: j['notifyFishing'] as bool? ?? true,
+        stations: Set<String>.from(
+            (j['stations'] as List<dynamic>? ?? []).cast<String>()),
+      );
+
+  static NotificationPrefs fromJsonString(String s) =>
+      NotificationPrefs.fromJson(jsonDecode(s) as Map<String, dynamic>);
+
+  String toJsonString() => jsonEncode(toJson());
+}

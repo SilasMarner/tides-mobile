@@ -86,8 +86,8 @@ class ConditionsCard extends StatelessWidget {
             if (c.windDirStr != null) c.windDirStr!,
             '${c.windSpeed!.toStringAsFixed(0)} mph',
             if (c.windGust != null && c.windGust! > c.windSpeed! + 3)
-              'G${c.windGust!.toStringAsFixed(0)}',
-            if (c.beaufortStr != null) '· ${c.beaufortStr}',
+              'gusts ${c.windGust!.toStringAsFixed(0)} mph',
+            if (c.beaufortStr != null) '— ${c.beaufortStr}',
           ].join(' '),
           style: const TextStyle(color: Colors.white, fontSize: 12),
         ),

@@ -35,23 +35,13 @@ class _WaveHeaderState extends State<WaveHeader>
         builder: (_, __) => CustomPaint(
           painter: _WavePainter(_ctrl.value),
           child: SizedBox(
-            height: 180,
+            height: 100,
             width: double.infinity,
             child: Padding(
-              padding: const EdgeInsets.only(top: 40),
+              padding: const EdgeInsets.only(top: 16),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    '~ TIDES',
-                    style: TextStyle(
-                      color: kCyan,
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 4,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
                   const Text(
                     'Live NOAA Conditions',
                     style: TextStyle(color: kCyanLight, fontSize: 13),

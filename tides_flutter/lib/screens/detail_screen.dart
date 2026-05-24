@@ -5,6 +5,8 @@ import '../models/station.dart';
 import '../models/tide_data.dart';
 import '../providers/detail_provider.dart';
 import '../providers/favorites_provider.dart';
+import '../providers/notification_provider.dart';
+import '../services/notification_service.dart';
 import '../widgets/conditions_card.dart';
 import '../widgets/tide_chart.dart';
 import '../services/noaa_api.dart' show fmtHhmm;
@@ -25,6 +27,19 @@ class DetailScreen extends ConsumerWidget {
     final date = ref.watch(selectedDateProvider);
     final weekAsync = ref.watch(weekDataProvider);
     final showWeek = ref.watch(showWeekProvider);
+    final notifPrefs = ref.watch(notificationPrefsProvider);
+    final notifEnabled = notifPrefs.enabled &&
+        notifPrefs.stations.contains(station.id);
+
+    // Schedule notifications whenever today's data loads for this station
+    ref.listen(tideDataProvider, (_, next) {
+      next.whenData((data) {
+        if (data != null && data.isToday && notifEnabled) {
+          NotificationService.scheduleForStation(
+              station.id, station.name, data, notifPrefs);
+        }
+      });
+    });
 
     return Scaffold(
       appBar: AppBar(
@@ -33,6 +48,29 @@ class DetailScreen extends ConsumerWidget {
         title: Text(station.name.toUpperCase(),
             style: const TextStyle(color: kCyan, fontSize: 14)),
         actions: [
+          IconButton(
+            icon: Icon(
+              notifEnabled
+                  ? Icons.notifications_active
+                  : Icons.notifications_none,
+              color: notifEnabled ? kCyan : Colors.white38,
+            ),
+            tooltip: notifEnabled ? 'Notifications on' : 'Notifications off',
+            onPressed: () {
+              if (!notifPrefs.enabled) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Enable notifications in Settings first'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+                return;
+              }
+              ref
+                  .read(notificationPrefsProvider.notifier)
+                  .toggleStation(station.id);
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.sync, color: kCyan),
             tooltip: 'Refresh',

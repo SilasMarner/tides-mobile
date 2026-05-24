@@ -10,6 +10,7 @@ import '../widgets/wave_header.dart';
 import '../widgets/station_tile.dart';
 import '../theme.dart';
 import 'detail_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -72,6 +73,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final showFavs = favorites.isNotEmpty && !showSearch && !showNearby;
 
     return Scaffold(
+      appBar: AppBar(
+        backgroundColor: kNavyLight,
+        automaticallyImplyLeading: false,
+        title: const Text('~ TIDES',
+            style: TextStyle(color: kCyan, fontWeight: FontWeight.bold)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings, color: kCyan),
+            tooltip: 'Settings',
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const SettingsScreen())),
+          ),
+        ],
+      ),
       body: Column(
         children: [
           WaveHeader(locationName: _locMsg),
