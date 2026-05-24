@@ -1,12 +1,27 @@
+# Python / Kivy legacy
 __pycache__/
 *.pyc
 *.pyo
 .buildozer/
 bin/
-*.apk
-*.aab
-.env
 
-# Signing
+# Flutter build outputs
+tides_flutter/build/
+tides_flutter/.dart_tool/
+tides_flutter/.flutter-plugins
+tides_flutter/.flutter-plugins-dependencies
+
+# Android signing — NEVER commit these
 *.keystore
 *.jks
+tides_flutter/android/key.properties
+
+# APK / AAB release artifacts
+*.apk
+*.aab
+*.idsig
+
+# IDE
+.idea/
+*.iml
+.vscode/

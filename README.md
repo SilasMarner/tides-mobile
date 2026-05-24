@@ -1,107 +1,130 @@
-# tides-mobile
+# Tides — Live NOAA Tide App for Android
 
-## Screenshots
-
-| Search | Tide Detail | About |
-|---|---|---|
-| ![Search](screenshots/search_result.png) | ![Tide Data](screenshots/tide_data.png) | ![About](screenshots/about_top.png) |
-
----
-
-Android app version of [console-tides](../console-tides) — same live NOAA data, now with a touch UI built in [Kivy](https://kivy.org).
-
----
-
-## What it shows
-
-| Screen | Content |
-|---|---|
-| **Station search** | Search ~3,450 NOAA tide stations by city/name/state; saved favorites |
-| **Conditions** | Air & water temp, wind speed/direction/gusts, pressure, observed water level, NWS forecast |
-| **Tide chart** | 24-hour smooth wave chart with hi/lo markers and current-time indicator |
-| **Sun & Moon** | Sunrise, solar noon, sunset, golden hour, moon phase + illumination |
-| **Solunar periods** | Major (2-hour) and minor (1-hour) feeding windows with live NOW marker |
-| **Fishing rating** | 1–5 star rating based on tide stage, wind, and solunar alignment |
-
----
+A Flutter app for Android that shows real-time NOAA tide data, weather conditions, solunar tables, and fishing ratings. Built for fishermen and boaters who need quick, reliable tidal information on the water.
 
 ## Download
 
-**[tides-1.2-arm64-v8a_x86_64-release.apk](https://github.com/SilasMarner/tides-mobile/releases/tag/v1.2)** — latest release (v1.2)
+**[Latest release on GitHub Releases](https://github.com/SilasMarner/tides-mobile/releases/latest)** — download the `.apk` and tap to install.
 
-Fat APK: contains both **arm64-v8a** (real phones) and **x86_64** (emulator) slices. Android selects the correct one at install time — no separate builds needed.
-
-To sideload: enable *Install unknown apps* for your file manager in Android Settings, download the APK, and tap to install.
+To sideload: enable *Install unknown apps* for your file manager in Android Settings → Apps, download the APK, and tap to install.
 
 ---
 
-## Prerequisites
+## Features
 
-### Desktop / development testing
+- **Live tide charts** — smooth cosine-interpolated curves with high/low dot markers and a current-time dashed line
+- **All ~3,450 NOAA stations** — search by city, station name, or state
+- **Subordinate stations** — cosine interpolation fills hourly data for stations that only publish hi/lo predictions
+- **Real-time conditions** — air temp, water temp, barometric pressure (with trend ↑↓), water level, **salinity**
+- **Salinity** — shown when the station has a sensor (PSU / ppt)
+- **NWS weather** — current conditions + 7-day forecast per station; supplements missing NOAA sensor data
+- **Week view** — 7 days of hi/lo tides with NWS temperature and short forecast per day; tap any day to expand the full detailed forecast
+- **Solunar tables** — major/minor feeding periods calculated from moon position
+- **Sun & moon** — sunrise, sunset, golden hour, moon phase and illumination percentage
+- **Fishing rating** — 1–5 star rating based on tidal movement, solunar timing, and wind
+- **Favorites** — save stations with one tap; shown on home screen
+- **Use My Location** — GPS-based nearest stations
+
+---
+
+## Screenshots
+
+> Coming soon — see the [releases page](https://github.com/SilasMarner/tides-mobile/releases) for screenshots.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| UI | Flutter 3.44+ / Material 3 |
+| State | Riverpod (FutureProvider, StateProvider) |
+| Charts | fl_chart |
+| HTTP | Dio |
+| Location | Geolocator |
+| Storage | shared_preferences |
+| Tide data | NOAA CO-OPS API |
+| Weather | NWS weather.gov API |
+
+---
+
+## Building from Source
+
+### Prerequisites
+- Flutter SDK 3.44+
+- Android SDK with API 35+
+- Java 17
 
 ```bash
-pip install kivy
-python3 main.py
+cd tides_flutter
+flutter pub get
+flutter build apk --release
 ```
 
-Kivy runs the same code on Linux/macOS/Windows — test the full UI on your desktop before building for Android.
-
-### Building the APK
-
-You need **Buildozer** and its Android toolchain (Java JDK 17, Android SDK/NDK). The easiest way is inside Docker or on Ubuntu/Debian:
-
+### Debug (emulator x86_64)
 ```bash
-# 1. Install Buildozer
-pip install buildozer
-
-# 2. Install system deps (Ubuntu/Debian)
-sudo apt-get install -y \
-    git zip unzip openjdk-17-jdk \
-    python3-pip python3-setuptools \
-    libffi-dev libssl-dev
-
-# 3. Build (first run downloads ~1 GB of Android toolchain — takes 15-30 min)
-cd tides-android
-buildozer android debug
-
-# APK lands at:
-#   bin/tides-1.0-arm64-v8a-debug.apk
+flutter build apk --debug --target-platform android-x64
+adb install build/app/outputs/flutter-apk/app-debug.apk
 ```
 
-### Installing on your phone
+### Signed release build
+Create `tides_flutter/android/key.properties` — **never commit this file**:
 
+```properties
+storeFile=../../tides.keystore
+storePassword=YOUR_STORE_PASSWORD
+keyAlias=tides
+keyPassword=YOUR_KEY_PASSWORD
+```
+
+Then build the App Bundle for Play Store submission:
 ```bash
-# USB debugging on, then:
-buildozer android deploy run
-
-# Or copy the APK manually and open it on the phone:
-adb install bin/tides-1.0-arm64-v8a-debug.apk
+flutter build appbundle --release
+# Output: tides_flutter/build/app/outputs/bundle/release/app-release.aab
 ```
 
 ---
 
-## Project structure
+## App ID
 
-```
-tides-android/
-├── main.py          Kivy app — all screens and widgets
-├── tides_data.py    Pure data layer — NOAA fetching, astronomy math, favorites
-├── buildozer.spec   Android build config
-└── README.md
-```
-
-`tides_data.py` has no Kivy dependency and can be imported by the terminal `tides.py` too — shared data logic.
+`com.mattbettinger.tides`
 
 ---
 
-## Favorites
+## Data Sources
 
-Favorites are stored at `~/.config/tides/favorites.json` — the same file used by the terminal script. Search for a station, tap it, and tap **Save to favorites** on the tide screen. Remove favorites from the star (★) row in the search list.
+Both APIs are free and require no API key:
+
+- **NOAA CO-OPS API** — tide predictions, observations, water level, salinity  
+  https://api.tidesandcurrents.noaa.gov/
+- **NWS / weather.gov** — 7-day forecasts and hourly conditions  
+  https://api.weather.gov/
 
 ---
 
-## No API key required
+## Project Structure
 
-All data comes from free public APIs:
-- **NOAA CO-OPS** — tidesandcurrents.noaa.gov
-- **National Weather Service** — weather.gov
+```
+tides-mobile/
+├── tides_flutter/       Flutter app (primary)
+│   ├── lib/
+│   │   ├── models/      Data models (TideData, Conditions, etc.)
+│   │   ├── providers/   Riverpod state providers
+│   │   ├── screens/     HomeScreen, DetailScreen, AboutScreen
+│   │   ├── services/    noaa_api.dart, location_service.dart
+│   │   └── widgets/     TideChart, ConditionsCard, StationTile
+│   └── android/         Android build config
+└── legacy/              Original Python/Kivy v1.2 (archived)
+```
+
+---
+
+## Developer
+
+Matt Bettinger — tides-mobile.human695@passmail.com
+
+---
+
+## License
+
+MIT — free to use, modify, and distribute.
