@@ -256,22 +256,50 @@ class _TodayView extends StatelessWidget {
   }
 }
 
-class _NwsCard extends StatelessWidget {
+class _NwsCard extends StatefulWidget {
   final NwsForecast nws;
   const _NwsCard({required this.nws});
 
   @override
-  Widget build(BuildContext context) => Card(
-        color: kCardBg,
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+  State<_NwsCard> createState() => _NwsCardState();
+}
+
+class _NwsCardState extends State<_NwsCard> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final nws = widget.nws;
+    return Card(
+      color: kCardBg,
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: nws.periods.isNotEmpty
+            ? () => setState(() => _expanded = !_expanded)
+            : null,
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('NWS',
-                  style: TextStyle(color: kCyan, fontSize: 11, letterSpacing: 1.5)),
+              // Header row
+              Row(
+                children: [
+                  const Text('NWS',
+                      style: TextStyle(
+                          color: kCyan, fontSize: 11, letterSpacing: 1.5)),
+                  const Spacer(),
+                  if (nws.periods.isNotEmpty)
+                    Icon(
+                      _expanded ? Icons.expand_less : Icons.expand_more,
+                      color: Colors.white38,
+                      size: 18,
+                    ),
+                ],
+              ),
               const SizedBox(height: 6),
+              // Current conditions summary
               Text(
                 '${nws.condition}  ·  ${nws.temp}°F  ·  Rain ${nws.rainPct}%',
                 style: const TextStyle(color: Colors.white, fontSize: 13),
@@ -281,10 +309,48 @@ class _NwsCard extends StatelessWidget {
                 Text('Wind ${nws.windDir} ${nws.windSpeed}',
                     style: const TextStyle(color: Colors.white70, fontSize: 12)),
               ],
+              // Expanded: full forecast periods
+              if (_expanded && nws.periods.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                const Divider(color: Colors.white12, height: 1),
+                ...nws.periods.map((p) => Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            p.name,
+                            style: const TextStyle(
+                                color: kCyan,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold),
+                          ),
+                          if (p.temp > 0) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              '${p.temp}°F  ·  ${p.shortForecast}',
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 12),
+                            ),
+                          ],
+                          const SizedBox(height: 3),
+                          Text(
+                            p.detail,
+                            style: const TextStyle(
+                                color: Colors.white60,
+                                fontSize: 12,
+                                height: 1.4),
+                          ),
+                        ],
+                      ),
+                    )),
+              ],
             ],
           ),
         ),
-      );
+      ),
+    );
+  }
 }
 
 class _SolunarCard extends StatelessWidget {
@@ -363,8 +429,23 @@ class _SunMoonCard extends StatelessWidget {
                         style: TextStyle(
                             color: kCyan, fontSize: 11, letterSpacing: 1.5)),
                     const SizedBox(height: 6),
-                    _row('Phase', data.moon.phase),
-                    _row('Illumination', '${data.moon.pct}%'),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Text(
+                          _moonEmoji(data.moon.phase),
+                          style: const TextStyle(fontSize: 36),
+                        ),
+                        const SizedBox(width: 10),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _row('Phase', data.moon.phase),
+                            _row('Lit', '${data.moon.pct}%'),
+                          ],
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -382,6 +463,20 @@ class _SunMoonCard extends StatelessWidget {
           ],
         ),
       );
+
+  String _moonEmoji(String phase) {
+    switch (phase) {
+      case 'New Moon':        return '🌑';
+      case 'Waxing Crescent': return '🌒';
+      case 'First Quarter':   return '🌓';
+      case 'Waxing Gibbous':  return '🌔';
+      case 'Full Moon':       return '🌕';
+      case 'Waning Gibbous':  return '🌖';
+      case 'Last Quarter':    return '🌗';
+      case 'Waning Crescent': return '🌘';
+      default:                return '🌙';
+    }
+  }
 }
 
 final _weekDayFmt = DateFormat('EEE, MMM d');
