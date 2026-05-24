@@ -67,7 +67,27 @@ flutter build apk --debug --target-platform android-x64
 adb install build/app/outputs/flutter-apk/app-debug.apk
 ```
 
-### Signed release build
+### iOS (requires macOS + Xcode)
+
+The `ios/` directory is included and ready — bundle ID is already set to `com.mattbettinger.tides`.
+
+```bash
+cd tides_flutter
+flutter pub get
+cd ios && pod install && cd ..
+flutter build ipa --release
+```
+
+Requires:
+- macOS with Xcode 15+
+- Apple Developer account ($99/year) for App Store / TestFlight distribution
+- Free account works for sideloading to your own device via Xcode
+
+For cloud builds without a Mac, [Codemagic](https://codemagic.io) can build both Android and iOS from the same repo (free tier: 500 min/month).
+
+---
+
+### Signed Android release build
 Create `tides_flutter/android/key.properties` — **never commit this file**:
 
 ```properties
