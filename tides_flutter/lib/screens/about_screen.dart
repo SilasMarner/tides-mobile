@@ -20,7 +20,33 @@ class AboutScreen extends StatelessWidget {
             const SizedBox(height: 4),
             const Text('Version 2.0  ·  Live NOAA tide data for Android',
                 style: TextStyle(color: Colors.white54, fontSize: 13)),
+            const SizedBox(height: 2),
+            const Text('Built with Flutter',
+                style: TextStyle(color: Colors.white38, fontSize: 12)),
             const Divider(color: Colors.white12, height: 32),
+
+            // Features
+            const Text('Features',
+                style: TextStyle(color: kCyan, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            ..._features.map((f) => Padding(
+                  padding: const EdgeInsets.only(bottom: 5),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('• ',
+                          style: TextStyle(color: kCyan, fontSize: 13)),
+                      Expanded(
+                        child: Text(f,
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 13)),
+                      ),
+                    ],
+                  ),
+                )),
+            const Divider(color: Colors.white12, height: 32),
+
+            // Developer
             const Text('Developer',
                 style: TextStyle(color: kCyan, fontWeight: FontWeight.bold)),
             const SizedBox(height: 6),
@@ -29,7 +55,12 @@ class AboutScreen extends StatelessWidget {
             const SizedBox(height: 2),
             const Text('tides-mobile.human695@passmail.com',
                 style: TextStyle(color: Colors.white54, fontSize: 12)),
+            const SizedBox(height: 6),
+            const Text('github.com/SilasMarner/tides-mobile',
+                style: TextStyle(color: kCyan, fontSize: 12)),
             const Divider(color: Colors.white12, height: 32),
+
+            // Credits
             const Text('Open Source Software & Data Sources',
                 style: TextStyle(color: kCyan, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
@@ -38,6 +69,19 @@ class AboutScreen extends StatelessWidget {
         ),
       );
 
+  static const _features = [
+    'Live 24-hour tide charts with hi/lo markers and current-time indicator',
+    'All ~3,450 NOAA tide stations — search by city, name, or state',
+    'Real-time conditions: air & water temp, pressure, water level, salinity',
+    'Salinity displayed for stations with a sensor (ppt / PSU)',
+    'NWS 7-day forecast per station — tap to expand full daily detail',
+    'Week view: hi/lo tides for 7 days with NWS forecast per day',
+    'Solunar tables: major & minor feeding periods',
+    'Sun & moon: sunrise, sunset, golden hour, phase, illumination',
+    'Fishing rating (1–5 stars) based on tides, solunar timing, and wind',
+    'Favorites and GPS-based nearest stations',
+  ];
+
   static const _credits = [
     ('Flutter', 'BSD 3-Clause', 'flutter.dev'),
     ('Dart', 'BSD 3-Clause', 'dart.dev'),
@@ -45,8 +89,10 @@ class AboutScreen extends StatelessWidget {
     ('Riverpod', 'MIT License', 'riverpod.dev'),
     ('Dio', 'MIT License', 'pub.dev/packages/dio'),
     ('Geolocator', 'MIT License', 'pub.dev/packages/geolocator'),
+    ('intl', 'BSD 3-Clause', 'pub.dev/packages/intl'),
+    ('shared_preferences', 'BSD 3-Clause', 'pub.dev/packages/shared_preferences'),
     ('NOAA CO-OPS API', 'Public Domain', 'tidesandcurrents.noaa.gov'),
-    ('NWS API', 'Public Domain', 'weather.gov/documentation/services-web-api'),
+    ('NWS API', 'Public Domain', 'weather.gov'),
   ];
 
   Widget _creditTile((String, String, String) c) => Card(
