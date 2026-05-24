@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
@@ -19,11 +20,13 @@ class AboutScreen extends StatelessWidget {
                 style: TextStyle(
                     color: kCyan, fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            const Text('Version 2.0  ·  Live NOAA tide data for Android',
+            const Text('Version 2.1  ·  Live NOAA tide data for Android',
                 style: TextStyle(color: Colors.white54, fontSize: 13)),
             const SizedBox(height: 2),
             const Text('Built with Flutter',
                 style: TextStyle(color: Colors.white38, fontSize: 12)),
+            const SizedBox(height: 12),
+            const _CheckForUpdatesButton(),
             const Divider(color: Colors.white12, height: 32),
 
             // Features
@@ -191,5 +194,74 @@ class AboutScreen extends StatelessWidget {
             ],
           ),
         ),
+      );
+}
+
+class _CheckForUpdatesButton extends StatefulWidget {
+  const _CheckForUpdatesButton();
+
+  @override
+  State<_CheckForUpdatesButton> createState() => _CheckForUpdatesButtonState();
+}
+
+class _CheckForUpdatesButtonState extends State<_CheckForUpdatesButton> {
+  static const _currentVersion = '2.1.0';
+  bool _checking = false;
+  String? _status;
+
+  Future<void> _check() async {
+    setState(() { _checking = true; _status = null; });
+    try {
+      final resp = await Dio().get(
+        'https://api.github.com/repos/SilasMarner/tides-mobile/releases/latest',
+        options: Options(headers: {'Accept': 'application/vnd.github+json'}),
+      );
+      final tag = (resp.data['tag_name'] as String).replaceFirst('v', '');
+      setState(() {
+        _status = tag == _currentVersion
+            ? 'You\'re up to date (v$_currentVersion)'
+            : 'Update available: v$tag';
+      });
+    } catch (_) {
+      setState(() { _status = 'Could not check for updates'; });
+    } finally {
+      if (mounted) setState(() { _checking = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Check for Updates',
+                    style: TextStyle(color: Colors.white70, fontSize: 13)),
+                if (_status != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(_status!,
+                        style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                  ),
+              ],
+            ),
+          ),
+          _checking
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: kCyan),
+                )
+              : TextButton(
+                  onPressed: _check,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('Check', style: TextStyle(color: kCyan, fontSize: 13)),
+                ),
+        ],
       );
 }
