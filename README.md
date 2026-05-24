@@ -10,6 +10,27 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 
 ---
 
+## Changelog
+
+### v2.1.0
+- Fixed About screen showing wrong version (was 2.0, now correctly shows 2.1)
+- Restored **Check for Updates** button in the About screen — checks GitHub releases and shows inline status
+
+### v2.0.0
+- Full rewrite in Flutter (replaces Python/Kivy v1.x)
+- Live 24-hour tide charts with hi/lo markers and current-time indicator
+- All ~3,450 NOAA tide stations — search by city, name, or state
+- Real-time conditions: air & water temp, pressure, water level, salinity
+- NWS 7-day forecast per station with expandable daily detail
+- Week view: hi/lo tides for 7 days with NWS forecast per day
+- Solunar tables: major & minor feeding periods
+- Sun & moon: sunrise, sunset, golden hour, phase, illumination
+- Fishing rating (1–5 stars) based on tides, solunar timing, and wind
+- Favorites and GPS-based nearest stations
+- Tide change and solunar notifications
+
+---
+
 ## Features
 
 - **Live tide charts** — smooth cosine-interpolated curves with high/low dot markers and a current-time dashed line
