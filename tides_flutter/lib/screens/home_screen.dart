@@ -9,6 +9,7 @@ import '../services/noaa_api.dart';
 import '../widgets/wave_header.dart';
 import '../widgets/station_tile.dart';
 import '../theme.dart';
+import 'about_screen.dart';
 import 'detail_screen.dart';
 import 'settings_screen.dart';
 
@@ -79,6 +80,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         title: const Text('~ TIDES',
             style: TextStyle(color: kCyan, fontWeight: FontWeight.bold)),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.info_outline, color: kCyan),
+            tooltip: 'About',
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const AboutScreen())),
+          ),
           IconButton(
             icon: const Icon(Icons.settings, color: kCyan),
             tooltip: 'Settings',
