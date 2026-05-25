@@ -6,6 +6,7 @@ import '../providers/favorites_provider.dart';
 import '../providers/detail_provider.dart';
 import '../services/location_service.dart';
 import '../services/noaa_api.dart';
+import '../providers/capabilities_provider.dart';
 import '../widgets/wave_header.dart';
 import '../widgets/station_tile.dart';
 import '../theme.dart';
@@ -68,6 +69,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final searchAsync = ref.watch(searchResultsProvider);
     final favorites = ref.watch(favoritesProvider);
     final query = ref.watch(searchQueryProvider);
+    final capsMap = ref.watch(stationCapabilitiesProvider).valueOrNull;
 
     final showSearch = query.length >= 2;
     final showNearby = _nearbyStations != null && !showSearch;
@@ -165,11 +167,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             child: Text('No stations found.',
                                 style: TextStyle(color: Colors.white54)))
                         : _StationList(
-                            label:
-                                'Results for "${_ctrl.text}"',
+                            label: 'Results for "${_ctrl.text}"',
                             stations: results,
                             onTap: _openStation,
                             favorites: favorites,
+                            capsMap: capsMap,
                           ),
                     loading: () => const Center(
                         child: CircularProgressIndicator(color: kCyan)),
@@ -183,6 +185,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         stations: _nearbyStations!,
                         onTap: _openStation,
                         favorites: favorites,
+                        capsMap: capsMap,
                       )
                     : showFavs
                         ? _StationList(
@@ -190,6 +193,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             stations: favorites,
                             onTap: _openStation,
                             favorites: favorites,
+                            capsMap: capsMap,
                           )
                         : const Center(
                             child: Text('Search for a station above to get started.',
@@ -206,24 +210,87 @@ class _StationList extends StatelessWidget {
   final List<Station> stations;
   final void Function(Station) onTap;
   final List<Station> favorites;
+  final Map<String, Set<String>>? capsMap;
 
   const _StationList({
     required this.label,
     required this.stations,
     required this.onTap,
     required this.favorites,
+    this.capsMap,
   });
+
+  void _showLegend(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: kNavyLight,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Sensor availability',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16)),
+            const SizedBox(height: 4),
+            const Text(
+              'Icons shown next to stations that have the live sensor.',
+              style: TextStyle(color: Colors.white38, fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+            ...kStationBadges.map((b) => Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: Row(children: [
+                    Icon(b.icon, size: 18, color: kCyan),
+                    const SizedBox(width: 14),
+                    Text(b.label,
+                        style: const TextStyle(color: Colors.white70)),
+                  ]),
+                )),
+            const SizedBox(height: 4),
+            const Text(
+              'Stations without icons still have full tide predictions.',
+              style: TextStyle(color: Colors.white24, fontSize: 11),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-            child: Text(
-              '${stations.length} station(s) found\n'
-              'Results for "$label"',
-              style: const TextStyle(color: kCyan, fontSize: 12),
+            padding: const EdgeInsets.fromLTRB(16, 4, 12, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${stations.length} station(s) found\n'
+                    'Results for "$label"',
+                    style: const TextStyle(color: kCyan, fontSize: 12),
+                  ),
+                ),
+                if (capsMap != null)
+                  Tooltip(
+                    message: 'Sensor legend',
+                    child: IconButton(
+                      icon: const Icon(Icons.info_outline,
+                          size: 16, color: kCyan),
+                      onPressed: () => _showLegend(context),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ),
+              ],
             ),
           ),
           Expanded(
@@ -235,6 +302,7 @@ class _StationList extends StatelessWidget {
                 station: stations[i],
                 isFavorite: favorites.any((f) => f.id == stations[i].id),
                 onTap: () => onTap(stations[i]),
+                caps: capsMap?[stations[i].id],
               ),
             ),
           ),
