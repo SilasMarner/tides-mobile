@@ -227,6 +227,38 @@ Future<dynamic> apiGet(String url, {Map<String, String>? headers}) async {
   }
 }
 
+// ── Station capability map ────────────────────────────────────────────────────
+
+const _capProducts = {
+  'wl':   'waterlevels',
+  'wt':   'watertemperature',
+  'sal':  'salinity',
+  'wind': 'wind',
+  'at':   'airtemperature',
+  'pres': 'airpressure',
+};
+
+Future<Map<String, Set<String>>> fetchCapabilityMap() async {
+  const base =
+      'https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json?type=';
+  final entries = await Future.wait(
+    _capProducts.entries.map((e) async {
+      final data = await apiGet('$base${e.value}');
+      final ids = (data?['stations'] as List? ?? [])
+          .map<String>((s) => s['id'] as String)
+          .toSet();
+      return MapEntry(e.key, ids);
+    }),
+  );
+  final map = <String, Set<String>>{};
+  for (final entry in entries) {
+    for (final id in entry.value) {
+      map.putIfAbsent(id, () => {}).add(entry.key);
+    }
+  }
+  return map;
+}
+
 Future<List<Station>> searchStations(String query) async {
   final data = await apiGet(_stationsUrl);
   if (data == null || data['stations'] == null) return [];
