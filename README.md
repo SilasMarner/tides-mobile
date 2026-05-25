@@ -50,9 +50,9 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 
 ## Screenshots
 
-| Home | Today | Week | Settings |
-|------|-------|------|----------|
-| ![Home](docs/screenshots/home.png) | ![Today](docs/screenshots/today.png) | ![Week](docs/screenshots/week.png) | ![Settings](docs/screenshots/settings.png) |
+| Home | Today | Week | Settings | Notification |
+|------|-------|------|----------|--------------|
+| ![Home](docs/screenshots/home.png) | ![Today](docs/screenshots/today.png) | ![Week](docs/screenshots/week.png) | ![Settings](docs/screenshots/settings.png) | ![Notification](docs/screenshots/notification.png) |
 
 ---
 
