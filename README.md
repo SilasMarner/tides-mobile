@@ -50,7 +50,9 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 
 ## Screenshots
 
-> Coming soon — see the [releases page](https://github.com/SilasMarner/tides-mobile/releases) for screenshots.
+| Home | Today | Week | Settings |
+|------|-------|------|----------|
+| ![Home](docs/screenshots/home.png) | ![Today](docs/screenshots/today.png) | ![Week](docs/screenshots/week.png) | ![Settings](docs/screenshots/settings.png) |
 
 ---
 
