@@ -8,16 +8,17 @@ class StationBadge {
   final String key;
   final IconData icon;
   final String label;
-  const StationBadge(this.key, this.icon, this.label);
+  final String shortLabel;
+  const StationBadge(this.key, this.icon, this.label, this.shortLabel);
 }
 
 const kStationBadges = [
-  StationBadge('wl',   Icons.water,             'Live water level'),
-  StationBadge('wt',   Icons.thermostat,          'Water temperature'),
-  StationBadge('sal',  Icons.water_drop,           'Salinity'),
-  StationBadge('wind', Icons.air,                 'Wind'),
-  StationBadge('at',   Icons.device_thermostat,   'Air temperature'),
-  StationBadge('pres', Icons.speed,               'Barometric pressure'),
+  StationBadge('wt',   Icons.thermostat,        'Water temperature', 'water temp'),
+  StationBadge('sal',  Icons.grain,             'Salinity',          'salinity'),
+  StationBadge('wind', Icons.air,               'Wind speed',        'wind'),
+  StationBadge('at',   Icons.wb_sunny,          'Air temperature',   'air temp'),
+  StationBadge('pres', Icons.speed,             'Barometric pressure','pressure'),
+  StationBadge('wl',   Icons.waves,             'Live water level',  'water level'),
 ];
 
 // ── Tile ─────────────────────────────────────────────────────────────────────
@@ -76,17 +77,21 @@ class _CapsBadges extends StatelessWidget {
   const _CapsBadges({required this.caps});
 
   @override
-  Widget build(BuildContext context) => Row(
-        mainAxisSize: MainAxisSize.min,
+  Widget build(BuildContext context) => Wrap(
+        spacing: 6,
+        runSpacing: 4,
         children: kStationBadges
             .where((b) => caps.contains(b.key))
-            .map((b) => Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: Tooltip(
-                    message: b.label,
-                    child: Icon(b.icon,
-                        size: 13, color: kCyan.withValues(alpha: 0.65)),
-                  ),
+            .map((b) => Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(b.icon, size: 11, color: kCyan.withValues(alpha: 0.8)),
+                    const SizedBox(width: 3),
+                    Text(b.shortLabel,
+                        style: TextStyle(
+                            color: kCyan.withValues(alpha: 0.8),
+                            fontSize: 10)),
+                  ],
                 ))
             .toList(),
       );

@@ -283,8 +283,7 @@ class _StationList extends StatelessWidget {
                   Tooltip(
                     message: 'Sensor legend',
                     child: IconButton(
-                      icon: const Icon(Icons.info_outline,
-                          size: 16, color: kCyan),
+                      icon: const Icon(Icons.info, size: 18, color: kCyan),
                       onPressed: () => _showLegend(context),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
