@@ -470,6 +470,21 @@ Future<dynamic> _fetchWaterLevel(String stationId) async {
 
 Future<Map<String, dynamic>?> _fetchNws(double lat, double lon) async {
   const hdr = {'User-Agent': 'tides-flutter/2.0'};
+  // Many coastal/offshore stations sit on water where NWS has no grid data.
+  // Try the exact coords first, then small offsets to find a valid land grid point.
+  const offsets = [
+    [0.0, 0.0], [0.06, 0.0], [-0.06, 0.0],
+    [0.0, 0.06], [0.0, -0.06], [0.06, 0.06], [-0.06, -0.06],
+  ];
+  for (final off in offsets) {
+    final result = await _tryNwsFetch(lat + off[0], lon + off[1], hdr);
+    if (result != null) return result;
+  }
+  return null;
+}
+
+Future<Map<String, dynamic>?> _tryNwsFetch(
+    double lat, double lon, Map<String, String> hdr) async {
   final pts = await apiGet('https://api.weather.gov/points/$lat,$lon', headers: hdr);
   if (pts == null) return null;
   final props = pts['properties'] as Map<String, dynamic>? ?? {};
