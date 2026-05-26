@@ -9,7 +9,7 @@ import '../providers/notification_provider.dart';
 import '../services/notification_service.dart';
 import '../widgets/conditions_card.dart';
 import '../widgets/tide_chart.dart';
-import '../services/noaa_api.dart' show fmtHhmm;
+import '../services/noaa_api.dart' show fmtHhmm, WaveData;
 import '../theme.dart';
 import 'about_screen.dart';
 
@@ -236,6 +236,7 @@ class _TodayView extends StatelessWidget {
                 style: const TextStyle(color: Colors.white54, fontSize: 12)),
           ),
           ConditionsCard(c: data.conditions),
+          if (data.waves != null) _WaveCard(waves: data.waves!),
           if (data.nws != null) _NwsCard(nws: data.nws!),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
@@ -673,6 +674,103 @@ class _WeekViewState extends State<_WeekView> {
       },
     );
   }
+}
+
+class _WaveCard extends StatelessWidget {
+  final WaveData waves;
+  const _WaveCard({required this.waves});
+
+  @override
+  Widget build(BuildContext context) {
+    final w = waves;
+    return Card(
+      color: kCardBg,
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              const Text('WAVES',
+                  style: TextStyle(color: kCyan, fontSize: 11, letterSpacing: 1.5)),
+              const Spacer(),
+              Text(
+                'NDBC ${w.ndbcStation} · ${w.distance.toStringAsFixed(0)} mi',
+                style: const TextStyle(color: Colors.white38, fontSize: 10),
+              ),
+            ]),
+            const SizedBox(height: 10),
+            Row(children: [
+              _cell('Wave Ht', '${w.waveHeight.toStringAsFixed(1)} ft'),
+              _cell('Dom Period', w.domPeriod > 0 ? '${w.domPeriod.toStringAsFixed(0)} sec' : 'N/A'),
+              _cell('Direction', w.waveDir ?? 'N/A'),
+              const Expanded(child: SizedBox()),
+            ]),
+            if (w.swellHeight != null || w.windWaveHeight != null) ...[
+              const SizedBox(height: 10),
+              const Divider(color: Colors.white12, height: 1),
+              const SizedBox(height: 8),
+              if (w.swellHeight != null)
+                _swellRow(
+                  label: 'Swell',
+                  height: w.swellHeight!,
+                  period: w.swellPeriod,
+                  dir: w.swellDir,
+                ),
+              if (w.windWaveHeight != null) ...[
+                if (w.swellHeight != null) const SizedBox(height: 6),
+                _swellRow(
+                  label: 'Wind Sea',
+                  height: w.windWaveHeight!,
+                  period: w.windWavePeriod,
+                  dir: null,
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _cell(String label, String value) => Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: const TextStyle(color: Colors.white54, fontSize: 10)),
+            const SizedBox(height: 2),
+            Text(value,
+                style: const TextStyle(
+                    color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      );
+
+  Widget _swellRow({
+    required String label,
+    required double height,
+    double? period,
+    String? dir,
+  }) =>
+      Row(children: [
+        SizedBox(
+          width: 64,
+          child: Text(label,
+              style: const TextStyle(color: Colors.white54, fontSize: 11)),
+        ),
+        Text('${height.toStringAsFixed(1)} ft',
+            style: const TextStyle(color: Colors.white, fontSize: 12)),
+        if (period != null) ...[
+          const Text('  ·  ', style: TextStyle(color: Colors.white24)),
+          Text('${period.toStringAsFixed(0)} sec',
+              style: const TextStyle(color: Colors.white, fontSize: 12)),
+        ],
+        if (dir != null) ...[
+          const Text('  ·  ', style: TextStyle(color: Colors.white24)),
+          Text(dir, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+        ],
+      ]);
 }
 
 class _FishingCard extends StatelessWidget {

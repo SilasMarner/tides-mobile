@@ -110,6 +110,32 @@ class FishingInfo {
   const FishingInfo({required this.stars, required this.label});
 }
 
+class WaveData {
+  final double waveHeight;    // ft — significant wave height
+  final double domPeriod;     // seconds — dominant period
+  final String? waveDir;      // compass string, e.g. "SSW"
+  final double? swellHeight;  // ft
+  final double? swellPeriod;  // seconds
+  final String? swellDir;
+  final double? windWaveHeight; // ft
+  final double? windWavePeriod; // seconds
+  final String ndbcStation;
+  final double distance;      // miles from tide station
+
+  const WaveData({
+    required this.waveHeight,
+    required this.domPeriod,
+    this.waveDir,
+    this.swellHeight,
+    this.swellPeriod,
+    this.swellDir,
+    this.windWaveHeight,
+    this.windWavePeriod,
+    required this.ndbcStation,
+    required this.distance,
+  });
+}
+
 @immutable
 class TideData {
   final String stationId;
@@ -125,6 +151,7 @@ class TideData {
   final MoonInfo moon;
   final SolunarInfo solunar;
   final FishingInfo fishing;
+  final WaveData? waves;
 
   const TideData({
     required this.stationId,
@@ -140,5 +167,6 @@ class TideData {
     required this.moon,
     required this.solunar,
     required this.fishing,
+    this.waves,
   });
 }

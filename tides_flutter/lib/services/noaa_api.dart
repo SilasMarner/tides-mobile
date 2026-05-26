@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
 import '../models/station.dart';
 import '../models/tide_data.dart';
+export '../models/tide_data.dart' show WaveData;
 
 final _dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 12)));
 final _dateFmt = DateFormat('yyyyMMdd');
@@ -225,6 +226,107 @@ Future<dynamic> apiGet(String url, {Map<String, String>? headers}) async {
   } catch (_) {
     return null;
   }
+}
+
+Future<String?> _fetchText(String url) async {
+  try {
+    final resp = await _dio.get<String>(url,
+        options: Options(
+          responseType: ResponseType.plain,
+          receiveTimeout: const Duration(seconds: 15),
+        ));
+    return resp.data;
+  } catch (_) {
+    return null;
+  }
+}
+
+// ── NDBC wave data ────────────────────────────────────────────────────────────
+
+DateTime? _ndbcObsTime;
+List<List<String>>? _ndbcObsCache;
+
+Future<List<List<String>>> _fetchNdbcObs() async {
+  final now = DateTime.now();
+  if (_ndbcObsCache != null &&
+      _ndbcObsTime != null &&
+      now.difference(_ndbcObsTime!).inMinutes < 30) {
+    return _ndbcObsCache!;
+  }
+  final text = await _fetchText(
+      'https://www.ndbc.noaa.gov/data/latest_obs/latest_obs.txt');
+  if (text == null) return [];
+  final rows = text
+      .split('\n')
+      .where((l) => l.isNotEmpty && !l.startsWith('#'))
+      .map((l) => l.trim().split(RegExp(r'\s+')))
+      .toList();
+  _ndbcObsCache = rows;
+  _ndbcObsTime = now;
+  return rows;
+}
+
+double? _mm(String s) => s == 'MM' ? null : double.tryParse(s);
+
+Future<WaveData?> fetchNdbcWaves(double lat, double lon) async {
+  // latest_obs.txt columns: 0=STN 1=LAT 2=LON ... 11=WVHT 12=DPD 13=APD 14=MWD
+  final rows = await _fetchNdbcObs();
+  String? bestId;
+  double? bestWvht, bestDpd, bestMwd;
+  double bestDist = 150;
+
+  for (final row in rows) {
+    if (row.length < 15) continue;
+    final rLat = double.tryParse(row[1]);
+    final rLon = double.tryParse(row[2]);
+    if (rLat == null || rLon == null) continue;
+    final wvht = _mm(row[11]);
+    if (wvht == null) continue;
+    final d = haversine(lat, lon, rLat, rLon);
+    if (d < bestDist) {
+      bestDist = d;
+      bestId = row[0];
+      bestWvht = wvht;
+      bestDpd = _mm(row[12]);
+      bestMwd = _mm(row[14]);
+    }
+  }
+  if (bestId == null || bestWvht == null) return null;
+
+  // .spec file: 0=YY 1=MM 2=DD 3=hh 4=mm 5=H0 6=SwH 7=SwP 8=SwD 9=WWH 10=WWP 11=WWD
+  double? swh, swp, swd, wwh, wwp;
+  final spec = await _fetchText(
+      'https://www.ndbc.noaa.gov/data/realtime2/$bestId.spec');
+  if (spec != null) {
+    final lines = spec
+        .split('\n')
+        .where((l) => l.isNotEmpty && !l.startsWith('#'))
+        .toList();
+    if (lines.isNotEmpty) {
+      final p = lines[0].trim().split(RegExp(r'\s+'));
+      if (p.length >= 12) {
+        swh = _mm(p[6]);
+        swp = _mm(p[7]);
+        swd = _mm(p[8]);
+        wwh = _mm(p[9]);
+        wwp = _mm(p[10]);
+      }
+    }
+  }
+
+  const mToFt = 3.28084;
+  return WaveData(
+    waveHeight: bestWvht * mToFt,
+    domPeriod: bestDpd ?? 0,
+    waveDir: bestMwd != null ? windDirArrow(bestMwd) : null,
+    swellHeight: swh != null ? swh * mToFt : null,
+    swellPeriod: swp,
+    swellDir: swd != null ? windDirArrow(swd) : null,
+    windWaveHeight: wwh != null ? wwh * mToFt : null,
+    windWavePeriod: wwp,
+    ndbcStation: bestId,
+    distance: bestDist,
+  );
 }
 
 // ── Station capability map ────────────────────────────────────────────────────
@@ -551,12 +653,14 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
     _fetchWaterLevel(id),                      // 7
     _fetchNws(lat, lon),                       // 8
     _fetchObs(id, 'salinity'),                 // 9
+    fetchNdbcWaves(lat, lon),                  // 10
   ]);
 
   final hourlyList = results[0] as List<TidePrediction>;
   final hilo = results[1] as List<TidePrediction>;
   final pressureTrend = results[5] as int;
   final nwsRaw = results[8] as Map<String, dynamic>?;
+  final waves = results[10] as WaveData?;
 
   // Build hourly map; fall back to cosine interpolation from hi/lo when the
   // station is a subordinate that only publishes hi/lo predictions.
@@ -603,6 +707,7 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
     moon: moon,
     solunar: solunar,
     fishing: fishing,
+    waves: waves,
   );
 }
 
