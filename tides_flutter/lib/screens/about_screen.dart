@@ -64,6 +64,20 @@ class AboutScreen extends StatelessWidget {
                 style: TextStyle(color: kCyan, fontSize: 12)),
             const Divider(color: Colors.white12, height: 32),
 
+            // Legal
+            const Text('Legal',
+                style: TextStyle(color: kCyan, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            GestureDetector(
+              onTap: () => launchUrl(
+                Uri.parse('https://silasmarner.github.io/tides-mobile/privacy-policy.html'),
+                mode: LaunchMode.externalApplication,
+              ),
+              child: const Text('Privacy Policy',
+                  style: TextStyle(color: kCyan, fontSize: 13, decoration: TextDecoration.underline)),
+            ),
+            const Divider(color: Colors.white12, height: 32),
+
             // Thanks
             const Text('Thanks',
                 style: TextStyle(color: kCyan, fontWeight: FontWeight.bold)),
