@@ -293,8 +293,10 @@ Future<WaveData?> fetchNdbcWaves(double lat, double lon) async {
   }
   if (bestId == null || bestWvht == null) return null;
 
-  // .spec file: 0=YY 1=MM 2=DD 3=hh 4=mm 5=H0 6=SwH 7=SwP 8=SwD 9=WWH 10=WWP 11=WWD
-  double? swh, swp, swd, wwh, wwp;
+  // .spec actual columns: 0=YY 1=MM 2=DD 3=hh 4=mm 5=WVHT 6=SwH 7=SwP 8=WWH 9=WWP 10=SwD 11=WWD
+  // SwD is a compass string (e.g. "ESE"), WWD is degrees true
+  double? swh, swp, wwh, wwp;
+  String? swdStr;
   final spec = await _fetchText(
       'https://www.ndbc.noaa.gov/data/realtime2/$bestId.spec');
   if (spec != null) {
@@ -307,9 +309,9 @@ Future<WaveData?> fetchNdbcWaves(double lat, double lon) async {
       if (p.length >= 12) {
         swh = _mm(p[6]);
         swp = _mm(p[7]);
-        swd = _mm(p[8]);
-        wwh = _mm(p[9]);
-        wwp = _mm(p[10]);
+        wwh = _mm(p[8]);
+        wwp = _mm(p[9]);
+        swdStr = (p[10] == 'MM') ? null : p[10];
       }
     }
   }
@@ -321,7 +323,7 @@ Future<WaveData?> fetchNdbcWaves(double lat, double lon) async {
     waveDir: bestMwd != null ? windDirArrow(bestMwd) : null,
     swellHeight: swh != null ? swh * mToFt : null,
     swellPeriod: swp,
-    swellDir: swd != null ? windDirArrow(swd) : null,
+    swellDir: swdStr,
     windWaveHeight: wwh != null ? wwh * mToFt : null,
     windWavePeriod: wwp,
     ndbcStation: bestId,

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/tide_data.dart';
 import '../theme.dart';
 
-class TideChart extends StatelessWidget {
+class TideChart extends StatefulWidget {
   final Map<int, double> hourly;
   final List<TidePrediction> hilo;
   final bool isToday;
@@ -16,13 +16,58 @@ class TideChart extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  State<TideChart> createState() => _TideChartState();
+}
+
+class _TideChartState extends State<TideChart> {
+  double? _touchX;
+  double? _touchY;
+
+  // Interpolate to 30-min resolution for smoother touch snapping
+  List<FlSpot> _buildSpots() {
     final spots = <FlSpot>[];
     for (var h = 0; h < 24; h++) {
-      if (hourly.containsKey(h)) {
-        spots.add(FlSpot(h.toDouble(), hourly[h]!));
+      final v = widget.hourly[h];
+      if (v == null) continue;
+      spots.add(FlSpot(h.toDouble(), v));
+      // Add half-hour point via cosine interpolation to next hour
+      final vNext = widget.hourly[h + 1];
+      if (vNext != null) {
+        final mid = v + (vNext - v) * (1 - _cos01(0.5)) ;
+        spots.add(FlSpot(h + 0.5, mid));
       }
     }
+    return spots;
+  }
+
+  // Cosine ease [0,1] → [0,1], used for tide-curve-shaped interpolation
+  double _cos01(double t) => (1 - _cosD(t * 180)) / 2;
+  double _cosD(double deg) {
+    const pi = 3.141592653589793;
+    return _cos(deg * pi / 180);
+  }
+  double _cos(double rad) {
+    // Simple Taylor series cos — avoids dart:math import
+    double r = 1, t = 1;
+    for (var i = 1; i <= 8; i++) {
+      t *= -rad * rad / ((2 * i - 1) * (2 * i));
+      r += t;
+    }
+    return r;
+  }
+
+  String _fmtX(double x) {
+    final totalMin = (x * 60).round();
+    final h = totalMin ~/ 60;
+    final m = totalMin % 60;
+    final h12 = h % 12 == 0 ? 12 : h % 12;
+    final suffix = h < 12 ? 'AM' : 'PM';
+    return '$h12:${m.toString().padLeft(2, '0')} $suffix';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final spots = _buildSpots();
     if (spots.isEmpty) {
       return const SizedBox(
         height: 160,
@@ -33,111 +78,161 @@ class TideChart extends StatelessWidget {
 
     final minY = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b) - 0.5;
     final maxY = spots.map((s) => s.y).reduce((a, b) => a > b ? a : b) + 0.5;
-    final nowX = isToday
+    final nowX = widget.isToday
         ? DateTime.now().hour + DateTime.now().minute / 60.0
         : -1.0;
 
-    return SizedBox(
-      height: 160,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: LineChart(
-          LineChartData(
-            minX: 0,
-            maxX: 23,
-            minY: minY,
-            maxY: maxY,
-            gridData: FlGridData(
-              show: true,
-              drawVerticalLine: false,
-              horizontalInterval: 2,
-              getDrawingHorizontalLine: (_) =>
-                  FlLine(color: Colors.white10, strokeWidth: 1),
-            ),
-            borderData: FlBorderData(show: false),
-            lineTouchData: LineTouchData(
-              touchTooltipData: LineTouchTooltipData(
-                getTooltipItems: (spots) => spots.map((s) => LineTooltipItem(
-                  '${s.y.toStringAsFixed(2)} ft',
-                  const TextStyle(color: kCyan, fontWeight: FontWeight.bold, fontSize: 12),
-                )).toList(),
-              ),
-            ),
-            titlesData: FlTitlesData(
-              leftTitles: AxisTitles(
-                sideTitles: SideTitles(
-                  showTitles: true,
-                  reservedSize: 32,
-                  getTitlesWidget: (v, _) => Text(
-                    v.toStringAsFixed(0),
-                    style: const TextStyle(color: Colors.white38, fontSize: 10),
+    final verticalLines = <VerticalLine>[
+      if (nowX >= 0)
+        VerticalLine(
+          x: nowX,
+          color: Colors.amber.withValues(alpha: 0.7),
+          strokeWidth: 2,
+          dashArray: [4, 4],
+        ),
+      if (_touchX != null)
+        VerticalLine(
+          x: _touchX!,
+          color: Colors.white.withValues(alpha: 0.5),
+          strokeWidth: 1.5,
+        ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Touch readout — shown while dragging, stable height to avoid jump
+        SizedBox(
+          height: 22,
+          child: _touchX != null
+              ? Center(
+                  child: Text(
+                    '${_fmtX(_touchX!)}  ·  ${_touchY!.toStringAsFixed(2)} ft',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                )
+              : null,
+        ),
+        SizedBox(
+          height: 160,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: LineChart(
+              LineChartData(
+                minX: 0,
+                maxX: 23,
+                minY: minY,
+                maxY: maxY,
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  horizontalInterval: 2,
+                  getDrawingHorizontalLine: (_) =>
+                      FlLine(color: Colors.white10, strokeWidth: 1),
+                ),
+                borderData: FlBorderData(show: false),
+                lineTouchData: LineTouchData(
+                  handleBuiltInTouches: true,
+                  touchCallback: (event, response) {
+                    final spot = response?.lineBarSpots?.firstOrNull;
+                    setState(() {
+                      if (spot != null &&
+                          event is! FlPanEndEvent &&
+                          event is! FlTapUpEvent &&
+                          event is! FlLongPressEnd) {
+                        _touchX = spot.x;
+                        _touchY = spot.y;
+                      } else if (event is FlPanEndEvent ||
+                          event is FlTapUpEvent ||
+                          event is FlLongPressEnd) {
+                        _touchX = null;
+                        _touchY = null;
+                      }
+                    });
+                  },
+                  getTouchedSpotIndicator: (_, indexes) => indexes
+                      .map((_) => const TouchedSpotIndicatorData(
+                            FlLine(color: Colors.transparent),
+                            FlDotData(show: false),
+                          ))
+                      .toList(),
+                  touchTooltipData: LineTouchTooltipData(
+                    getTooltipItems: (_) => [],
                   ),
                 ),
-              ),
-              bottomTitles: AxisTitles(
-                sideTitles: SideTitles(
-                  showTitles: true,
-                  interval: 6,
-                  getTitlesWidget: (v, _) {
-                    final h = v.toInt();
-                    if (h == 0) return _axisLabel('12a');
-                    if (h == 6) return _axisLabel('6a');
-                    if (h == 12) return _axisLabel('12p');
-                    if (h == 18) return _axisLabel('6p');
-                    return const SizedBox.shrink();
-                  },
-                ),
-              ),
-              rightTitles:
-                  const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-              topTitles:
-                  const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            ),
-            extraLinesData: nowX >= 0
-                ? ExtraLinesData(verticalLines: [
-                    VerticalLine(
-                      x: nowX,
-                      color: Colors.amber.withOpacity(0.7),
-                      strokeWidth: 2,
-                      dashArray: [4, 4],
+                titlesData: FlTitlesData(
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 32,
+                      getTitlesWidget: (v, _) => Text(
+                        v.toStringAsFixed(0),
+                        style:
+                            const TextStyle(color: Colors.white38, fontSize: 10),
+                      ),
                     ),
-                  ])
-                : null,
-            lineBarsData: [
-              LineChartBarData(
-                spots: spots,
-                isCurved: true,
-                color: kCyan,
-                barWidth: 2.5,
-                dotData: FlDotData(
-                  show: true,
-                  checkToShowDot: (spot, _) {
-                    return hilo.any((p) =>
-                        (p.time.hour + p.time.minute / 60 - spot.x).abs() <
-                        0.5);
-                  },
-                  getDotPainter: (spot, _, __, ___) {
-                    final isHigh = hilo.any((p) =>
-                        p.type == 'H' &&
-                        (p.time.hour + p.time.minute / 60 - spot.x).abs() <
-                            0.5);
-                    return FlDotCirclePainter(
-                      radius: 4,
-                      color: isHigh ? kHighTide : kLowTide,
-                      strokeWidth: 1.5,
-                      strokeColor: Colors.white,
-                    );
-                  },
+                  ),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      interval: 6,
+                      getTitlesWidget: (v, _) {
+                        final h = v.toInt();
+                        if (h == 0) return _axisLabel('12a');
+                        if (h == 6) return _axisLabel('6a');
+                        if (h == 12) return _axisLabel('12p');
+                        if (h == 18) return _axisLabel('6p');
+                        return const SizedBox.shrink();
+                      },
+                    ),
+                  ),
+                  rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
                 ),
-                belowBarData: BarAreaData(
-                  show: true,
-                  color: kCyan.withOpacity(0.08),
-                ),
+                extraLinesData: ExtraLinesData(verticalLines: verticalLines),
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: spots,
+                    isCurved: true,
+                    color: kCyan,
+                    barWidth: 2.5,
+                    dotData: FlDotData(
+                      show: true,
+                      checkToShowDot: (spot, _) {
+                        return widget.hilo.any((p) =>
+                            (p.time.hour + p.time.minute / 60 - spot.x).abs() <
+                            0.3);
+                      },
+                      getDotPainter: (spot, _, __, ___) {
+                        final isHigh = widget.hilo.any((p) =>
+                            p.type == 'H' &&
+                            (p.time.hour + p.time.minute / 60 - spot.x).abs() <
+                                0.3);
+                        return FlDotCirclePainter(
+                          radius: 4,
+                          color: isHigh ? kHighTide : kLowTide,
+                          strokeWidth: 1.5,
+                          strokeColor: Colors.white,
+                        );
+                      },
+                    ),
+                    belowBarData: BarAreaData(
+                      show: true,
+                      color: kCyan.withValues(alpha: 0.08),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
-      ),
+      ],
     );
   }
 
