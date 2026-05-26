@@ -12,7 +12,13 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 
 ## Changelog
 
-### v2.1.0
+### v2.1.0 (build 7)
+- **NDBC wave data** — wave height, dominant period, swell height/period/direction, wind sea; sourced from nearest buoy within 150 miles
+- **Interactive tide chart** — tap or drag to see time + height readout anywhere on the curve
+- **NWS fix** — forecast now shows for offshore/coastal stations that previously showed nothing (coordinate fallback)
+- Privacy policy link in About screen
+- sharkatthemoon.org community credit in About screen
+- Exact version number shown in About screen
 - Fixed About screen showing wrong version (was 2.0, now correctly shows 2.1)
 - Restored **Check for Updates** button in the About screen — checks GitHub releases and shows inline status
 
@@ -43,6 +49,8 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 - **Solunar tables** — major/minor feeding periods calculated from moon position
 - **Sun & moon** — sunrise, sunset, golden hour, moon phase and illumination percentage
 - **Fishing rating** — 1–5 star rating based on tidal movement, solunar timing, and wind
+- **NDBC wave data** — wave height, dominant period, swell height/period/direction, and wind sea from the nearest offshore buoy (up to 150 miles)
+- **Interactive tide chart** — tap or drag anywhere on the chart to see exact time and height
 - **Favorites** — save stations with one tap; shown on home screen
 - **Use My Location** — GPS-based nearest stations
 
@@ -50,9 +58,9 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 
 ## Screenshots
 
-| Home | Today | Week | Settings | Notification |
-|------|-------|------|----------|--------------|
-| ![Home](docs/screenshots/home.png) | ![Today](docs/screenshots/today.png) | ![Week](docs/screenshots/week.png) | ![Settings](docs/screenshots/settings.png) | ![Notification](docs/screenshots/notification.png) |
+| Search | Conditions + Waves + NWS | NWS Forecast | Week View |
+|--------|--------------------------|--------------|-----------|
+| ![Search](docs/screenshots/search.png) | ![Conditions](docs/screenshots/detail_conditions.png) | ![NWS](docs/screenshots/detail_nws.png) | ![Week](docs/screenshots/week_view.png) |
 
 ---
 
