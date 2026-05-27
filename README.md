@@ -12,7 +12,10 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 
 ## Changelog
 
-### v2.1.0 (build 10) — latest
+### v2.1.0 (build 11) — latest
+- **Alarm permission removed** — switched to inexact alarms; no special permissions required, notifications still fire accurately for tide and solunar events
+
+### v2.1.0 (build 10)
 - **Salinity icon fix** — corrected false-positive salinity badges; only the 21 NOAA stations with real salinity sensors now show the icon
 
 ### v2.1.0 (build 9)
