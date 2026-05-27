@@ -332,34 +332,43 @@ Future<WaveData?> fetchNdbcWaves(double lat, double lon) async {
 }
 
 // ── Station capability map ────────────────────────────────────────────────────
-
-const _capProducts = {
-  'wl':   'waterlevels',
-  'wt':   'watertemperature',
-  'sal':  'salinity',
-  'wind': 'wind',
-  'at':   'airtemperature',
-  'pres': 'airpressure',
-};
+//
+// NOAA mdapi valid type= values that return station lists:
+//   type=waterlevels → 301 stations with live water-level sensors  → wl
+//   type=met         → 318 stations with met sensors (wind/at/pres) → wind, at, pres
+//   type=physocean   → 240 stations with physical oceanography      → wt, sal
+//
+// The legacy keys (type=wind, type=salinity, etc.) return 0 stations.
 
 Future<Map<String, Set<String>>> fetchCapabilityMap() async {
   const base =
       'https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json?type=';
-  final entries = await Future.wait(
-    _capProducts.entries.map((e) async {
-      final data = await apiGet('$base${e.value}');
-      final ids = (data?['stations'] as List? ?? [])
+
+  // Fetch the three valid type lists in parallel
+  final results = await Future.wait([
+    apiGet('${base}waterlevels'),
+    apiGet('${base}met'),
+    apiGet('${base}physocean'),
+  ]);
+
+  Set<String> ids(dynamic data) =>
+      (data?['stations'] as List? ?? [])
           .map<String>((s) => s['id'] as String)
           .toSet();
-      return MapEntry(e.key, ids);
-    }),
-  );
+
+  final wlIds      = ids(results[0]);
+  final metIds     = ids(results[1]);
+  final physIds    = ids(results[2]);
+
   final map = <String, Set<String>>{};
-  for (final entry in entries) {
-    for (final id in entry.value) {
-      map.putIfAbsent(id, () => {}).add(entry.key);
-    }
-  }
+
+  void add(String id, String cap) =>
+      map.putIfAbsent(id, () => {}).add(cap);
+
+  for (final id in wlIds)   { add(id, 'wl'); }
+  for (final id in metIds)  { add(id, 'wind'); add(id, 'at'); add(id, 'pres'); }
+  for (final id in physIds) { add(id, 'wt');   add(id, 'sal'); }
+
   return map;
 }
 
