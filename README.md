@@ -12,15 +12,18 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 
 ## Changelog
 
-### v2.1.0 (build 7)
+### v2.1.0 (build 9) — latest
+- **Station sensor icons** — search results now show sensor badge icons (water temp, salinity, wind, air temp, pressure, water level) for every station that has them; fixed broken NOAA capability API calls
+- **Current-time indicator** — amber dashed vertical line on the tide chart marks the current hour alongside the interactive slide bar
+
+### v2.1.0 (build 7–8)
 - **NDBC wave data** — wave height, dominant period, swell height/period/direction, wind sea; sourced from nearest buoy within 150 miles
 - **Interactive tide chart** — tap or drag to see time + height readout anywhere on the curve
 - **NWS fix** — forecast now shows for offshore/coastal stations that previously showed nothing (coordinate fallback)
 - Privacy policy link in About screen
 - sharkatthemoon.org community credit in About screen
 - Exact version number shown in About screen
-- Fixed About screen showing wrong version (was 2.0, now correctly shows 2.1)
-- Restored **Check for Updates** button in the About screen — checks GitHub releases and shows inline status
+- Restored **Check for Updates** button in the About screen
 
 ### v2.0.0
 - Full rewrite in Flutter (replaces Python/Kivy v1.x)
@@ -58,9 +61,9 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 
 ## Screenshots
 
-| Search | Conditions + Waves + NWS | NWS Forecast | Week View |
-|--------|--------------------------|--------------|-----------|
-| ![Search](docs/screenshots/search.png) | ![Conditions](docs/screenshots/detail_conditions.png) | ![NWS](docs/screenshots/detail_nws.png) | ![Week](docs/screenshots/week_view.png) |
+| Search + Sensor Icons | Conditions · Waves · NWS · Chart | Week View | About |
+|-----------------------|----------------------------------|-----------|-------|
+| ![Search](docs/screenshots/search.png) | ![Conditions](docs/screenshots/detail_conditions.png) | ![Week](docs/screenshots/week_view.png) | ![About](docs/screenshots/about.png) |
 
 ---
 
