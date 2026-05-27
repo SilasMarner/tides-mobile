@@ -333,18 +333,28 @@ Future<WaveData?> fetchNdbcWaves(double lat, double lon) async {
 
 // ── Station capability map ────────────────────────────────────────────────────
 //
-// NOAA mdapi valid type= values that return station lists:
-//   type=waterlevels → 301 stations with live water-level sensors  → wl
-//   type=met         → 318 stations with met sensors (wind/at/pres) → wind, at, pres
-//   type=physocean   → 240 stations with physical oceanography      → wt, sal
+// NOAA mdapi valid type= values:
+//   type=waterlevels → 301 stations with live water-level sensors → wl
+//   type=met         → 318 stations with met sensors              → wind, at, pres
+//   type=physocean   → 240 stations with water temp ONLY          → wt
+//                      (physocean ≠ salinity — verified by probing all 301
+//                       waterlevels stations; only 21 have salinity sensors)
 //
-// The legacy keys (type=wind, type=salinity, etc.) return 0 stations.
+// NOAA has no type=salinity endpoint. The 21 salinity stations were found by
+// probing every waterlevels station for product=salinity live data.
+
+const _salinityStations = {
+  '8419870', '8447386', '8452660', '8518962', '8518979',
+  '8557380', '8573927', '8574680', '8632200', '8635750',
+  '8637689', '8638610', '8639348', '8720218', '8720219',
+  '8726674', '8737048', '8770613', '8771013', '8775222',
+  '9454050',
+};
 
 Future<Map<String, Set<String>>> fetchCapabilityMap() async {
   const base =
       'https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json?type=';
 
-  // Fetch the three valid type lists in parallel
   final results = await Future.wait([
     apiGet('${base}waterlevels'),
     apiGet('${base}met'),
@@ -356,18 +366,18 @@ Future<Map<String, Set<String>>> fetchCapabilityMap() async {
           .map<String>((s) => s['id'] as String)
           .toSet();
 
-  final wlIds      = ids(results[0]);
-  final metIds     = ids(results[1]);
-  final physIds    = ids(results[2]);
+  final wlIds   = ids(results[0]);
+  final metIds  = ids(results[1]);
+  final physIds = ids(results[2]);
 
   final map = <String, Set<String>>{};
-
   void add(String id, String cap) =>
       map.putIfAbsent(id, () => {}).add(cap);
 
-  for (final id in wlIds)   { add(id, 'wl'); }
-  for (final id in metIds)  { add(id, 'wind'); add(id, 'at'); add(id, 'pres'); }
-  for (final id in physIds) { add(id, 'wt');   add(id, 'sal'); }
+  for (final id in wlIds)              { add(id, 'wl'); }
+  for (final id in metIds)             { add(id, 'wind'); add(id, 'at'); add(id, 'pres'); }
+  for (final id in physIds)            { add(id, 'wt'); }
+  for (final id in _salinityStations)  { add(id, 'sal'); }
 
   return map;
 }

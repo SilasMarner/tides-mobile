@@ -20,7 +20,7 @@ class AboutScreen extends StatelessWidget {
                 style: TextStyle(
                     color: kCyan, fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            const Text('Version 2.1.0+9  ·  Live NOAA tide data for Android',
+            const Text('Version 2.1.0+10  ·  Live NOAA tide data for Android',
                 style: TextStyle(color: Colors.white54, fontSize: 13)),
             const SizedBox(height: 2),
             const Text('Built with Flutter',
@@ -227,7 +227,7 @@ class _CheckForUpdatesButton extends StatefulWidget {
 }
 
 class _CheckForUpdatesButtonState extends State<_CheckForUpdatesButton> {
-  static const _currentVersion = '2.1.0+9';
+  static const _currentVersion = '2.1.0+10';
   bool _checking = false;
   String? _status;
 

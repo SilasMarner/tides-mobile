@@ -12,7 +12,10 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 
 ## Changelog
 
-### v2.1.0 (build 9) — latest
+### v2.1.0 (build 10) — latest
+- **Salinity icon fix** — corrected false-positive salinity badges; only the 21 NOAA stations with real salinity sensors now show the icon
+
+### v2.1.0 (build 9)
 - **Station sensor icons** — search results now show sensor badge icons (water temp, salinity, wind, air temp, pressure, water level) for every station that has them; fixed broken NOAA capability API calls
 - **Current-time indicator** — amber dashed vertical line on the tide chart marks the current hour alongside the interactive slide bar
 
