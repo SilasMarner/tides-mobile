@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:in_app_update/in_app_update.dart';
 import '../models/station.dart';
 import '../providers/search_provider.dart';
 import '../providers/favorites_provider.dart';
@@ -26,6 +27,57 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _locating = false;
   String? _locMsg;
   List<Station>? _nearbyStations;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkForUpdate());
+  }
+
+  Future<void> _checkForUpdate() async {
+    try {
+      final info = await InAppUpdate.checkForUpdate();
+      if (info.updateAvailability != UpdateAvailability.updateAvailable) return;
+      if (!mounted) return;
+      if (info.flexibleUpdateAllowed) {
+        await InAppUpdate.startFlexibleUpdate();
+        InAppUpdate.installUpdateListener.listen((status) {
+          if (status == InstallStatus.downloaded && mounted) {
+            _showUpdateBanner();
+          }
+        });
+      }
+    } catch (_) {
+      // Not a Play Store build, no network, or update API unavailable — ignore
+    }
+  }
+
+  void _showUpdateBanner() {
+    ScaffoldMessenger.of(context).showMaterialBanner(
+      MaterialBanner(
+        backgroundColor: kNavyLight,
+        content: const Text(
+          'Update downloaded and ready to install.',
+          style: TextStyle(color: Colors.white),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+              InAppUpdate.completeFlexibleUpdate();
+            },
+            child: const Text('RESTART', style: TextStyle(color: kCyan)),
+          ),
+          TextButton(
+            onPressed: () =>
+                ScaffoldMessenger.of(context).hideCurrentMaterialBanner(),
+            child: const Text('LATER',
+                style: TextStyle(color: Colors.white54)),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void dispose() {

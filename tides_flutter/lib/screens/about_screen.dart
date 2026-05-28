@@ -229,7 +229,7 @@ class _CheckForUpdatesButton extends StatefulWidget {
 }
 
 class _CheckForUpdatesButtonState extends State<_CheckForUpdatesButton> {
-  static const _currentVersion = '2.2.0+12';
+  static const _currentVersion = '2.2.0+13';
   bool _checking = false;
   String? _status;
 
