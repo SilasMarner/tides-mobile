@@ -228,106 +228,37 @@ Future<dynamic> apiGet(String url, {Map<String, String>? headers}) async {
   }
 }
 
-Future<String?> _fetchText(String url) async {
-  try {
-    final resp = await _dio.get<String>(url,
-        options: Options(
-          responseType: ResponseType.plain,
-          receiveTimeout: const Duration(seconds: 15),
-        ));
-    return resp.data;
-  } catch (_) {
-    return null;
-  }
-}
+// ── Open-Meteo Marine wave data ───────────────────────────────────────────────
 
-// ── NDBC wave data ────────────────────────────────────────────────────────────
-
-DateTime? _ndbcObsTime;
-List<List<String>>? _ndbcObsCache;
-
-Future<List<List<String>>> _fetchNdbcObs() async {
-  final now = DateTime.now();
-  if (_ndbcObsCache != null &&
-      _ndbcObsTime != null &&
-      now.difference(_ndbcObsTime!).inMinutes < 30) {
-    return _ndbcObsCache!;
-  }
-  final text = await _fetchText(
-      'https://www.ndbc.noaa.gov/data/latest_obs/latest_obs.txt');
-  if (text == null) return [];
-  final rows = text
-      .split('\n')
-      .where((l) => l.isNotEmpty && !l.startsWith('#'))
-      .map((l) => l.trim().split(RegExp(r'\s+')))
-      .toList();
-  _ndbcObsCache = rows;
-  _ndbcObsTime = now;
-  return rows;
-}
-
-double? _mm(String s) => s == 'MM' ? null : double.tryParse(s);
-
-Future<WaveData?> fetchNdbcWaves(double lat, double lon) async {
-  // latest_obs.txt columns: 0=STN 1=LAT 2=LON ... 11=WVHT 12=DPD 13=APD 14=MWD
-  final rows = await _fetchNdbcObs();
-  String? bestId;
-  double? bestWvht, bestDpd, bestMwd;
-  double bestDist = 150;
-
-  for (final row in rows) {
-    if (row.length < 15) continue;
-    final rLat = double.tryParse(row[1]);
-    final rLon = double.tryParse(row[2]);
-    if (rLat == null || rLon == null) continue;
-    final wvht = _mm(row[11]);
-    if (wvht == null) continue;
-    final d = haversine(lat, lon, rLat, rLon);
-    if (d < bestDist) {
-      bestDist = d;
-      bestId = row[0];
-      bestWvht = wvht;
-      bestDpd = _mm(row[12]);
-      bestMwd = _mm(row[14]);
-    }
-  }
-  if (bestId == null || bestWvht == null) return null;
-
-  // .spec actual columns: 0=YY 1=MM 2=DD 3=hh 4=mm 5=WVHT 6=SwH 7=SwP 8=WWH 9=WWP 10=SwD 11=WWD
-  // SwD is a compass string (e.g. "ESE"), WWD is degrees true
-  double? swh, swp, wwh, wwp;
-  String? swdStr;
-  final spec = await _fetchText(
-      'https://www.ndbc.noaa.gov/data/realtime2/$bestId.spec');
-  if (spec != null) {
-    final lines = spec
-        .split('\n')
-        .where((l) => l.isNotEmpty && !l.startsWith('#'))
-        .toList();
-    if (lines.isNotEmpty) {
-      final p = lines[0].trim().split(RegExp(r'\s+'));
-      if (p.length >= 12) {
-        swh = _mm(p[6]);
-        swp = _mm(p[7]);
-        wwh = _mm(p[8]);
-        wwp = _mm(p[9]);
-        swdStr = (p[10] == 'MM') ? null : p[10];
-      }
-    }
-  }
-
-  const mToFt = 3.28084;
+Future<WaveData?> fetchOpenMeteoWaves(double lat, double lon) async {
+  final url = 'https://marine-api.open-meteo.com/v1/marine'
+      '?latitude=$lat&longitude=$lon'
+      '&current=wave_height,wave_direction,wave_period,'
+      'wind_wave_height,wind_wave_direction,wind_wave_period,'
+      'swell_wave_height,swell_wave_direction,swell_wave_period'
+      '&length_unit=imperial&timezone=auto';
+  final data = await apiGet(url);
+  final c = data?['current'] as Map<String, dynamic>?;
+  if (c == null) return null;
+  final wh = (c['wave_height'] as num?)?.toDouble();
+  if (wh == null || wh == 0) return null;
+  final dir = (c['wave_direction'] as num?)?.toDouble();
+  final period = (c['wave_period'] as num?)?.toDouble() ?? 0;
+  final swh = (c['swell_wave_height'] as num?)?.toDouble();
+  final swp = (c['swell_wave_period'] as num?)?.toDouble();
+  final swd = (c['swell_wave_direction'] as num?)?.toDouble();
+  final wwh = (c['wind_wave_height'] as num?)?.toDouble();
+  final wwp = (c['wind_wave_period'] as num?)?.toDouble();
   return WaveData(
-    waveHeight: bestWvht * mToFt,
-    domPeriod: bestDpd ?? 0,
-    waveDir: bestMwd != null ? windDirArrow(bestMwd) : null,
-    swellHeight: swh != null ? swh * mToFt : null,
+    waveHeight: wh,
+    domPeriod: period,
+    waveDir: dir != null ? windDirArrow(dir) : null,
+    swellHeight: (swh != null && swh > 0) ? swh : null,
     swellPeriod: swp,
-    swellDir: swdStr,
-    windWaveHeight: wwh != null ? wwh * mToFt : null,
+    swellDir: swd != null ? windDirArrow(swd) : null,
+    windWaveHeight: (wwh != null && wwh > 0) ? wwh : null,
     windWavePeriod: wwp,
-    ndbcStation: bestId,
-    distance: bestDist,
+    source: 'Open-Meteo',
   );
 }
 
@@ -689,7 +620,7 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
     _fetchWaterLevel(id),                      // 7
     _fetchNws(lat, lon),                       // 8
     _fetchObs(id, 'salinity'),                 // 9
-    fetchNdbcWaves(lat, lon),                  // 10
+    fetchOpenMeteoWaves(lat, lon),             // 10
   ]);
 
   final hourlyList = results[0] as List<TidePrediction>;

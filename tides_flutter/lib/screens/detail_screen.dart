@@ -476,12 +476,14 @@ class _SunMoonCard extends StatelessWidget {
                           style: const TextStyle(fontSize: 36),
                         ),
                         const SizedBox(width: 10),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _row('Phase', data.moon.phase),
-                            _row('Lit', '${data.moon.pct}%'),
-                          ],
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _row('Phase', data.moon.phase),
+                              _row('Lit', '${data.moon.pct}%'),
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -498,7 +500,7 @@ class _SunMoonCard extends StatelessWidget {
         child: Row(
           children: [
             Text('$label  ', style: const TextStyle(color: Colors.white54, fontSize: 11)),
-            Text(value, style: const TextStyle(color: Colors.white, fontSize: 12)),
+            Flexible(child: Text(value, style: const TextStyle(color: Colors.white, fontSize: 12))),
           ],
         ),
       );
@@ -696,7 +698,7 @@ class _WaveCard extends StatelessWidget {
                   style: TextStyle(color: kCyan, fontSize: 11, letterSpacing: 1.5)),
               const Spacer(),
               Text(
-                'NDBC ${w.ndbcStation} · ${w.distance.toStringAsFixed(0)} mi',
+                w.source,
                 style: const TextStyle(color: Colors.white38, fontSize: 10),
               ),
             ]),

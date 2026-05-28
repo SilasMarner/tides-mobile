@@ -20,7 +20,7 @@ class AboutScreen extends StatelessWidget {
                 style: TextStyle(
                     color: kCyan, fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            const Text('Version 2.1.0+11  ·  Live NOAA tide data for Android',
+            const Text('Version 2.2  ·  Live NOAA tide data for Android',
                 style: TextStyle(color: Colors.white54, fontSize: 13)),
             const SizedBox(height: 2),
             const Text('Built with Flutter',
@@ -181,6 +181,7 @@ class AboutScreen extends StatelessWidget {
     'Solunar tables: major & minor feeding periods',
     'Sun & moon: sunrise, sunset, golden hour, phase, illumination',
     'Fishing rating (1–5 stars) based on tides, solunar timing, and wind',
+    'Wave heights, swell and wind-sea breakdown from Open-Meteo Marine at each station location',
     'Favorites and GPS-based nearest stations',
     'Notifications for tide changes, solunar majors, and best fishing days',
   ];
@@ -197,6 +198,7 @@ class AboutScreen extends StatelessWidget {
     ('url_launcher', 'BSD 3-Clause', 'pub.dev/packages/url_launcher'),
     ('NOAA CO-OPS API', 'Public Domain', 'tidesandcurrents.noaa.gov'),
     ('NWS API', 'Public Domain', 'weather.gov'),
+    ('Open-Meteo Marine API', 'CC BY 4.0', 'open-meteo.com'),
   ];
 
   Widget _creditTile((String, String, String) c) => Card(
@@ -227,7 +229,7 @@ class _CheckForUpdatesButton extends StatefulWidget {
 }
 
 class _CheckForUpdatesButtonState extends State<_CheckForUpdatesButton> {
-  static const _currentVersion = '2.1.0+11';
+  static const _currentVersion = '2.2.0+12';
   bool _checking = false;
   String? _status;
 

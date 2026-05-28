@@ -119,8 +119,7 @@ class WaveData {
   final String? swellDir;
   final double? windWaveHeight; // ft
   final double? windWavePeriod; // seconds
-  final String ndbcStation;
-  final double distance;      // miles from tide station
+  final String source;        // data attribution label
 
   const WaveData({
     required this.waveHeight,
@@ -131,8 +130,7 @@ class WaveData {
     this.swellDir,
     this.windWaveHeight,
     this.windWavePeriod,
-    required this.ndbcStation,
-    required this.distance,
+    required this.source,
   });
 }
 
