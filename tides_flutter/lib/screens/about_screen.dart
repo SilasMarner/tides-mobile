@@ -1,5 +1,5 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:in_app_update/in_app_update.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
 
@@ -20,7 +20,7 @@ class AboutScreen extends StatelessWidget {
                 style: TextStyle(
                     color: kCyan, fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            const Text('Version 2.2  ·  Live NOAA tide data for Android',
+            const Text('Version 2.2.1  ·  Live NOAA tide data for Android',
                 style: TextStyle(color: Colors.white54, fontSize: 13)),
             const SizedBox(height: 2),
             const Text('Built with Flutter',
@@ -229,25 +229,30 @@ class _CheckForUpdatesButton extends StatefulWidget {
 }
 
 class _CheckForUpdatesButtonState extends State<_CheckForUpdatesButton> {
-  static const _currentVersion = '2.2.0+13';
   bool _checking = false;
   String? _status;
 
   Future<void> _check() async {
     setState(() { _checking = true; _status = null; });
     try {
-      final resp = await Dio().get(
-        'https://api.github.com/repos/SilasMarner/tides-mobile/releases/latest',
-        options: Options(headers: {'Accept': 'application/vnd.github+json'}),
-      );
-      final tag = (resp.data['tag_name'] as String).replaceFirst('v', '');
-      setState(() {
-        _status = tag == _currentVersion
-            ? 'You\'re up to date (v$_currentVersion)'
-            : 'Update available: v$tag';
-      });
+      final info = await InAppUpdate.checkForUpdate();
+      if (!mounted) return;
+      switch (info.updateAvailability) {
+        case UpdateAvailability.updateAvailable:
+          setState(() { _status = 'Update available — downloading in background'; });
+          await InAppUpdate.startFlexibleUpdate();
+          InAppUpdate.installUpdateListener.listen((status) {
+            if (status == InstallStatus.downloaded && mounted) {
+              setState(() { _status = 'Ready to install — restart the app'; });
+            }
+          });
+        case UpdateAvailability.updateNotAvailable:
+          setState(() { _status = 'You\'re up to date'; });
+        default:
+          setState(() { _status = 'Could not check for updates'; });
+      }
     } catch (_) {
-      setState(() { _status = 'Could not check for updates'; });
+      if (mounted) setState(() { _status = 'Could not check for updates'; });
     } finally {
       if (mounted) setState(() { _checking = false; });
     }
