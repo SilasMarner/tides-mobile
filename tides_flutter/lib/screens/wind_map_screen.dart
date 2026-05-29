@@ -21,25 +21,34 @@ class WindMapScreen extends StatefulWidget {
 class _WindMapScreenState extends State<WindMapScreen> {
   late final WebViewController _controller;
   bool _loading = true;
+  String _overlay = 'wind';
+
+  String _buildUrl(String overlay) =>
+      'https://embed.windy.com/embed2.html'
+      '?lat=${widget.lat}&lon=${widget.lon}'
+      '&zoom=8&level=surface&overlay=$overlay'
+      '&product=ecmwf&metricWind=mph&metricTemp=%C2%B0F'
+      '&marker=true&pressure=true&calendar=now'
+      '&message=true&type=map&location=coordinates';
 
   @override
   void initState() {
     super.initState();
-    final uri = Uri.parse(
-      'https://embed.windy.com/embed.html'
-      '?lat=${widget.lat}&lon=${widget.lon}'
-      '&detailLat=${widget.lat}&detailLon=${widget.lon}'
-      '&zoom=9&level=surface&overlay=wind'
-      '&product=ecmwf&metricWind=mph&metricTemp=%C2%B0F'
-      '&message=true&marker=true',
-    );
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(kNavy)
       ..setNavigationDelegate(NavigationDelegate(
         onPageFinished: (_) => setState(() => _loading = false),
       ))
-      ..loadRequest(uri);
+      ..loadRequest(Uri.parse(_buildUrl(_overlay)));
+  }
+
+  void _switchOverlay(String overlay) {
+    setState(() {
+      _loading = true;
+      _overlay = overlay;
+    });
+    _controller.loadRequest(Uri.parse(_buildUrl(overlay)));
   }
 
   @override
@@ -57,35 +66,32 @@ class _WindMapScreenState extends State<WindMapScreen> {
             icon: const Icon(Icons.layers, color: kCyan),
             tooltip: 'Overlay',
             color: kNavyLight,
-            onSelected: (overlay) => _controller.loadRequest(Uri.parse(
-              'https://embed.windy.com/embed.html'
-              '?lat=${widget.lat}&lon=${widget.lon}'
-              '&detailLat=${widget.lat}&detailLon=${widget.lon}'
-              '&zoom=9&level=surface&overlay=$overlay'
-              '&product=ecmwf&metricWind=mph&metricTemp=%C2%B0F'
-              '&message=true&marker=true',
-            )),
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: 'wind',
-                child: Text('Wind', style: TextStyle(color: Colors.white)),
-              ),
-              PopupMenuItem(
-                value: 'waves',
-                child: Text('Waves', style: TextStyle(color: Colors.white)),
-              ),
-              PopupMenuItem(
-                value: 'rain',
-                child: Text('Rain', style: TextStyle(color: Colors.white)),
-              ),
-              PopupMenuItem(
-                value: 'temp',
-                child: Text('Temperature', style: TextStyle(color: Colors.white)),
-              ),
-              PopupMenuItem(
-                value: 'clouds',
-                child: Text('Clouds', style: TextStyle(color: Colors.white)),
-              ),
+            onSelected: _switchOverlay,
+            itemBuilder: (_) => [
+              for (final item in const [
+                ('wind',    'Wind'),
+                ('waves',   'Waves'),
+                ('swell',   'Swell'),
+                ('rain',    'Rain / Thunder'),
+                ('temp',    'Temperature'),
+                ('pressure','Pressure'),
+                ('clouds',  'Clouds'),
+              ])
+                PopupMenuItem(
+                  value: item.$1,
+                  child: Row(children: [
+                    if (_overlay == item.$1)
+                      const Icon(Icons.check, size: 16, color: kCyan)
+                    else
+                      const SizedBox(width: 16),
+                    const SizedBox(width: 8),
+                    Text(item.$2,
+                        style: TextStyle(
+                            color: _overlay == item.$1
+                                ? kCyan
+                                : Colors.white)),
+                  ]),
+                ),
             ],
           ),
         ],
