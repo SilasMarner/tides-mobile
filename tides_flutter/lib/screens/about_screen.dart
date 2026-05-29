@@ -20,7 +20,7 @@ class AboutScreen extends StatelessWidget {
                 style: TextStyle(
                     color: kCyan, fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            const Text('Version 2.2.1  ·  Live NOAA tide data for Android',
+            const Text('Version 2.3.0  ·  Live NOAA tide data for Android',
                 style: TextStyle(color: Colors.white54, fontSize: 13)),
             const SizedBox(height: 2),
             const Text('Built with Flutter',
@@ -182,6 +182,7 @@ class AboutScreen extends StatelessWidget {
     'Sun & moon: sunrise, sunset, golden hour, phase, illumination',
     'Fishing rating (1–5 stars) based on tides, solunar timing, and wind',
     'Wave heights, swell and wind-sea breakdown from Open-Meteo Marine at each station location',
+    'Interactive Windy wind map — animated particle visualization with Wind, Waves, Rain, Temperature, and Clouds overlays',
     'Favorites and GPS-based nearest stations',
     'Notifications for tide changes, solunar majors, and best fishing days',
   ];
@@ -199,6 +200,8 @@ class AboutScreen extends StatelessWidget {
     ('NOAA CO-OPS API', 'Public Domain', 'tidesandcurrents.noaa.gov'),
     ('NWS API', 'Public Domain', 'weather.gov'),
     ('Open-Meteo Marine API', 'CC BY 4.0', 'open-meteo.com'),
+    ('Windy Embed API', 'windy.com', 'windy.com'),
+    ('webview_flutter', 'BSD 3-Clause', 'pub.dev/packages/webview_flutter'),
   ];
 
   Widget _creditTile((String, String, String) c) => Card(

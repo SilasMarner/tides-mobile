@@ -12,7 +12,15 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 
 ## Changelog
 
-### v2.1.0 (build 11) — latest
+### v2.3.0 (build 15) — latest
+- **Wind map** — new interactive Windy map screen accessible from any station's detail view via the air icon in the toolbar; animated wind particle visualization centered on the station with overlay switcher for Wind, Waves, Rain, Temperature, and Clouds
+
+### v2.2.0 (build 12–14)
+- **Open-Meteo Marine wave data** — replaces NDBC buoy; wave height, dominant period, swell and wind-sea breakdown at exact station coordinates
+- **Play Store in-app update prompt** — flexible update flow with MaterialBanner when a new version is ready to install
+- Moon phase display overflow fix
+
+### v2.1.0 (build 11)
 - **Alarm permission removed** — switched to inexact alarms; no special permissions required, notifications still fire accurately for tide and solunar events
 
 ### v2.1.0 (build 10)
@@ -58,8 +66,9 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 - **Solunar tables** — major/minor feeding periods calculated from moon position
 - **Sun & moon** — sunrise, sunset, golden hour, moon phase and illumination percentage
 - **Fishing rating** — 1–5 star rating based on tidal movement, solunar timing, and wind
-- **NDBC wave data** — wave height, dominant period, swell height/period/direction, and wind sea from the nearest offshore buoy (up to 150 miles)
+- **Wave data** — wave height, dominant period, swell height/period/direction, and wind sea from Open-Meteo Marine at each station's exact coordinates
 - **Interactive tide chart** — tap or drag anywhere on the chart to see exact time and height
+- **Wind map** — animated Windy map centered on the station with overlay switcher (Wind, Waves, Rain, Temperature, Clouds)
 - **Favorites** — save stations with one tap; shown on home screen
 - **Use My Location** — GPS-based nearest stations
 
@@ -67,9 +76,9 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 
 ## Screenshots
 
-| Search + Sensor Icons | Conditions · Waves · NWS · Chart | Week View | About |
-|-----------------------|----------------------------------|-----------|-------|
-| ![Search](docs/screenshots/search.png) | ![Conditions](docs/screenshots/detail_conditions.png) | ![Week](docs/screenshots/week_view.png) | ![About](docs/screenshots/about.png) |
+| Home | Search Results | Station Detail | Wind Map | Wind Map Overlays |
+|------|---------------|----------------|----------|-------------------|
+| ![Home](docs/screenshots/home.png) | ![Search](docs/screenshots/search_galveston.png) | ![Detail](docs/screenshots/detail_galveston.png) | ![Wind Map](docs/screenshots/wind_map.png) | ![Overlays](docs/screenshots/wind_map_layers.png) |
 
 ---
 
@@ -85,6 +94,8 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 | Storage | shared_preferences |
 | Tide data | NOAA CO-OPS API |
 | Weather | NWS weather.gov API |
+| Wave data | Open-Meteo Marine API |
+| Wind map | Windy Embed API (webview_flutter) |
 
 ---
 
