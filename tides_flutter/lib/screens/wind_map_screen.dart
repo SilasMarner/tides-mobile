@@ -787,7 +787,9 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   // the visible area — like Windy, the data follows the map.
   void _onPositionChanged(MapCamera camera, bool hasGesture) {
     if (!hasGesture) return;
-    // Radar is a tile layer — it self-loads on pan/zoom, no refetch needed.
+    // Radar is a tile layer — it self-loads on pan/zoom. We deliberately do
+    // NOT precache the other frames here: a burst of tile requests would
+    // starve the basemap and leave the panned-to area blank.
     if (_kLayers[_currentLayer]!.isRadar) return;
     _moveDebounce?.cancel();
     _moveDebounce = Timer(const Duration(milliseconds: 450), () {
@@ -919,11 +921,45 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
           _radarIndex = 0;
           _loading = false;
         });
+        // Warm the cache after a beat so the basemap loads first (a tile
+        // burst now would blank the map).
+        Timer(const Duration(milliseconds: 1300), () {
+          if (mounted && _kLayers[_currentLayer]!.isRadar) _precacheRadar();
+        });
         if (_radarPlaying) _startRadarAnim();
       }
     } catch (_) {
       if (mounted) {
         setState(() { _error = 'Could not load radar'; _loading = false; });
+      }
+    }
+  }
+
+  // Warm Flutter's image cache with every frame's tiles for the current view,
+  // so swapping frames during playback is instant (no per-frame tile reload).
+  void _precacheRadar() {
+    if (_radarFrames.isEmpty) return;
+    final cam = _mapController.camera;
+    final z = math.min(cam.zoom.round(), 7);
+    final b = cam.visibleBounds;
+    int lon2x(double lon) => ((lon + 180) / 360 * (1 << z)).floor();
+    int lat2y(double lat) {
+      final r = lat * math.pi / 180;
+      return ((1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2 *
+              (1 << z))
+          .floor();
+    }
+    final x0 = lon2x(b.west) - 1, x1 = lon2x(b.east) + 1;
+    final y0 = lat2y(b.north) - 1, y1 = lat2y(b.south) + 1;
+    for (final f in _radarFrames) {
+      for (var x = x0; x <= x1; x++) {
+        for (var y = y0; y <= y1; y++) {
+          final url = f.template
+              .replaceAll('{z}', '$z')
+              .replaceAll('{x}', '$x')
+              .replaceAll('{y}', '$y');
+          precacheImage(NetworkImage(url), context).catchError((_) {});
+        }
       }
     }
   }
@@ -1030,22 +1066,21 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                 userAgentPackageName: 'com.mattbettinger.tides',
                 retinaMode: true,
               ),
-              // All radar frames are mounted so their tiles preload; only the
-              // current one is painted (Opacity 0 skips painting). This makes
-              // the animation smooth once the frames are cached.
-              if (def.isRadar)
-                for (var i = 0; i < _radarFrames.length; i++)
-                  Opacity(
-                    opacity: i == _radarIndex ? 0.72 : 0.0,
-                    child: TileLayer(
-                      key: ValueKey('radar_${_radarFrames[i].time}'),
-                      urlTemplate: _radarFrames[i].template,
-                      // RainViewer radar tiles only exist up to z7; scale them
-                      // up beyond that instead of requesting "unsupported" tiles.
-                      maxNativeZoom: 7,
-                      userAgentPackageName: 'com.mattbettinger.tides',
-                    ),
+              // One radar layer; we swap its frame and rely on the warmed
+              // image cache (see _precacheRadar) for smooth playback. Using a
+              // single layer keeps tile loading light so panning stays crisp.
+              if (def.isRadar && _radarFrames.isNotEmpty)
+                Opacity(
+                  opacity: 0.72,
+                  child: TileLayer(
+                    key: const ValueKey('radar'),
+                    urlTemplate: _radarFrames[_radarIndex].template,
+                    // RainViewer radar tiles only exist up to z7; scale them
+                    // up beyond that instead of requesting "unsupported" tiles.
+                    maxNativeZoom: 7,
+                    userAgentPackageName: 'com.mattbettinger.tides',
                   ),
+                ),
               if (_field != null && _gradientImage != null)
                 _SmoothGradientLayer(field: _field!, image: _gradientImage!),
               if (_field != null && def.hasIsobars)
@@ -1144,69 +1179,97 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
 
   Widget _radarTimeline() {
     final f = _radarFrames[_radarIndex];
+    final spanMin =
+        ((_radarFrames.last.time - _radarFrames.first.time) / 60).round();
     return Positioned(
       top: 10,
       left: 12,
       right: 12,
       child: Container(
-        padding: const EdgeInsets.only(left: 4, right: 12),
+        padding: const EdgeInsets.fromLTRB(4, 2, 14, 6),
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.72),
-          borderRadius: BorderRadius.circular(24),
+          color: Colors.black.withOpacity(0.74),
+          borderRadius: BorderRadius.circular(18),
         ),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(
-              icon: Icon(_radarPlaying ? Icons.pause : Icons.play_arrow,
-                  color: kCyan),
-              iconSize: 22,
-              onPressed: () {
-                setState(() => _radarPlaying = !_radarPlaying);
-                if (_radarPlaying) {
-                  if (_radarIndex >= _radarFrames.length - 1) _radarIndex = 0;
-                  _startRadarAnim();
-                } else {
-                  _radarAnim?.cancel();
-                }
-              },
-            ),
-            Expanded(
-              child: SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  trackHeight: 2,
-                  thumbShape:
-                      const RoundSliderThumbShape(enabledThumbRadius: 6),
-                  overlayShape:
-                      const RoundSliderOverlayShape(overlayRadius: 12),
-                ),
-                child: Slider(
-                  min: 0,
-                  max: (_radarFrames.length - 1).toDouble(),
-                  divisions: _radarFrames.length - 1,
-                  value: _radarIndex.toDouble(),
-                  activeColor: kCyan,
-                  inactiveColor: Colors.white24,
-                  onChanged: (v) {
-                    _radarAnim?.cancel();
-                    setState(() {
-                      _radarPlaying = false;
-                      _radarIndex = v.round();
-                    });
+            Row(
+              children: [
+                IconButton(
+                  icon: Icon(_radarPlaying ? Icons.pause : Icons.play_arrow,
+                      color: kCyan),
+                  iconSize: 22,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    setState(() => _radarPlaying = !_radarPlaying);
+                    if (_radarPlaying) {
+                      if (_radarIndex >= _radarFrames.length - 1) {
+                        _radarIndex = 0;
+                      }
+                      _startRadarAnim();
+                    } else {
+                      _radarAnim?.cancel();
+                    }
                   },
                 ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            SizedBox(
-              width: 66,
-              child: Text(
-                _fmtClock(f.time),
-                textAlign: TextAlign.end,
-                style: TextStyle(
-                  color: f.nowcast ? Colors.amber : Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 2,
+                      thumbShape:
+                          const RoundSliderThumbShape(enabledThumbRadius: 6),
+                      overlayShape:
+                          const RoundSliderOverlayShape(overlayRadius: 12),
+                    ),
+                    child: Slider(
+                      min: 0,
+                      max: (_radarFrames.length - 1).toDouble(),
+                      divisions: _radarFrames.length - 1,
+                      value: _radarIndex.toDouble(),
+                      activeColor: kCyan,
+                      inactiveColor: Colors.white24,
+                      onChanged: (v) {
+                        _radarAnim?.cancel();
+                        setState(() {
+                          _radarPlaying = false;
+                          _radarIndex = v.round();
+                        });
+                      },
+                    ),
+                  ),
                 ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 70,
+                  child: Text(
+                    f.nowcast ? '${_fmtClock(f.time)} ▸' : _fmtClock(f.time),
+                    textAlign: TextAlign.end,
+                    style: TextStyle(
+                      color: f.nowcast ? Colors.amber : Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            // Time-span bar: oldest frame on the left, latest on the right.
+            Padding(
+              padding: const EdgeInsets.only(left: 44, right: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(_fmtClock(_radarFrames.first.time),
+                      style: const TextStyle(
+                          color: Colors.white54, fontSize: 9)),
+                  Text('${spanMin >= 60 ? '${(spanMin / 60).toStringAsFixed(spanMin % 60 == 0 ? 0 : 1)} h' : '$spanMin min'} of radar',
+                      style: const TextStyle(
+                          color: Colors.white38, fontSize: 9)),
+                  Text(_fmtClock(_radarFrames.last.time),
+                      style: const TextStyle(
+                          color: Colors.white54, fontSize: 9)),
+                ],
               ),
             ),
           ],
