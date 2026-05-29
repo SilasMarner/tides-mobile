@@ -36,12 +36,14 @@ Color _waveColor(double m) {
 
 Color _swellColor(double m) {
   if (m < 0.1) return Colors.transparent;
-  final c = m < 0.5 ? const Color(0xFFABB2B9)
-          : m < 1.0 ? const Color(0xFF5D6D7E)
-          : m < 2.0 ? const Color(0xFF2C3E50)
-          : m < 4.0 ? const Color(0xFF1C2833)
-          :             const Color(0xFF0E1620);
-  return c.withOpacity(0.50);
+  // Cyan → indigo → purple → magenta: distinct hues that read clearly both
+  // on the map and as legend dots, and stand apart from the blue wave layer.
+  final c = m < 0.5 ? const Color(0xFF4DD0E1)
+          : m < 1.0 ? const Color(0xFF5C6BC0)
+          : m < 2.0 ? const Color(0xFF7E57C2)
+          : m < 4.0 ? const Color(0xFFAB47BC)
+          :             const Color(0xFFEC407A);
+  return c.withOpacity(0.55);
 }
 
 Color _rainColor(double mm) {
@@ -228,16 +230,16 @@ const _kLayers = <_Layer, _LayerDef>{
     valueVar: 'swell_wave_height', directionVar: 'swell_wave_direction',
     colorFn: _swellColor,
     legend: [
-      (Color(0xFFABB2B9), '<1.5'),
-      (Color(0xFF5D6D7E), '1.5–3'),
-      (Color(0xFF2C3E50), '3–6'),
-      (Color(0xFF1C2833), '>6 ft'),
+      (Color(0xFF4DD0E1), '<1.5'),
+      (Color(0xFF5C6BC0), '1.5–3'),
+      (Color(0xFF7E57C2), '3–6'),
+      (Color(0xFFAB47BC), '>6 ft'),
     ],
     legendMetric: [
-      (Color(0xFFABB2B9), '<0.5m'),
-      (Color(0xFF5D6D7E), '0.5–1m'),
-      (Color(0xFF2C3E50), '1–2m'),
-      (Color(0xFF1C2833), '>2m'),
+      (Color(0xFF4DD0E1), '<0.5m'),
+      (Color(0xFF5C6BC0), '0.5–1m'),
+      (Color(0xFF7E57C2), '1–2m'),
+      (Color(0xFFAB47BC), '>2m'),
     ],
   ),
   _Layer.rain: _LayerDef(
