@@ -718,6 +718,15 @@ class _LayerPicker extends StatelessWidget {
       );
 }
 
+// ── Radar frame ────────────────────────────────────────────────────────────────
+
+class _RadarFrame {
+  final int time;        // epoch seconds
+  final String template; // tile URL template
+  final bool nowcast;    // true = forecast frame
+  const _RadarFrame(this.time, this.template, this.nowcast);
+}
+
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 class WindMapScreen extends ConsumerStatefulWidget {
@@ -745,7 +754,11 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   String? _error;
   LatLng? _probe; // point the user tapped to read a value
   Timer? _moveDebounce;
-  String? _radarTemplate; // RainViewer tile URL template (rain layer)
+  // Radar animation (rain layer): a series of RainViewer frames we loop over.
+  List<_RadarFrame> _radarFrames = [];
+  int _radarIndex = 0;
+  bool _radarPlaying = true;
+  Timer? _radarAnim;
 
   static const _n = 9;
 
@@ -766,6 +779,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   @override
   void dispose() {
     _moveDebounce?.cancel();
+    _radarAnim?.cancel();
     super.dispose();
   }
 
@@ -784,10 +798,11 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   Future<void> _fetchGrid({_Layer? layer, bool silent = false}) async {
     final def = _kLayers[layer ?? _currentLayer]!;
     if (!silent) {
+      _radarAnim?.cancel();
       setState(() {
         _loading = true; _error = null;
         _field = null; _gradientImage = null; _probe = null;
-        _radarTemplate = null;
+        _radarFrames = [];
       });
     }
     if (layer != null) {
@@ -876,32 +891,63 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     }
   }
 
-  // Live precipitation radar from RainViewer (free, no key). We grab the most
-  // recent frame and let flutter_map load tiles for whatever's on screen.
+  // Live precipitation radar from RainViewer (free, no key). We load every
+  // available frame (past + nowcast) and loop through them for an animation.
   Future<void> _fetchRadar() async {
     try {
       final resp =
           await _dio.get('https://api.rainviewer.com/public/weather-maps.json');
       final data = resp.data as Map;
       final host = data['host'] as String;
-      final past = (data['radar']?['past'] as List?) ?? const [];
-      if (past.isEmpty) {
+      // {size}/{z}/{x}/{y}/{color}/{smooth}_{snow}.png — colour 4 = TWC scheme.
+      String tmpl(String path) => '$host$path/256/{z}/{x}/{y}/4/1_1.png';
+      final frames = <_RadarFrame>[
+        for (final f in (data['radar']?['past'] as List?) ?? const [])
+          _RadarFrame(f['time'] as int, tmpl(f['path'] as String), false),
+        for (final f in (data['radar']?['nowcast'] as List?) ?? const [])
+          _RadarFrame(f['time'] as int, tmpl(f['path'] as String), true),
+      ];
+      if (frames.isEmpty) {
         if (mounted) {
           setState(() { _error = 'Radar unavailable right now'; _loading = false; });
         }
         return;
       }
-      final path = past.last['path'] as String;
-      // {size}/{z}/{x}/{y}/{color}/{smooth}_{snow}.png — colour 4 = TWC scheme.
-      final template = '$host$path/256/{z}/{x}/{y}/4/1_1.png';
       if (mounted) {
-        setState(() { _radarTemplate = template; _loading = false; });
+        setState(() {
+          _radarFrames = frames;
+          _radarIndex = 0;
+          _loading = false;
+        });
+        if (_radarPlaying) _startRadarAnim();
       }
     } catch (_) {
       if (mounted) {
         setState(() { _error = 'Could not load radar'; _loading = false; });
       }
     }
+  }
+
+  void _startRadarAnim() {
+    _radarAnim?.cancel();
+    if (_radarFrames.length < 2) return;
+    void schedule() {
+      final atEnd = _radarIndex >= _radarFrames.length - 1;
+      // Hold a little longer on the last frame before looping back.
+      _radarAnim = Timer(Duration(milliseconds: atEnd ? 1200 : 500), () {
+        if (!mounted || !_radarPlaying) return;
+        setState(() => _radarIndex = atEnd ? 0 : _radarIndex + 1);
+        schedule();
+      });
+    }
+    schedule();
+  }
+
+  String _fmtClock(int epoch) {
+    final t = DateTime.fromMillisecondsSinceEpoch(epoch * 1000);
+    final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
+    final m = t.minute.toString().padLeft(2, '0');
+    return '$h:$m ${t.hour < 12 ? 'AM' : 'PM'}';
   }
 
   Future<ui.Image> _buildGradientImage(
@@ -984,17 +1030,22 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                 userAgentPackageName: 'com.mattbettinger.tides',
                 retinaMode: true,
               ),
-              if (def.isRadar && _radarTemplate != null)
-                Opacity(
-                  opacity: 0.72,
-                  child: TileLayer(
-                    urlTemplate: _radarTemplate!,
-                    // RainViewer radar tiles only exist up to z7; scale them
-                    // up beyond that instead of requesting "unsupported" tiles.
-                    maxNativeZoom: 7,
-                    userAgentPackageName: 'com.mattbettinger.tides',
+              // All radar frames are mounted so their tiles preload; only the
+              // current one is painted (Opacity 0 skips painting). This makes
+              // the animation smooth once the frames are cached.
+              if (def.isRadar)
+                for (var i = 0; i < _radarFrames.length; i++)
+                  Opacity(
+                    opacity: i == _radarIndex ? 0.72 : 0.0,
+                    child: TileLayer(
+                      key: ValueKey('radar_${_radarFrames[i].time}'),
+                      urlTemplate: _radarFrames[i].template,
+                      // RainViewer radar tiles only exist up to z7; scale them
+                      // up beyond that instead of requesting "unsupported" tiles.
+                      maxNativeZoom: 7,
+                      userAgentPackageName: 'com.mattbettinger.tides',
+                    ),
                   ),
-                ),
               if (_field != null && _gradientImage != null)
                 _SmoothGradientLayer(field: _field!, image: _gradientImage!),
               if (_field != null && def.hasIsobars)
@@ -1062,6 +1113,8 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
               ),
             ),
           if (!_loading && _error == null) _legend(def, metric),
+          if (def.isRadar && _radarFrames.isNotEmpty && !_loading && _error == null)
+            _radarTimeline(),
           if (_probe != null && _field != null && !_loading && _error == null)
             _probeReadout(def, metric)
           else if (_probe == null && _field != null && !_loading && _error == null)
@@ -1083,6 +1136,81 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  // ── Radar animation timeline ──────────────────────────────────────────────
+
+  Widget _radarTimeline() {
+    final f = _radarFrames[_radarIndex];
+    return Positioned(
+      top: 10,
+      left: 12,
+      right: 12,
+      child: Container(
+        padding: const EdgeInsets.only(left: 4, right: 12),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.72),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Row(
+          children: [
+            IconButton(
+              icon: Icon(_radarPlaying ? Icons.pause : Icons.play_arrow,
+                  color: kCyan),
+              iconSize: 22,
+              onPressed: () {
+                setState(() => _radarPlaying = !_radarPlaying);
+                if (_radarPlaying) {
+                  if (_radarIndex >= _radarFrames.length - 1) _radarIndex = 0;
+                  _startRadarAnim();
+                } else {
+                  _radarAnim?.cancel();
+                }
+              },
+            ),
+            Expanded(
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 2,
+                  thumbShape:
+                      const RoundSliderThumbShape(enabledThumbRadius: 6),
+                  overlayShape:
+                      const RoundSliderOverlayShape(overlayRadius: 12),
+                ),
+                child: Slider(
+                  min: 0,
+                  max: (_radarFrames.length - 1).toDouble(),
+                  divisions: _radarFrames.length - 1,
+                  value: _radarIndex.toDouble(),
+                  activeColor: kCyan,
+                  inactiveColor: Colors.white24,
+                  onChanged: (v) {
+                    _radarAnim?.cancel();
+                    setState(() {
+                      _radarPlaying = false;
+                      _radarIndex = v.round();
+                    });
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 66,
+              child: Text(
+                _fmtClock(f.time),
+                textAlign: TextAlign.end,
+                style: TextStyle(
+                  color: f.nowcast ? Colors.amber : Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
