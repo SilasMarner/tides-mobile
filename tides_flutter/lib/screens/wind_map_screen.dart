@@ -3,8 +3,10 @@ import 'dart:ui' as ui;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import '../providers/units_provider.dart';
 import '../theme.dart';
 
 // ── Color ramps (opacity baked in) ───────────────────────────────────────────
@@ -158,7 +160,8 @@ class _LayerDef {
   final String valueVar;
   final String? directionVar;
   final Color Function(double) colorFn;
-  final List<(Color, String)> legend;
+  final List<(Color, String)> legend;       // Standard (imperial) labels
+  final List<(Color, String)>? legendMetric; // Metric labels (null = same)
   const _LayerDef({
     required this.label,
     required this.icon,
@@ -168,7 +171,11 @@ class _LayerDef {
     this.directionVar,
     required this.colorFn,
     required this.legend,
+    this.legendMetric,
   });
+
+  List<(Color, String)> legendFor(bool metric) =>
+      (metric && legendMetric != null) ? legendMetric! : legend;
 }
 
 const _kLayers = <_Layer, _LayerDef>{
@@ -183,6 +190,12 @@ const _kLayers = <_Layer, _LayerDef>{
       (Color(0xFFF9CA24), '15–25'),
       (Color(0xFFEB4D4B), '>25 mph'),
     ],
+    legendMetric: [
+      (Color(0xFF98ECFF), '<8'),
+      (Color(0xFF56E39F), '8–24'),
+      (Color(0xFFF9CA24), '24–40'),
+      (Color(0xFFEB4D4B), '>40 km/h'),
+    ],
   ),
   _Layer.waves: _LayerDef(
     label: 'Waves', icon: Icons.waves,
@@ -190,6 +203,12 @@ const _kLayers = <_Layer, _LayerDef>{
     valueVar: 'wave_height', directionVar: 'wave_direction',
     colorFn: _waveColor,
     legend: [
+      (Color(0xFF7FB3D3), '<1.5'),
+      (Color(0xFF2980B9), '1.5–3'),
+      (Color(0xFF1A5276), '3–6'),
+      (Color(0xFF0D2137), '>6 ft'),
+    ],
+    legendMetric: [
       (Color(0xFF7FB3D3), '<0.5m'),
       (Color(0xFF2980B9), '0.5–1m'),
       (Color(0xFF1A5276), '1–2m'),
@@ -202,6 +221,12 @@ const _kLayers = <_Layer, _LayerDef>{
     valueVar: 'swell_wave_height', directionVar: 'swell_wave_direction',
     colorFn: _swellColor,
     legend: [
+      (Color(0xFFABB2B9), '<1.5'),
+      (Color(0xFF5D6D7E), '1.5–3'),
+      (Color(0xFF2C3E50), '3–6'),
+      (Color(0xFF1C2833), '>6 ft'),
+    ],
+    legendMetric: [
       (Color(0xFFABB2B9), '<0.5m'),
       (Color(0xFF5D6D7E), '0.5–1m'),
       (Color(0xFF2C3E50), '1–2m'),
@@ -224,9 +249,15 @@ const _kLayers = <_Layer, _LayerDef>{
     isMarine: false, hasFlow: false,
     valueVar: 'temperature_2m', colorFn: _tempColor,
     legend: [
-      (Color(0xFF2E86C1), '<10°C'),
-      (Color(0xFFA9DFBF), '10–20°C'),
-      (Color(0xFFF9CA24), '20–30°C'),
+      (Color(0xFF2E86C1), '<50'),
+      (Color(0xFFA9DFBF), '50–68'),
+      (Color(0xFFF9CA24), '68–86'),
+      (Color(0xFFEB4D4B), '>86°F'),
+    ],
+    legendMetric: [
+      (Color(0xFF2E86C1), '<10'),
+      (Color(0xFFA9DFBF), '10–20'),
+      (Color(0xFFF9CA24), '20–30'),
       (Color(0xFFEB4D4B), '>30°C'),
     ],
   ),
@@ -516,7 +547,7 @@ class _LayerPicker extends StatelessWidget {
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
-class WindMapScreen extends StatefulWidget {
+class WindMapScreen extends ConsumerStatefulWidget {
   final double lat;
   final double lon;
   final String stationName;
@@ -529,10 +560,10 @@ class WindMapScreen extends StatefulWidget {
   });
 
   @override
-  State<WindMapScreen> createState() => _WindMapScreenState();
+  ConsumerState<WindMapScreen> createState() => _WindMapScreenState();
 }
 
-class _WindMapScreenState extends State<WindMapScreen> {
+class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   final _mapController = MapController();
   _Layer _currentLayer = _Layer.wind;
   _DataGrid? _field;
@@ -663,6 +694,7 @@ class _WindMapScreenState extends State<WindMapScreen> {
   @override
   Widget build(BuildContext context) {
     final def = _kLayers[_currentLayer]!;
+    final metric = ref.watch(unitsProvider);
     return Scaffold(
       appBar: AppBar(
         backgroundColor: kNavyLight,
@@ -695,7 +727,7 @@ class _WindMapScreenState extends State<WindMapScreen> {
             children: [
               TileLayer(
                 urlTemplate:
-                    'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+                    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
                 subdomains: const ['a', 'b', 'c', 'd'],
                 userAgentPackageName: 'com.mattbettinger.tides',
                 retinaMode: true,
@@ -746,42 +778,65 @@ class _WindMapScreenState extends State<WindMapScreen> {
                 ],
               ),
             ),
-          if (!_loading && _error == null) _legend(def),
+          if (!_loading && _error == null) _legend(def, metric),
         ],
       ),
     );
   }
 
-  Widget _legend(_LayerDef def) => Positioned(
+  Widget _legend(_LayerDef def, bool metric) => Positioned(
         bottom: 32,
         left: 12,
         right: 12,
         child: Center(
           child: Container(
             padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                const EdgeInsets.fromLTRB(14, 8, 14, 8),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.65),
-              borderRadius: BorderRadius.circular(20),
+              color: Colors.black.withOpacity(0.72),
+              borderRadius: BorderRadius.circular(16),
             ),
-            child: Row(
+            child: Column(
               mainAxisSize: MainAxisSize.min,
-              children: def.legend.expand((item) => [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 3),
-                  child: Container(
-                    width: 8, height: 8,
-                    decoration: BoxDecoration(
-                        shape: BoxShape.circle, color: item.$1),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: Text(item.$2,
+              children: [
+                // Layer name so people know what they're looking at
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(def.icon, color: kCyan, size: 13),
+                    const SizedBox(width: 5),
+                    Text(
+                      def.label.toUpperCase(),
                       style: const TextStyle(
-                          color: Colors.white60, fontSize: 10)),
+                        color: kCyan,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ],
                 ),
-              ]).toList(),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: def.legendFor(metric).expand((item) => [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: Container(
+                        width: 8, height: 8,
+                        decoration: BoxDecoration(
+                            shape: BoxShape.circle, color: item.$1),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: Text(item.$2,
+                          style: const TextStyle(
+                              color: Colors.white70, fontSize: 10)),
+                    ),
+                  ]).toList(),
+                ),
+              ],
             ),
           ),
         ),

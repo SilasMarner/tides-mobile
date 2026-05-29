@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/notification_provider.dart';
 import '../providers/favorites_provider.dart';
+import '../providers/units_provider.dart';
 import '../services/notification_service.dart';
 import '../theme.dart';
 
@@ -13,6 +14,7 @@ class SettingsScreen extends ConsumerWidget {
     final prefs = ref.watch(notificationPrefsProvider);
     final notifier = ref.read(notificationPrefsProvider.notifier);
     final favorites = ref.watch(favoritesProvider);
+    final metric = ref.watch(unitsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -23,6 +25,66 @@ class SettingsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // ── Units ────────────────────────────────────────────────────────
+          _sectionLabel('UNITS'),
+          const SizedBox(height: 8),
+          Card(
+            color: kCardBg,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  ({'metric': false, 'label': 'Standard', 'sub': '°F · mph · ft'}),
+                  ({'metric': true, 'label': 'Metric', 'sub': '°C · km/h · m'}),
+                ].map((opt) {
+                  final selected = metric == opt['metric'];
+                  return Expanded(
+                    child: GestureDetector(
+                      onTap: () =>
+                          ref.read(unitsProvider.notifier).setMetric(opt['metric'] as bool),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: selected ? kCyan : kNavy,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: selected ? kCyan : Colors.white24,
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              opt['label'] as String,
+                              style: TextStyle(
+                                color: selected ? kNavy : Colors.white70,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              opt['sub'] as String,
+                              style: TextStyle(
+                                color: selected
+                                    ? kNavy.withValues(alpha: 0.7)
+                                    : Colors.white38,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
           // ── Master switch ───────────────────────────────────────────────
           Card(
             color: kCardBg,
