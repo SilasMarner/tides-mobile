@@ -19,7 +19,8 @@ dependencies:
   timezone: ^0.9.4
   url_launcher: ^6.3.0
   in_app_update: ^4.2.3
-  webview_flutter: ^4.10.0
+  flutter_map: ^7.0.0
+  latlong2: ^0.9.1
 
 dev_dependencies:
   flutter_test:
