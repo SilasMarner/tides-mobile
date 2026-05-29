@@ -7,12 +7,14 @@ class TideChart extends StatefulWidget {
   final Map<int, double> hourly;
   final List<TidePrediction> hilo;
   final bool isToday;
+  final bool metric;
 
   const TideChart({
     super.key,
     required this.hourly,
     required this.hilo,
     required this.isToday,
+    this.metric = false,
   });
 
   @override
@@ -23,18 +25,21 @@ class _TideChartState extends State<TideChart> {
   double? _touchX;
   double? _touchY;
 
+  double get _unitScale => widget.metric ? 0.3048 : 1.0;
+
   // Interpolate to 30-min resolution for smoother touch snapping
   List<FlSpot> _buildSpots() {
+    final s = _unitScale;
     final spots = <FlSpot>[];
     for (var h = 0; h < 24; h++) {
       final v = widget.hourly[h];
       if (v == null) continue;
-      spots.add(FlSpot(h.toDouble(), v));
+      spots.add(FlSpot(h.toDouble(), v * s));
       // Add half-hour point via cosine interpolation to next hour
       final vNext = widget.hourly[h + 1];
       if (vNext != null) {
         final mid = v + (vNext - v) * (1 - _cos01(0.5)) ;
-        spots.add(FlSpot(h + 0.5, mid));
+        spots.add(FlSpot(h + 0.5, mid * s));
       }
     }
     return spots;
@@ -76,8 +81,9 @@ class _TideChartState extends State<TideChart> {
       );
     }
 
-    final minY = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b) - 0.5;
-    final maxY = spots.map((s) => s.y).reduce((a, b) => a > b ? a : b) + 0.5;
+    final pad = widget.metric ? 0.2 : 0.5;
+    final minY = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b) - pad;
+    final maxY = spots.map((s) => s.y).reduce((a, b) => a > b ? a : b) + pad;
     final nowX = widget.isToday
         ? DateTime.now().hour + DateTime.now().minute / 60.0
         : -1.0;
@@ -107,7 +113,7 @@ class _TideChartState extends State<TideChart> {
           child: _touchX != null
               ? Center(
                   child: Text(
-                    '${_fmtX(_touchX!)}  ·  ${_touchY!.toStringAsFixed(2)} ft',
+                    '${_fmtX(_touchX!)}  ·  ${_touchY!.toStringAsFixed(2)} ${widget.metric ? 'm' : 'ft'}',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 12,
@@ -130,7 +136,7 @@ class _TideChartState extends State<TideChart> {
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,
-                  horizontalInterval: 2,
+                  horizontalInterval: widget.metric ? 0.5 : 2,
                   getDrawingHorizontalLine: (_) =>
                       FlLine(color: Colors.white10, strokeWidth: 1),
                 ),
@@ -170,7 +176,7 @@ class _TideChartState extends State<TideChart> {
                       showTitles: true,
                       reservedSize: 32,
                       getTitlesWidget: (v, _) => Text(
-                        v.toStringAsFixed(0),
+                        v.toStringAsFixed(widget.metric ? 1 : 0),
                         style:
                             const TextStyle(color: Colors.white38, fontSize: 10),
                       ),

@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/tide_data.dart';
+import '../providers/units_provider.dart';
+import '../utils/unit_format.dart';
 import '../theme.dart';
 
-class ConditionsCard extends StatelessWidget {
+class ConditionsCard extends ConsumerWidget {
   final Conditions c;
   const ConditionsCard({super.key, required this.c});
 
   @override
-  Widget build(BuildContext context) => Card(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final metric = ref.watch(unitsProvider);
+    return Card(
         color: kCardBg,
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         child: Padding(
@@ -21,10 +26,10 @@ class ConditionsCard extends StatelessWidget {
               const SizedBox(height: 10),
               Row(
                 children: [
-                  _cell('Air Temp', _fmt(c.airTemp, '°F')),
-                  _cell('Water Temp', _fmt(c.waterTemp, '°F')),
+                  _cell('Air Temp', fmtTemp(c.airTemp, metric)),
+                  _cell('Water Temp', fmtTemp(c.waterTemp, metric)),
                   _cell('Pressure', _fmtPressure()),
-                  _cell('Water Level', _fmt(c.waterLevel, ' ft')),
+                  _cell('Water Level', fmtLen(c.waterLevel, metric)),
                 ],
               ),
               if (c.salinity != null) ...[
@@ -37,14 +42,12 @@ class ConditionsCard extends StatelessWidget {
                 ]),
               ],
               const SizedBox(height: 8),
-              _windRow(),
+              _windRow(metric),
             ],
           ),
         ),
       );
-
-  String _fmt(double? v, String suffix) =>
-      v != null ? '${v.toStringAsFixed(1)}$suffix' : 'N/A';
+  }
 
   String _fmtPressure() {
     if (c.pressure == null) return 'N/A';
@@ -72,7 +75,7 @@ class ConditionsCard extends StatelessWidget {
         ),
       );
 
-  Widget _windRow() {
+  Widget _windRow(bool metric) {
     if (c.windSpeed == null) {
       return const Text('Wind  N/A',
           style: TextStyle(color: Colors.white54, fontSize: 12));
@@ -84,9 +87,9 @@ class ConditionsCard extends StatelessWidget {
         Text(
           [
             if (c.windDirStr != null) c.windDirStr!,
-            '${c.windSpeed!.toStringAsFixed(0)} mph',
+            fmtSpeed(c.windSpeed!, metric),
             if (c.windGust != null && c.windGust! > c.windSpeed! + 3)
-              'gusts ${c.windGust!.toStringAsFixed(0)} mph',
+              'gusts ${fmtSpeed(c.windGust!, metric)}',
             if (c.beaufortStr != null) '— ${c.beaufortStr}',
           ].join(' '),
           style: const TextStyle(color: Colors.white, fontSize: 12),

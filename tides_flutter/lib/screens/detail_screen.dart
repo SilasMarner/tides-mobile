@@ -6,7 +6,9 @@ import '../models/tide_data.dart';
 import '../providers/detail_provider.dart';
 import '../providers/favorites_provider.dart';
 import '../providers/notification_provider.dart';
+import '../providers/units_provider.dart';
 import '../services/notification_service.dart';
+import '../utils/unit_format.dart';
 import '../widgets/conditions_card.dart';
 import '../widgets/tide_chart.dart';
 import '../services/noaa_api.dart' show fmtHhmm, WaveData;
@@ -29,6 +31,7 @@ class DetailScreen extends ConsumerWidget {
     final weekAsync = ref.watch(weekDataProvider);
     final showWeek = ref.watch(showWeekProvider);
     final notifPrefs = ref.watch(notificationPrefsProvider);
+    final metric = ref.watch(unitsProvider);
     final notifEnabled = notifPrefs.enabled &&
         notifPrefs.stations.contains(station.id);
 
@@ -126,6 +129,7 @@ class DetailScreen extends ConsumerWidget {
                     data: (preds) => _WeekView(
                       predictions: preds,
                       nws: tideAsync.valueOrNull?.nws,
+                      metric: metric,
                     ),
                     loading: () => const Center(
                         child: CircularProgressIndicator(color: kCyan)),
@@ -138,7 +142,8 @@ class DetailScreen extends ConsumerWidget {
                         ? const Center(
                             child: Text('No data',
                                 style: TextStyle(color: Colors.white54)))
-                        : _TodayView(data: data, station: station),
+                        : _TodayView(
+                            data: data, station: station, metric: metric),
                     loading: () => const Center(
                         child: CircularProgressIndicator(color: kCyan)),
                     error: (e, _) => Center(
@@ -224,7 +229,9 @@ class _DateNav extends ConsumerWidget {
 class _TodayView extends StatelessWidget {
   final TideData data;
   final Station station;
-  const _TodayView({required this.data, required this.station});
+  final bool metric;
+  const _TodayView(
+      {required this.data, required this.station, required this.metric});
 
   @override
   Widget build(BuildContext context) => ListView(
@@ -235,8 +242,8 @@ class _TodayView extends StatelessWidget {
                 style: const TextStyle(color: Colors.white54, fontSize: 12)),
           ),
           ConditionsCard(c: data.conditions),
-          if (data.waves != null) _WaveCard(waves: data.waves!),
-          if (data.nws != null) _NwsCard(nws: data.nws!),
+          if (data.waves != null) _WaveCard(waves: data.waves!, metric: metric),
+          if (data.nws != null) _NwsCard(nws: data.nws!, metric: metric),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
             child: Row(children: [
@@ -250,7 +257,10 @@ class _TodayView extends StatelessWidget {
             ]),
           ),
           TideChart(
-              hourly: data.hourly, hilo: data.hilo, isToday: data.isToday),
+              hourly: data.hourly,
+              hilo: data.hilo,
+              isToday: data.isToday,
+              metric: metric),
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Text('HIGH / LOW TIDES',
@@ -285,7 +295,7 @@ class _TodayView extends StatelessWidget {
         style: const TextStyle(color: Colors.white, fontSize: 13),
       ),
       trailing: Text(
-        '${p.height >= 0 ? '+' : ''}${p.height.toStringAsFixed(2)} ft',
+        fmtTideHeight(p.height, metric),
         style: TextStyle(
             color: isHigh ? kHighTide : kLowTide,
             fontWeight: FontWeight.bold),
@@ -296,7 +306,8 @@ class _TodayView extends StatelessWidget {
 
 class _NwsCard extends StatefulWidget {
   final NwsForecast nws;
-  const _NwsCard({required this.nws});
+  final bool metric;
+  const _NwsCard({required this.nws, required this.metric});
 
   @override
   State<_NwsCard> createState() => _NwsCardState();
@@ -339,12 +350,12 @@ class _NwsCardState extends State<_NwsCard> {
               const SizedBox(height: 6),
               // Current conditions summary
               Text(
-                '${nws.condition}  ·  ${nws.temp}°F  ·  Rain ${nws.rainPct}%',
+                '${nws.condition}  ·  ${fmtTempInt(nws.temp, widget.metric)}  ·  Rain ${nws.rainPct}%',
                 style: const TextStyle(color: Colors.white, fontSize: 13),
               ),
               if (nws.windSpeed.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                Text('Wind ${nws.windDir} ${nws.windSpeed}',
+                Text('Wind ${nws.windDir} ${fmtWindString(nws.windSpeed, widget.metric)}',
                     style: const TextStyle(color: Colors.white70, fontSize: 12)),
               ],
               // Expanded: full forecast periods
@@ -366,7 +377,7 @@ class _NwsCardState extends State<_NwsCard> {
                           if (p.temp > 0) ...[
                             const SizedBox(height: 2),
                             Text(
-                              '${p.temp}°F  ·  ${p.shortForecast}',
+                              '${fmtTempInt(p.temp, widget.metric)}  ·  ${p.shortForecast}',
                               style: const TextStyle(
                                   color: Colors.white, fontSize: 12),
                             ),
@@ -525,7 +536,8 @@ final _weekTimeFmt = DateFormat('h:mm a');
 class _WeekView extends StatefulWidget {
   final List<TidePrediction> predictions;
   final NwsForecast? nws;
-  const _WeekView({required this.predictions, this.nws});
+  final bool metric;
+  const _WeekView({required this.predictions, this.nws, required this.metric});
 
   @override
   State<_WeekView> createState() => _WeekViewState();
@@ -612,7 +624,7 @@ class _WeekViewState extends State<_WeekView> {
                       const SizedBox(height: 4),
                       Row(children: [
                         Text(
-                          '${nwsPeriod.temp}°F  ',
+                          '${fmtTempInt(nwsPeriod.temp, widget.metric)}  ',
                           style: const TextStyle(
                               color: Colors.white,
                               fontSize: 12,
@@ -661,7 +673,7 @@ class _WeekViewState extends State<_WeekView> {
                   style: const TextStyle(color: Colors.white, fontSize: 13),
                 ),
                 trailing: Text(
-                  '${p.height >= 0 ? '+' : ''}${p.height.toStringAsFixed(2)} ft',
+                  fmtTideHeight(p.height, widget.metric),
                   style: TextStyle(
                     color: isHigh ? kHighTide : kLowTide,
                     fontWeight: FontWeight.bold,
@@ -679,7 +691,8 @@ class _WeekViewState extends State<_WeekView> {
 
 class _WaveCard extends StatelessWidget {
   final WaveData waves;
-  const _WaveCard({required this.waves});
+  final bool metric;
+  const _WaveCard({required this.waves, required this.metric});
 
   @override
   Widget build(BuildContext context) {
@@ -703,7 +716,7 @@ class _WaveCard extends StatelessWidget {
             ]),
             const SizedBox(height: 10),
             Row(children: [
-              _cell('Wave Ht', '${w.waveHeight.toStringAsFixed(1)} ft'),
+              _cell('Wave Ht', fmtLen(w.waveHeight, metric)),
               _cell('Dom Period', w.domPeriod > 0 ? '${w.domPeriod.toStringAsFixed(0)} sec' : 'N/A'),
               _cell('Direction', w.waveDir ?? 'N/A'),
               const Expanded(child: SizedBox()),
@@ -760,7 +773,7 @@ class _WaveCard extends StatelessWidget {
           child: Text(label,
               style: const TextStyle(color: Colors.white54, fontSize: 11)),
         ),
-        Text('${height.toStringAsFixed(1)} ft',
+        Text(fmtLen(height, metric),
             style: const TextStyle(color: Colors.white, fontSize: 12)),
         if (period != null) ...[
           const Text('  ·  ', style: TextStyle(color: Colors.white24)),
