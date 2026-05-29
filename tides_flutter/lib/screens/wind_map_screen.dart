@@ -75,7 +75,8 @@ Color _pressureColor(double hpa) {
           : hpa < 1018 ? const Color(0xFFF9CA24)
           : hpa < 1023 ? const Color(0xFFF0932B)
           :               const Color(0xFFEB4D4B);
-  return c.withOpacity(0.42);
+  // Keep the wash subtle — the isobar lines carry the detail.
+  return c.withOpacity(0.28);
 }
 
 Color _cloudColor(double pct) {
@@ -120,6 +121,9 @@ class _DataGrid {
   double primaryAt(double lat, double lon) =>
       _bilinear(lat, lon)?.value ?? 0;
 
+  /// Interpolated value + direction at a point (null if outside the grid).
+  _DataPoint? pointAt(double lat, double lon) => _bilinear(lat, lon);
+
   (double, double)? uv(double lat, double lon) {
     final fi = (lat - latMin) / step;
     final fj = (lon - lonMin) / step;
@@ -157,6 +161,8 @@ class _LayerDef {
   final IconData icon;
   final bool isMarine;
   final bool hasFlow;
+  final bool hasIsobars;
+  final double gridStep; // degrees between grid points
   final String valueVar;
   final String? directionVar;
   final Color Function(double) colorFn;
@@ -167,6 +173,8 @@ class _LayerDef {
     required this.icon,
     required this.isMarine,
     required this.hasFlow,
+    this.hasIsobars = false,
+    this.gridStep = 0.5,
     required this.valueVar,
     this.directionVar,
     required this.colorFn,
@@ -263,7 +271,7 @@ const _kLayers = <_Layer, _LayerDef>{
   ),
   _Layer.pressure: _LayerDef(
     label: 'Pressure', icon: Icons.speed,
-    isMarine: false, hasFlow: false,
+    isMarine: false, hasFlow: false, hasIsobars: true, gridStep: 1.5,
     valueVar: 'pressure_msl', colorFn: _pressureColor,
     legend: [
       (Color(0xFF6C5CE7), '<1000'),
@@ -324,6 +332,148 @@ class _SmoothGradientPainter extends CustomPainter {
       old.image != image || old.camera != camera;
 }
 
+// ── Isobars (pressure contour lines, Windy-style) ─────────────────────────────
+
+class _IsobarLayer extends StatelessWidget {
+  final _DataGrid field;
+  const _IsobarLayer({super.key, required this.field});
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+        painter: _IsobarPainter(field, MapCamera.of(context)),
+        child: const SizedBox.expand(),
+      );
+}
+
+class _IsobarPainter extends CustomPainter {
+  final _DataGrid field;
+  final MapCamera camera;
+  _IsobarPainter(this.field, this.camera);
+
+  Offset _s(double lat, double lon) {
+    final p = camera.latLngToScreenPoint(LatLng(lat, lon));
+    return Offset(p.x.toDouble(), p.y.toDouble());
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const r = 48; // fine sampling resolution for smooth contours
+    final dLat = (field.latMax - field.latMin) / r;
+    final dLon = (field.lonMax - field.lonMin) / r;
+
+    // Sample the interpolated field on a fine grid.
+    final v = List.generate(
+        r + 1, (i) => List<double>.filled(r + 1, 0.0), growable: false);
+    var vmin = double.infinity, vmax = -double.infinity;
+    for (var i = 0; i <= r; i++) {
+      final lat = field.latMin + i * dLat;
+      for (var j = 0; j <= r; j++) {
+        final val = field.primaryAt(lat, field.lonMin + j * dLon);
+        v[i][j] = val;
+        if (val < vmin) vmin = val;
+        if (val > vmax) vmax = val;
+      }
+    }
+    if (!(vmax > vmin)) return;
+
+    // Contour interval: at most 1 hPa so isobars stay dense even in calm
+    // conditions, finer if the range is tiny.
+    final raw = (vmax - vmin) / 5;
+    final step = raw <= 0.25 ? 0.25 : raw <= 0.5 ? 0.5 : 1.0;
+    final start = (vmin / step).ceilToDouble() * step;
+    final labelDecimals = step < 1 ? 1 : 0;
+
+    final glow = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4.5
+      ..strokeCap = StrokeCap.round
+      ..color = Colors.black.withOpacity(0.45);
+    final line = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.round
+      ..color = Colors.white;
+
+    final rect = Offset.zero & size;
+    final placedLabels = <Offset>[];
+
+    for (var level = start; level <= vmax; level += step) {
+      var labelPlacedForLevel = false;
+      for (var i = 0; i < r; i++) {
+        final lat0 = field.latMin + i * dLat;
+        final lat1 = lat0 + dLat;
+        for (var j = 0; j < r; j++) {
+          final lon0 = field.lonMin + j * dLon;
+          final lon1 = lon0 + dLon;
+          // Cell corners: A=NW-ish (i,j), B=(i,j+1), C=(i+1,j+1), D=(i+1,j)
+          final a = v[i][j], b = v[i][j + 1], c = v[i + 1][j + 1], d = v[i + 1][j];
+
+          final crossings = <Offset>[];
+          void edge(double la0, double lo0, double e0, double la1, double lo1,
+              double e1) {
+            if ((e0 - level) * (e1 - level) < 0) {
+              final t = (level - e0) / (e1 - e0);
+              crossings.add(
+                  _s(la0 + (la1 - la0) * t, lo0 + (lo1 - lo0) * t));
+            }
+          }
+
+          edge(lat0, lon0, a, lat0, lon1, b); // top
+          edge(lat0, lon1, b, lat1, lon1, c); // right
+          edge(lat1, lon1, c, lat1, lon0, d); // bottom
+          edge(lat1, lon0, d, lat0, lon0, a); // left
+
+          if (crossings.length >= 2) {
+            canvas.drawLine(crossings[0], crossings[1], glow);
+            canvas.drawLine(crossings[0], crossings[1], line);
+            if (crossings.length == 4) {
+              canvas.drawLine(crossings[2], crossings[3], glow);
+              canvas.drawLine(crossings[2], crossings[3], line);
+            }
+
+            // Label this level once, spaced out from other labels.
+            if (!labelPlacedForLevel) {
+              final mid = Offset((crossings[0].dx + crossings[1].dx) / 2,
+                  (crossings[0].dy + crossings[1].dy) / 2);
+              if (rect.contains(mid) &&
+                  placedLabels.every((p) => (p - mid).distance > 70)) {
+                _label(canvas, mid, level.toStringAsFixed(labelDecimals));
+                placedLabels.add(mid);
+                labelPlacedForLevel = true;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  void _label(Canvas canvas, Offset at, String text) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final pill = Rect.fromCenter(
+        center: at, width: tp.width + 8, height: tp.height + 4);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(pill, const Radius.circular(7)),
+      Paint()..color = Colors.black.withOpacity(0.65),
+    );
+    tp.paint(canvas, at - Offset(tp.width / 2, tp.height / 2));
+  }
+
+  @override
+  bool shouldRepaint(_IsobarPainter old) =>
+      old.field != field || old.camera != camera;
+}
+
 // ── Particle ──────────────────────────────────────────────────────────────────
 
 class _Particle {
@@ -368,8 +518,12 @@ class _Particle {
 class _WindParticleLayer extends StatefulWidget {
   final _DataGrid? field;
   final Color Function(double) colorFn;
+  final bool skipEmpty; // for marine layers: no particles where value ≈ 0 (land)
   const _WindParticleLayer(
-      {super.key, required this.field, required this.colorFn});
+      {super.key,
+      required this.field,
+      required this.colorFn,
+      this.skipEmpty = false});
 
   @override
   State<_WindParticleLayer> createState() => _WindParticleLayerState();
@@ -399,9 +553,15 @@ class _WindParticleLayerState extends State<_WindParticleLayer>
     final camera = MapCamera.of(context);
     final b = camera.visibleBounds;
     const pad = 0.5;
+    const empty = 0.05;
 
     for (final p in _particles) {
       p.step(widget.field!, dt.clamp(0.005, 0.05));
+      // Marine layers: retire particles that drift onto land (no wave data).
+      if (widget.skipEmpty &&
+          widget.field!.primaryAt(p.lat, p.lon) < empty) {
+        p.age = _Particle.maxAge;
+      }
     }
 
     _particles.removeWhere((p) =>
@@ -409,9 +569,16 @@ class _WindParticleLayerState extends State<_WindParticleLayer>
         p.lat < b.south - pad || p.lat > b.north + pad ||
         p.lon < b.west  - pad || p.lon > b.east  + pad);
 
-    while (_particles.length < _maxParticles) {
-      _particles.add(
-          _Particle.random(_rng, b.south, b.north, b.west, b.east));
+    // Refill, but for marine layers only spawn where there is actually water.
+    var guard = 0;
+    while (_particles.length < _maxParticles && guard < _maxParticles * 3) {
+      guard++;
+      final p = _Particle.random(_rng, b.south, b.north, b.west, b.east);
+      if (widget.skipEmpty &&
+          widget.field!.primaryAt(p.lat, p.lon) < empty) {
+        continue; // landed on land — try another spot
+      }
+      _particles.add(p);
     }
 
     setState(() {});
@@ -458,6 +625,9 @@ class _ParticlePainter extends CustomPainter {
       final (u, v) = uv;
       final speed = math.sqrt(u * u + v * v);
       final base = colorFn(speed);
+      // Transparent = "no data here" (e.g. waves over land). Don't draw —
+      // otherwise base.withOpacity() below would paint a black dot.
+      if (base.alpha == 0) continue;
 
       final allPts = [
         ...p.trail.map((t) => _s(t.$1, t.$2)),
@@ -570,9 +740,9 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   ui.Image? _gradientImage;
   bool _loading = true;
   String? _error;
+  LatLng? _probe; // point the user tapped to read a value
 
-  static const _n    = 9;
-  static const _step = 0.5;
+  static const _n = 9;
 
   static final _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 15),
@@ -587,18 +757,27 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
 
   Future<void> _fetchGrid([_Layer? layer]) async {
     final def = _kLayers[layer ?? _currentLayer]!;
-    setState(() { _loading = true; _error = null; _field = null; _gradientImage = null; });
-    if (layer != null) setState(() => _currentLayer = layer);
+    setState(() { _loading = true; _error = null; _field = null; _gradientImage = null; _probe = null; });
+    if (layer != null) {
+      setState(() => _currentLayer = layer);
+      // Pressure is a synoptic-scale field — zoom out so isobars are visible,
+      // like Windy. Other layers stay at the local view.
+      _mapController.move(
+        LatLng(widget.lat, widget.lon),
+        layer == _Layer.pressure ? 6.0 : 8.0,
+      );
+    }
 
-    final half   = (_n ~/ 2) * _step;
+    final step   = def.gridStep;
+    final half   = (_n ~/ 2) * step;
     final latMin = widget.lat - half;
     final lonMin = widget.lon - half;
 
     final lats = <String>[], lons = <String>[];
     for (var i = 0; i < _n; i++) {
       for (var j = 0; j < _n; j++) {
-        lats.add((latMin + i * _step).toStringAsFixed(4));
-        lons.add((lonMin + j * _step).toStringAsFixed(4));
+        lats.add((latMin + i * step).toStringAsFixed(4));
+        lons.add((lonMin + j * step).toStringAsFixed(4));
       }
     }
 
@@ -639,7 +818,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         return _DataPoint(v, d);
       }).toList();
 
-      final field = _DataGrid(pts, latMin, lonMin, _step, _n);
+      final field = _DataGrid(pts, latMin, lonMin, step, _n);
       final img = await _buildGradientImage(field, def.colorFn);
 
       if (mounted) {
@@ -723,6 +902,9 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
             options: MapOptions(
               initialCenter: LatLng(widget.lat, widget.lon),
               initialZoom: 8.0,
+              onTap: (_, latLng) {
+                if (_field != null) setState(() => _probe = latLng);
+              },
             ),
             children: [
               TileLayer(
@@ -734,8 +916,28 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
               ),
               if (_field != null && _gradientImage != null)
                 _SmoothGradientLayer(field: _field!, image: _gradientImage!),
+              if (_field != null && def.hasIsobars)
+                _IsobarLayer(field: _field!),
               if (_field != null && def.hasFlow)
-                _WindParticleLayer(field: _field, colorFn: def.colorFn),
+                _WindParticleLayer(
+                    field: _field,
+                    colorFn: def.colorFn,
+                    skipEmpty: def.isMarine),
+              if (_probe != null)
+                MarkerLayer(markers: [
+                  Marker(
+                    point: _probe!,
+                    width: 22,
+                    height: 22,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: kCyan.withOpacity(0.4),
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                    ),
+                  ),
+                ]),
               const RichAttributionWidget(
                 attributions: [
                   TextSourceAttribution('© CARTO'),
@@ -779,10 +981,106 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
               ),
             ),
           if (!_loading && _error == null) _legend(def, metric),
+          if (_probe != null && _field != null && !_loading && _error == null)
+            _probeReadout(def, metric)
+          else if (_probe == null && _field != null && !_loading && _error == null)
+            Positioned(
+              top: 12,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.55),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Text('Tap the map to read a value',
+                      style: TextStyle(color: Colors.white70, fontSize: 11)),
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
+
+  // ── Touch-to-read value ───────────────────────────────────────────────────
+
+  Widget _probeReadout(_LayerDef def, bool metric) {
+    final sample = _field!.pointAt(_probe!.latitude, _probe!.longitude);
+    final text = _readoutText(def, sample, metric);
+    return Positioned(
+      top: 12,
+      left: 12,
+      right: 12,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.78),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: kCyan.withOpacity(0.5)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(def.icon, color: kCyan, size: 15),
+              const SizedBox(width: 7),
+              Text(text,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600)),
+              const SizedBox(width: 2),
+              InkWell(
+                onTap: () => setState(() => _probe = null),
+                borderRadius: BorderRadius.circular(12),
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(Icons.close, color: Colors.white54, size: 16),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _readoutText(_LayerDef def, _DataPoint? sample, bool metric) {
+    if (sample == null) return 'Outside data area';
+    final v = sample.value;
+    final dirStr =
+        sample.direction != null ? ' ${_compass(sample.direction!)}' : '';
+    switch (_currentLayer) {
+      case _Layer.wind:
+        final s = metric ? v * 1.60934 : v;
+        return '${s.toStringAsFixed(0)} ${metric ? 'km/h' : 'mph'}$dirStr';
+      case _Layer.waves:
+      case _Layer.swell:
+        if (v < 0.05) return 'No waves here';
+        final h = metric ? v : v * 3.28084; // grid values are metres
+        return '${h.toStringAsFixed(1)} ${metric ? 'm' : 'ft'}$dirStr';
+      case _Layer.rain:
+        return v < 0.05 ? 'No rain' : '${v.toStringAsFixed(1)} mm';
+      case _Layer.temp:
+        final t = metric ? v : v * 9 / 5 + 32;
+        return '${t.toStringAsFixed(0)}°${metric ? 'C' : 'F'}';
+      case _Layer.pressure:
+        return '${v.toStringAsFixed(0)} hPa';
+      case _Layer.clouds:
+        return '${v.toStringAsFixed(0)}% cloud';
+    }
+  }
+
+  static const _compassPts = [
+    'N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
+    'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW',
+  ];
+  String _compass(double deg) =>
+      _compassPts[((deg % 360) / 22.5).round() % 16];
 
   Widget _legend(_LayerDef def, bool metric) => Positioned(
         bottom: 32,
