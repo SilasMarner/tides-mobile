@@ -165,6 +165,7 @@ class _LayerDef {
   final bool isMarine;
   final bool hasFlow;
   final bool hasIsobars;
+  final bool isRadar; // overlay live weather-radar tiles instead of a grid
   final String valueVar;
   final String? directionVar;
   final Color Function(double) colorFn;
@@ -176,6 +177,7 @@ class _LayerDef {
     required this.isMarine,
     required this.hasFlow,
     this.hasIsobars = false,
+    this.isRadar = false,
     required this.valueVar,
     this.directionVar,
     required this.colorFn,
@@ -243,14 +245,14 @@ const _kLayers = <_Layer, _LayerDef>{
     ],
   ),
   _Layer.rain: _LayerDef(
-    label: 'Rain', icon: Icons.umbrella,
-    isMarine: false, hasFlow: false,
+    label: 'Rain', icon: Icons.radar,
+    isMarine: false, hasFlow: false, isRadar: true,
     valueVar: 'precipitation', colorFn: _rainColor,
     legend: [
-      (Color(0xFFAED6F1), '<1mm'),
-      (Color(0xFF5DADE2), '1–2mm'),
-      (Color(0xFF2E86C1), '2–5mm'),
-      (Color(0xFF4A235A), '>5mm'),
+      (Color(0xFF6FCF52), 'Light'),
+      (Color(0xFFE6E600), 'Moderate'),
+      (Color(0xFFF0932B), 'Heavy'),
+      (Color(0xFFEB4D4B), 'Intense'),
     ],
   ),
   _Layer.temp: _LayerDef(
@@ -743,6 +745,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   String? _error;
   LatLng? _probe; // point the user tapped to read a value
   Timer? _moveDebounce;
+  String? _radarTemplate; // RainViewer tile URL template (rain layer)
 
   static const _n = 9;
 
@@ -770,6 +773,8 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   // the visible area — like Windy, the data follows the map.
   void _onPositionChanged(MapCamera camera, bool hasGesture) {
     if (!hasGesture) return;
+    // Radar is a tile layer — it self-loads on pan/zoom, no refetch needed.
+    if (_kLayers[_currentLayer]!.isRadar) return;
     _moveDebounce?.cancel();
     _moveDebounce = Timer(const Duration(milliseconds: 450), () {
       if (mounted) _fetchGrid(silent: true);
@@ -782,6 +787,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
       setState(() {
         _loading = true; _error = null;
         _field = null; _gradientImage = null; _probe = null;
+        _radarTemplate = null;
       });
     }
     if (layer != null) {
@@ -790,8 +796,14 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
       // like Windy. Other layers recenter on the station at a local view.
       _mapController.move(
         LatLng(widget.lat, widget.lon),
-        layer == _Layer.pressure ? 6.0 : 8.0,
+        layer == _Layer.pressure ? 6.0 : layer == _Layer.rain ? 7.0 : 8.0,
       );
+    }
+
+    // Rain uses live weather-radar tiles rather than a sampled grid.
+    if (def.isRadar) {
+      await _fetchRadar();
+      return;
     }
 
     // Size a square grid to cover the current view (wider dimension) + margin.
@@ -860,6 +872,34 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     } catch (_) {
       if (mounted && !silent) {
         setState(() { _error = 'Could not load data'; _loading = false; });
+      }
+    }
+  }
+
+  // Live precipitation radar from RainViewer (free, no key). We grab the most
+  // recent frame and let flutter_map load tiles for whatever's on screen.
+  Future<void> _fetchRadar() async {
+    try {
+      final resp =
+          await _dio.get('https://api.rainviewer.com/public/weather-maps.json');
+      final data = resp.data as Map;
+      final host = data['host'] as String;
+      final past = (data['radar']?['past'] as List?) ?? const [];
+      if (past.isEmpty) {
+        if (mounted) {
+          setState(() { _error = 'Radar unavailable right now'; _loading = false; });
+        }
+        return;
+      }
+      final path = past.last['path'] as String;
+      // {size}/{z}/{x}/{y}/{color}/{smooth}_{snow}.png — colour 4 = TWC scheme.
+      final template = '$host$path/256/{z}/{x}/{y}/4/1_1.png';
+      if (mounted) {
+        setState(() { _radarTemplate = template; _loading = false; });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() { _error = 'Could not load radar'; _loading = false; });
       }
     }
   }
@@ -944,6 +984,17 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                 userAgentPackageName: 'com.mattbettinger.tides',
                 retinaMode: true,
               ),
+              if (def.isRadar && _radarTemplate != null)
+                Opacity(
+                  opacity: 0.72,
+                  child: TileLayer(
+                    urlTemplate: _radarTemplate!,
+                    // RainViewer radar tiles only exist up to z7; scale them
+                    // up beyond that instead of requesting "unsupported" tiles.
+                    maxNativeZoom: 7,
+                    userAgentPackageName: 'com.mattbettinger.tides',
+                  ),
+                ),
               if (_field != null && _gradientImage != null)
                 _SmoothGradientLayer(field: _field!, image: _gradientImage!),
               if (_field != null && def.hasIsobars)
@@ -968,11 +1019,11 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                     ),
                   ),
                 ]),
-              const RichAttributionWidget(
+              RichAttributionWidget(
                 attributions: [
-                  TextSourceAttribution('© CARTO'),
-                  TextSourceAttribution('© OpenStreetMap contributors'),
-                  TextSourceAttribution('Open-Meteo'),
+                  const TextSourceAttribution('© CARTO'),
+                  const TextSourceAttribution('© OpenStreetMap contributors'),
+                  TextSourceAttribution(def.isRadar ? 'RainViewer' : 'Open-Meteo'),
                 ],
               ),
             ],
