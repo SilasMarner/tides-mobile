@@ -105,6 +105,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.read(searchQueryProvider.notifier).state = '';
   }
 
+  void _toggleFavorite(Station s) {
+    final isFav = ref.read(favoritesProvider).any((f) => f.id == s.id);
+    if (isFav) {
+      ref.read(favoritesProvider.notifier).remove(s.id);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${s.name} removed from favorites'),
+        duration: const Duration(seconds: 2),
+      ));
+    } else {
+      ref.read(favoritesProvider.notifier).add(s);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${s.name} added to favorites'),
+        duration: const Duration(seconds: 2),
+      ));
+    }
+  }
+
   void _openStation(Station s) {
     ref.read(selectedStationProvider.notifier).state = s;
     final now = DateTime.now();
@@ -222,6 +239,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             label: 'Results for "${_ctrl.text}"',
                             stations: results,
                             onTap: _openStation,
+                            onLongPress: _toggleFavorite,
                             favorites: favorites,
                             capsMap: capsMap,
                           ),
@@ -236,6 +254,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         label: _locMsg ?? 'Nearby Stations',
                         stations: _nearbyStations!,
                         onTap: _openStation,
+                        onLongPress: _toggleFavorite,
                         favorites: favorites,
                         capsMap: capsMap,
                       )
@@ -244,6 +263,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             label: 'Favorites',
                             stations: favorites,
                             onTap: _openStation,
+                            onLongPress: _toggleFavorite,
                             favorites: favorites,
                             capsMap: capsMap,
                           )
@@ -261,6 +281,7 @@ class _StationList extends StatelessWidget {
   final String label;
   final List<Station> stations;
   final void Function(Station) onTap;
+  final void Function(Station) onLongPress;
   final List<Station> favorites;
   final Map<String, Set<String>>? capsMap;
 
@@ -268,6 +289,7 @@ class _StationList extends StatelessWidget {
     required this.label,
     required this.stations,
     required this.onTap,
+    required this.onLongPress,
     required this.favorites,
     this.capsMap,
   });
@@ -353,6 +375,7 @@ class _StationList extends StatelessWidget {
                 station: stations[i],
                 isFavorite: favorites.any((f) => f.id == stations[i].id),
                 onTap: () => onTap(stations[i]),
+                onLongPress: () => onLongPress(stations[i]),
                 caps: capsMap?[stations[i].id],
               ),
             ),

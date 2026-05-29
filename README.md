@@ -10,42 +10,51 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 
 ---
 
+## Screenshots
+
+| Home | Search Results | Conditions & Waves |
+|------|---------------|-------------------|
+| ![Home](screenshots/home.png) | ![Search](screenshots/search_galveston.png) | ![Detail](screenshots/detail_galveston.png) |
+
+| Tides, Solunar & Moon | Wind Map | Wind Map Overlays |
+|----------------------|----------|-------------------|
+| ![Solunar](screenshots/detail_solunar.png) | ![Wind Map](screenshots/wind_map.png) | ![Overlays](screenshots/wind_map_layers.png) |
+
+---
+
 ## Changelog
 
 ### v2.3.0 (build 15) — latest
-- **Wind map** — new interactive Windy map screen accessible from any station's detail view via the air icon in the toolbar; animated wind particle visualization centered on the station with overlay switcher for Wind, Waves, Rain, Temperature, and Clouds
+- **Wind map upgrade** — switched to Windy embed2 for full color gradient overlay, animated wind particle flow, isobar pressure lines, and a forecast timeline scrubber at the bottom
+- **Wind map layers** — expanded overlay menu adds Swell and Pressure; active overlay shows a checkmark
+- **Wind map** — initial Windy map screen accessible from any station's detail view via the wind icon in the toolbar
 
 ### v2.2.0 (build 12–14)
 - **Open-Meteo Marine wave data** — replaces NDBC buoy; wave height, dominant period, swell and wind-sea breakdown at exact station coordinates
-- **Play Store in-app update prompt** — flexible update flow with MaterialBanner when a new version is ready to install
+- **Play Store in-app update prompt** — app checks for updates on launch; shows a banner when a new version is ready to install; "Check for Updates" in About screen queries Play Store directly
 - Moon phase display overflow fix
 
 ### v2.1.0 (build 11)
-- **Alarm permission removed** — switched to inexact alarms; no special permissions required, notifications still fire accurately for tide and solunar events
+- **Alarm permission removed** — switched to inexact alarms; no special permissions required, notifications still fire accurately
 
 ### v2.1.0 (build 10)
-- **Salinity icon fix** — corrected false-positive salinity badges; only the 21 NOAA stations with real salinity sensors now show the icon
+- **Salinity icon fix** — only the 21 NOAA stations with real salinity sensors show the badge
 
 ### v2.1.0 (build 9)
-- **Station sensor icons** — search results now show sensor badge icons (water temp, salinity, wind, air temp, pressure, water level) for every station that has them; fixed broken NOAA capability API calls
-- **Current-time indicator** — amber dashed vertical line on the tide chart marks the current hour alongside the interactive slide bar
+- **Station sensor icons** — sensor badge icons in search results for water temp, salinity, wind, air temp, pressure, water level
+- **Current-time indicator** — amber dashed line on tide chart marks the current hour
 
 ### v2.1.0 (build 7–8)
-- **NDBC wave data** — wave height, dominant period, swell height/period/direction, wind sea; sourced from nearest buoy within 150 miles
 - **Interactive tide chart** — tap or drag to see time + height readout anywhere on the curve
-- **NWS fix** — forecast now shows for offshore/coastal stations that previously showed nothing (coordinate fallback)
-- Privacy policy link in About screen
-- sharkatthemoon.org community credit in About screen
-- Exact version number shown in About screen
-- Restored **Check for Updates** button in the About screen
+- **NWS fix** — forecast now works for offshore/coastal stations via coordinate fallback
 
 ### v2.0.0
 - Full rewrite in Flutter (replaces Python/Kivy v1.x)
-- Live 24-hour tide charts with hi/lo markers and current-time indicator
+- Live 24-hour tide charts with hi/lo markers
 - All ~3,450 NOAA tide stations — search by city, name, or state
 - Real-time conditions: air & water temp, pressure, water level, salinity
 - NWS 7-day forecast per station with expandable daily detail
-- Week view: hi/lo tides for 7 days with NWS forecast per day
+- Week view: 7 days of hi/lo tides with NWS forecast
 - Solunar tables: major & minor feeding periods
 - Sun & moon: sunrise, sunset, golden hour, phase, illumination
 - Fishing rating (1–5 stars) based on tides, solunar timing, and wind
@@ -58,27 +67,19 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 
 - **Live tide charts** — smooth cosine-interpolated curves with high/low dot markers and a current-time dashed line
 - **All ~3,450 NOAA stations** — search by city, station name, or state
-- **Subordinate stations** — cosine interpolation fills hourly data for stations that only publish hi/lo predictions
-- **Real-time conditions** — air temp, water temp, barometric pressure (with trend ↑↓), water level, **salinity**
-- **Salinity** — shown when the station has a sensor (PSU / ppt)
-- **NWS weather** — current conditions + 7-day forecast per station; supplements missing NOAA sensor data
-- **Week view** — 7 days of hi/lo tides with NWS temperature and short forecast per day; tap any day to expand the full detailed forecast
+- **Real-time conditions** — air temp, water temp, barometric pressure (with trend ↑↓), water level, salinity
+- **Wave data** — wave height, dominant period, swell height/period/direction, and wind sea from Open-Meteo Marine at each station's exact coordinates
+- **NWS weather** — current conditions + 7-day forecast per station
+- **Week view** — 7 days of hi/lo tides with NWS temperature and short forecast; tap any day to expand
 - **Solunar tables** — major/minor feeding periods calculated from moon position
 - **Sun & moon** — sunrise, sunset, golden hour, moon phase and illumination percentage
 - **Fishing rating** — 1–5 star rating based on tidal movement, solunar timing, and wind
-- **Wave data** — wave height, dominant period, swell height/period/direction, and wind sea from Open-Meteo Marine at each station's exact coordinates
-- **Interactive tide chart** — tap or drag anywhere on the chart to see exact time and height
-- **Wind map** — animated Windy map centered on the station with overlay switcher (Wind, Waves, Rain, Temperature, Clouds)
+- **Interactive tide chart** — tap or drag anywhere to see exact time and height
+- **Wind map** — animated Windy map with color gradient overlay, isobars, and forecast timeline; overlays: Wind, Waves, Swell, Rain/Thunder, Temperature, Pressure, Clouds
+- **In-app updates** — automatically checks for Play Store updates on launch; prompts with RESTART / LATER banner when ready
 - **Favorites** — save stations with one tap; shown on home screen
 - **Use My Location** — GPS-based nearest stations
-
----
-
-## Screenshots
-
-| Home | Search Results | Station Detail | Wind Map (dev) | Wind Map (dev) |
-|------|---------------|----------------|----------------|----------------|
-| ![Home](docs/screenshots/home.png) | ![Search](docs/screenshots/search_galveston.png) | ![Detail](docs/screenshots/detail_galveston.png) | ![Wind Map](docs/screenshots/wind_map.png) | ![Wind Map 2](docs/screenshots/wind_map_layers.png) |
+- **Notifications** — alerts for tide changes, solunar majors, and best fishing days
 
 ---
 
@@ -94,8 +95,9 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 | Storage | shared_preferences |
 | Tide data | NOAA CO-OPS API |
 | Weather | NWS weather.gov API |
-| Wave data | Open-Meteo Marine API |
-| Wind map | Windy Embed API (webview_flutter) |
+| Wave data | Open-Meteo Marine API (CC BY 4.0) |
+| Wind map | Windy Embed2 API (webview_flutter) |
+| Updates | Google Play In-App Update API |
 
 ---
 
@@ -118,26 +120,6 @@ flutter build apk --debug --target-platform android-x64
 adb install build/app/outputs/flutter-apk/app-debug.apk
 ```
 
-### iOS (requires macOS + Xcode)
-
-The `ios/` directory is included and ready — bundle ID is already set to `com.mattbettinger.tides`.
-
-```bash
-cd tides_flutter
-flutter pub get
-cd ios && pod install && cd ..
-flutter build ipa --release
-```
-
-Requires:
-- macOS with Xcode 15+
-- Apple Developer account ($99/year) for App Store / TestFlight distribution
-- Free account works for sideloading to your own device via Xcode
-
-For cloud builds without a Mac, [Codemagic](https://codemagic.io) can build both Android and iOS from the same repo (free tier: 500 min/month).
-
----
-
 ### Signed Android release build
 Create `tides_flutter/android/key.properties` — **never commit this file**:
 
@@ -156,37 +138,40 @@ flutter build appbundle --release
 
 ---
 
-## App ID
-
-`com.mattbettinger.tides`
-
----
-
-## Data Sources
-
-Both APIs are free and require no API key:
-
-- **NOAA CO-OPS API** — tide predictions, observations, water level, salinity  
-  https://api.tidesandcurrents.noaa.gov/
-- **NWS / weather.gov** — 7-day forecasts and hourly conditions  
-  https://api.weather.gov/
-
----
-
 ## Project Structure
 
 ```
 tides-mobile/
 ├── tides_flutter/       Flutter app (primary)
 │   ├── lib/
-│   │   ├── models/      Data models (TideData, Conditions, etc.)
+│   │   ├── models/      Data models (TideData, Conditions, WaveData, etc.)
 │   │   ├── providers/   Riverpod state providers
-│   │   ├── screens/     HomeScreen, DetailScreen, AboutScreen
+│   │   ├── screens/     HomeScreen, DetailScreen, WindMapScreen, AboutScreen
 │   │   ├── services/    noaa_api.dart, location_service.dart
-│   │   └── widgets/     TideChart, ConditionsCard, StationTile
+│   │   └── widgets/     TideChart, ConditionsCard, StationTile, WaveHeader
 │   └── android/         Android build config
+├── screenshots/         App screenshots
 └── legacy/              Original Python/Kivy v1.2 (archived)
 ```
+
+---
+
+## Data Sources
+
+- **NOAA CO-OPS API** — tide predictions, observations, water level, salinity  
+  https://api.tidesandcurrents.noaa.gov/
+- **NWS / weather.gov** — 7-day forecasts and hourly conditions  
+  https://api.weather.gov/
+- **Open-Meteo Marine** — location-specific wave and swell data (CC BY 4.0)  
+  https://open-meteo.com/
+- **Windy** — animated wind/weather map visualization  
+  https://windy.com/
+
+---
+
+## App ID
+
+`com.mattbettinger.tides`
 
 ---
 

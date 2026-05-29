@@ -26,6 +26,7 @@ const kStationBadges = [
 class StationTile extends StatelessWidget {
   final Station station;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   final bool isFavorite;
   final Set<String>? caps;
 
@@ -33,6 +34,7 @@ class StationTile extends StatelessWidget {
     super.key,
     required this.station,
     required this.onTap,
+    this.onLongPress,
     this.isFavorite = false,
     this.caps,
   });
@@ -67,6 +69,7 @@ class StationTile extends StatelessWidget {
           ? const Icon(Icons.star, color: kCyan, size: 18)
           : const Icon(Icons.chevron_right, color: Colors.white24),
       onTap: onTap,
+      onLongPress: onLongPress,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     );
   }

@@ -51,6 +51,20 @@ class DetailScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: Icon(
+              isFav ? Icons.star : Icons.star_outline,
+              color: isFav ? kCyan : Colors.white38,
+            ),
+            tooltip: isFav ? 'Remove from favorites' : 'Add to favorites',
+            onPressed: () {
+              if (isFav) {
+                ref.read(favoritesProvider.notifier).remove(station.id);
+              } else {
+                ref.read(favoritesProvider.notifier).add(station);
+              }
+            },
+          ),
+          IconButton(
+            icon: Icon(
               notifEnabled
                   ? Icons.notifications_active
                   : Icons.notifications_none,
@@ -132,36 +146,6 @@ class DetailScreen extends ConsumerWidget {
                             style: const TextStyle(color: Colors.red))),
                   ),
           ),
-          if (!isFav)
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.star_outline, size: 18),
-                  label: const Text('Save to Favorites'),
-                  onPressed: () =>
-                      ref.read(favoritesProvider.notifier).add(station),
-                ),
-              ),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.star, size: 18, color: kCyan),
-                  label: const Text('Remove from Favorites',
-                      style: TextStyle(color: kCyan)),
-                  style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: kCyan)),
-                  onPressed: () => ref
-                      .read(favoritesProvider.notifier)
-                      .remove(station.id),
-                ),
-              ),
-            ),
         ],
       ),
     );
