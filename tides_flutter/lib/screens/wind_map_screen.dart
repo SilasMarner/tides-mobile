@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:dio/dio.dart';
@@ -162,7 +163,6 @@ class _LayerDef {
   final bool isMarine;
   final bool hasFlow;
   final bool hasIsobars;
-  final double gridStep; // degrees between grid points
   final String valueVar;
   final String? directionVar;
   final Color Function(double) colorFn;
@@ -174,7 +174,6 @@ class _LayerDef {
     required this.isMarine,
     required this.hasFlow,
     this.hasIsobars = false,
-    this.gridStep = 0.5,
     required this.valueVar,
     this.directionVar,
     required this.colorFn,
@@ -271,7 +270,7 @@ const _kLayers = <_Layer, _LayerDef>{
   ),
   _Layer.pressure: _LayerDef(
     label: 'Pressure', icon: Icons.speed,
-    isMarine: false, hasFlow: false, hasIsobars: true, gridStep: 1.5,
+    isMarine: false, hasFlow: false, hasIsobars: true,
     valueVar: 'pressure_msl', colorFn: _pressureColor,
     legend: [
       (Color(0xFF6C5CE7), '<1000'),
@@ -741,6 +740,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   bool _loading = true;
   String? _error;
   LatLng? _probe; // point the user tapped to read a value
+  Timer? _moveDebounce;
 
   static const _n = 9;
 
@@ -752,26 +752,53 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchGrid();
+    // Fetch once the map has laid out, so we can size the grid to the view.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _fetchGrid();
+    });
   }
 
-  Future<void> _fetchGrid([_Layer? layer]) async {
+  @override
+  void dispose() {
+    _moveDebounce?.cancel();
+    super.dispose();
+  }
+
+  // Re-fetch (quietly) when the user pans/zooms so the overlay always covers
+  // the visible area — like Windy, the data follows the map.
+  void _onPositionChanged(MapCamera camera, bool hasGesture) {
+    if (!hasGesture) return;
+    _moveDebounce?.cancel();
+    _moveDebounce = Timer(const Duration(milliseconds: 450), () {
+      if (mounted) _fetchGrid(silent: true);
+    });
+  }
+
+  Future<void> _fetchGrid({_Layer? layer, bool silent = false}) async {
     final def = _kLayers[layer ?? _currentLayer]!;
-    setState(() { _loading = true; _error = null; _field = null; _gradientImage = null; _probe = null; });
+    if (!silent) {
+      setState(() {
+        _loading = true; _error = null;
+        _field = null; _gradientImage = null; _probe = null;
+      });
+    }
     if (layer != null) {
       setState(() => _currentLayer = layer);
       // Pressure is a synoptic-scale field — zoom out so isobars are visible,
-      // like Windy. Other layers stay at the local view.
+      // like Windy. Other layers recenter on the station at a local view.
       _mapController.move(
         LatLng(widget.lat, widget.lon),
         layer == _Layer.pressure ? 6.0 : 8.0,
       );
     }
 
-    final step   = def.gridStep;
-    final half   = (_n ~/ 2) * step;
-    final latMin = widget.lat - half;
-    final lonMin = widget.lon - half;
+    // Size a square grid to cover the current view (wider dimension) + margin.
+    final cam = _mapController.camera;
+    final b = cam.visibleBounds;
+    final span = math.max(b.north - b.south, b.east - b.west) * 1.3;
+    final step = span / (_n - 1);
+    final latMin = cam.center.latitude - span / 2;
+    final lonMin = cam.center.longitude - span / 2;
 
     final lats = <String>[], lons = <String>[];
     for (var i = 0; i < _n; i++) {
@@ -800,7 +827,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
 
       final items = resp.data as List;
       if (items.isEmpty || items[0]['current'] == null) {
-        if (mounted) setState(() {
+        if (mounted && !silent) setState(() {
           _error = def.isMarine
               ? 'No ${def.label.toLowerCase()} data at this location'
               : 'No data available';
@@ -829,7 +856,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         });
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted && !silent) {
         setState(() { _error = 'Could not load data'; _loading = false; });
       }
     }
@@ -864,7 +891,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         current: _currentLayer,
         onSelect: (l) {
           Navigator.pop(context);
-          if (l != _currentLayer) _fetchGrid(l);
+          if (l != _currentLayer) _fetchGrid(layer: l);
         },
       ),
     );
@@ -891,7 +918,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
           IconButton(
             icon: const Icon(Icons.refresh, color: kCyan),
             tooltip: 'Refresh',
-            onPressed: _fetchGrid,
+            onPressed: () => _fetchGrid(),
           ),
         ],
       ),
@@ -905,6 +932,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
               onTap: (_, latLng) {
                 if (_field != null) setState(() => _probe = latLng);
               },
+              onPositionChanged: _onPositionChanged,
             ),
             children: [
               TileLayer(
@@ -973,7 +1001,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                       style: const TextStyle(color: Colors.white54)),
                   const SizedBox(height: 12),
                   TextButton(
-                    onPressed: _fetchGrid,
+                    onPressed: () => _fetchGrid(),
                     child: const Text('Retry',
                         style: TextStyle(color: kCyan)),
                   ),
