@@ -76,9 +76,9 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 
 ## Screenshots
 
-| Home | Search Results | Station Detail | Wind Map | Wind Map Overlays |
-|------|---------------|----------------|----------|-------------------|
-| ![Home](docs/screenshots/home.png) | ![Search](docs/screenshots/search_galveston.png) | ![Detail](docs/screenshots/detail_galveston.png) | ![Wind Map](docs/screenshots/wind_map.png) | ![Overlays](docs/screenshots/wind_map_layers.png) |
+| Home | Search Results | Station Detail | Wind Map (dev) | Wind Map (dev) |
+|------|---------------|----------------|----------------|----------------|
+| ![Home](docs/screenshots/home.png) | ![Search](docs/screenshots/search_galveston.png) | ![Detail](docs/screenshots/detail_galveston.png) | ![Wind Map](docs/screenshots/wind_map.png) | ![Wind Map 2](docs/screenshots/wind_map_layers.png) |
 
 ---
 
