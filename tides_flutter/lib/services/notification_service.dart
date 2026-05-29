@@ -3,6 +3,7 @@ import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import '../models/tide_data.dart';
 import '../models/notification_prefs.dart';
+import '../utils/unit_format.dart';
 
 class NotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
@@ -44,8 +45,9 @@ class NotificationService {
     String stationId,
     String stationName,
     TideData data,
-    NotificationPrefs prefs,
-  ) async {
+    NotificationPrefs prefs, {
+    bool metric = false,
+  }) async {
     await init();
     await cancelForStation(stationId);
 
@@ -64,7 +66,7 @@ class NotificationService {
                 ? '🌊 High Tide in ${prefs.leadMinutes} min'
                 : '🏖️ Low Tide in ${prefs.leadMinutes} min',
             body:
-                '$stationName · ${_fmt(p.time)} · ${p.height >= 0 ? '+' : ''}${p.height.toStringAsFixed(2)} ft',
+                '$stationName · ${_fmt(p.time)} · ${fmtTideHeight(p.height, metric)}',
             at: notifyAt,
           );
         }

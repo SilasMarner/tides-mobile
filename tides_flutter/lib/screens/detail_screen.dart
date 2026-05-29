@@ -40,7 +40,8 @@ class DetailScreen extends ConsumerWidget {
       next.whenData((data) {
         if (data != null && data.isToday && notifEnabled) {
           NotificationService.scheduleForStation(
-              station.id, station.name, data, notifPrefs);
+              station.id, station.name, data, notifPrefs,
+              metric: ref.read(unitsProvider));
         }
       });
     });
