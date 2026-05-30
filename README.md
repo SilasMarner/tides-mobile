@@ -12,19 +12,45 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 
 ## Screenshots
 
-| Home | Search Results | Conditions & Waves |
-|------|---------------|-------------------|
-| ![Home](screenshots/home.png) | ![Search](screenshots/search_galveston.png) | ![Detail](screenshots/detail_galveston.png) |
+| Home | Conditions & Waves | Tides, Solunar & Moon |
+|------|-------------------|----------------------|
+| ![Home](screenshots/home.png) | ![Detail](screenshots/detail_galveston.png) | ![Solunar](screenshots/detail_solunar.png) |
 
-| Tides, Solunar & Moon | Wind Map | Wind Map Overlays |
-|----------------------|----------|-------------------|
-| ![Solunar](screenshots/detail_solunar.png) | ![Wind Map](screenshots/wind_map.png) | ![Overlays](screenshots/wind_map_layers.png) |
+### Weather map — native, Windy-style overlays
+
+A fully custom map (no third-party embed): a smooth GPU gradient wash, animated
+particle flow, and seven switchable layers. Tap anywhere to read the value at
+that point; the data follows the map as you pan and zoom.
+
+| Wind (gradient + particles) | Layer picker | Swell |
+|------|-------------|-------|
+| ![Wind](screenshots/wind_map.png) | ![Layers](screenshots/wind_map_layers.png) | ![Swell](screenshots/wind_map_swell.png) |
+
+| Live rain radar (animated) | Pressure isobars | Temperature + tap-to-read |
+|-----------------|------------------|---------------------------|
+| ![Radar](screenshots/wind_map_radar.png) | ![Pressure](screenshots/wind_map_pressure.png) | ![Temperature](screenshots/wind_map_temp.png) |
+
+### Units
+
+| Standard / Metric toggle |
+|--------------------------|
+| ![Units](screenshots/settings_units.png) |
 
 ---
 
 ## Changelog
 
-### v2.3.0 (build 15) — latest
+### Unreleased — `dev` branch
+- **Native weather map** — replaced the Windy embed with a fully custom Flutter map (flutter_map + Open-Meteo, no third-party branding or WebView): a smooth GPU-scaled gradient wash plus an animated particle flow rendered with a `CustomPainter`
+- **Seven layers** — Wind, Waves, Swell, Rain, Temperature, Pressure, Clouds, chosen from a bottom-sheet layer picker; each with its own colour ramp and legend
+- **Live rain radar** — the Rain layer shows real weather radar (RainViewer) with an animated, scrubbable timeline (~2 h of frames) and a play/pause control
+- **Pressure isobars** — Windy-style labelled contour lines drawn with marching squares; the view zooms out so the synoptic pattern is visible
+- **Tap-to-read** — tap anywhere on any layer to read the interpolated value (speed/height + compass direction for vector layers), unit-aware
+- **Data follows the map** — the overlay grid re-fetches to cover the visible area as you pan/zoom, so there's no hard overlay edge
+- **Units setting** — Standard (°F · mph · ft) or Metric (°C · km/h · m) in Settings; applies across the map, detail screen, tide chart, and notifications
+- **Add to favorites via long-press** — long-press a station in the list (the old button could fall under the phone's nav bar)
+
+### v2.3.0 (build 15)
 - **Wind map upgrade** — switched to Windy embed2 for full color gradient overlay, animated wind particle flow, isobar pressure lines, and a forecast timeline scrubber at the bottom
 - **Wind map layers** — expanded overlay menu adds Swell and Pressure; active overlay shows a checkmark
 - **Wind map** — initial Windy map screen accessible from any station's detail view via the wind icon in the toolbar
@@ -75,9 +101,14 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 - **Sun & moon** — sunrise, sunset, golden hour, moon phase and illumination percentage
 - **Fishing rating** — 1–5 star rating based on tidal movement, solunar timing, and wind
 - **Interactive tide chart** — tap or drag anywhere to see exact time and height
-- **Wind map** — animated Windy map with color gradient overlay, isobars, and forecast timeline; overlays: Wind, Waves, Swell, Rain/Thunder, Temperature, Pressure, Clouds
+- **Weather map** — a native, Windy-style map (no third-party embed) with a smooth gradient wash and animated particle flow. Seven layers: **Wind, Waves, Swell, Rain, Temperature, Pressure, Clouds**
+  - **Live rain radar** — real weather radar (RainViewer) with an animated, scrubbable timeline (~2 h)
+  - **Pressure isobars** — labelled contour lines, synoptic-scale view
+  - **Tap-to-read** — tap anywhere to read the value (and direction) at that point
+  - **Follows the map** — the overlay re-fetches to cover wherever you pan or zoom
+- **Units** — Standard (°F · mph · ft) or Metric (°C · km/h · m), applied everywhere
 - **In-app updates** — automatically checks for Play Store updates on launch; prompts with RESTART / LATER banner when ready
-- **Favorites** — save stations with one tap; shown on home screen
+- **Favorites** — save stations with a long-press; shown on home screen
 - **Use My Location** — GPS-based nearest stations
 - **Notifications** — alerts for tide changes, solunar majors, and best fishing days
 
@@ -96,7 +127,10 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 | Tide data | NOAA CO-OPS API |
 | Weather | NWS weather.gov API |
 | Wave data | Open-Meteo Marine API (CC BY 4.0) |
-| Wind map | Windy Embed2 API (webview_flutter) |
+| Weather map | flutter_map + latlong2 · custom `CustomPainter` gradient & particles |
+| Map forecast | Open-Meteo forecast & marine APIs |
+| Rain radar | RainViewer public API (free) |
+| Basemap tiles | CARTO Voyager (© CARTO, © OpenStreetMap) |
 | Updates | Google Play In-App Update API |
 
 ---
@@ -145,14 +179,18 @@ tides-mobile/
 ├── tides_flutter/       Flutter app (primary)
 │   ├── lib/
 │   │   ├── models/      Data models (TideData, Conditions, WaveData, etc.)
-│   │   ├── providers/   Riverpod state providers
-│   │   ├── screens/     HomeScreen, DetailScreen, WindMapScreen, AboutScreen
-│   │   ├── services/    noaa_api.dart, location_service.dart
+│   │   ├── providers/   Riverpod state providers (incl. units_provider)
+│   │   ├── screens/     HomeScreen, DetailScreen, WindMapScreen, Settings, About
+│   │   ├── services/    noaa_api.dart, location_service.dart, notification_service.dart
+│   │   ├── utils/       unit_format.dart (Standard/Metric formatting)
 │   │   └── widgets/     TideChart, ConditionsCard, StationTile, WaveHeader
 │   └── android/         Android build config
 ├── screenshots/         App screenshots
 └── legacy/              Original Python/Kivy v1.2 (archived)
 ```
+
+The weather map lives in `screens/wind_map_screen.dart` — gradient, particles,
+isobars, radar, and the layer system are all self-contained there.
 
 ---
 
@@ -162,10 +200,12 @@ tides-mobile/
   https://api.tidesandcurrents.noaa.gov/
 - **NWS / weather.gov** — 7-day forecasts and hourly conditions  
   https://api.weather.gov/
-- **Open-Meteo Marine** — location-specific wave and swell data (CC BY 4.0)  
+- **Open-Meteo** — forecast (wind, temperature, pressure, cloud, precipitation) and marine (wave/swell) data for the weather map; wave data on the detail screen (CC BY 4.0)  
   https://open-meteo.com/
-- **Windy** — animated wind/weather map visualization  
-  https://windy.com/
+- **RainViewer** — live precipitation radar tiles for the Rain layer (free public API)  
+  https://www.rainviewer.com/
+- **CARTO / OpenStreetMap** — Voyager basemap tiles for the weather map  
+  https://carto.com/ · https://www.openstreetmap.org/
 
 ---
 
