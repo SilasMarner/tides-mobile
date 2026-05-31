@@ -13,6 +13,7 @@ import '../services/noaa_api.dart' show fmtHhmm, WaveData;
 import '../theme.dart';
 import 'about_screen.dart';
 import 'wind_map_screen.dart';
+import 'salinity_map_screen.dart';
 
 final _dayFmt = DateFormat('EEEE, MMM d, yyyy');
 final _timeFmt2 = DateFormat('h:mm a');
@@ -101,6 +102,20 @@ class DetailScreen extends ConsumerWidget {
               context,
               MaterialPageRoute(
                 builder: (_) => WindMapScreen(
+                  lat: station.lat,
+                  lon: station.lon,
+                  stationName: station.name,
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.water_drop, color: kCyan),
+            tooltip: 'Salinity Map',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => SalinityMapScreen(
                   lat: station.lat,
                   lon: station.lon,
                   stationName: station.name,

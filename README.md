@@ -20,11 +20,18 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 |----------------------|----------|-------------------|
 | ![Solunar](screenshots/detail_solunar.png) | ![Wind Map](screenshots/wind_map.png) | ![Overlays](screenshots/wind_map_layers.png) |
 
+| Salinity Map (NOAA NGOFS2 forecast loop) |
+|------------------------------------------|
+| ![Salinity Map](screenshots/salinity_map.png) |
+
 ---
 
 ## Changelog
 
-### v2.3.0 (build 15) — latest
+### v2.3.0 (build 17) — latest
+- **Salinity map** — animated NOAA NGOFS2 (Northern Gulf OFS) hourly surface-salinity forecast loop, opened from the water-drop icon in any station's toolbar. Play/pause + scrub timeline, pinch-to-zoom, and a region picker that auto-selects the Gulf bay nearest the station (Galveston, Matagorda, Corpus Christi, Sabine, Calcasieu, Mobile, Pascagoula, and a whole-Gulf overview)
+
+### v2.3.0 (build 15)
 - **Wind map upgrade** — switched to Windy embed2 for full color gradient overlay, animated wind particle flow, isobar pressure lines, and a forecast timeline scrubber at the bottom
 - **Wind map layers** — expanded overlay menu adds Swell and Pressure; active overlay shows a checkmark
 - **Wind map** — initial Windy map screen accessible from any station's detail view via the wind icon in the toolbar
@@ -76,6 +83,7 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 - **Fishing rating** — 1–5 star rating based on tidal movement, solunar timing, and wind
 - **Interactive tide chart** — tap or drag anywhere to see exact time and height
 - **Wind map** — animated Windy map with color gradient overlay, isobars, and forecast timeline; overlays: Wind, Waves, Swell, Rain/Thunder, Temperature, Pressure, Clouds
+- **Salinity map** — animated NOAA NGOFS2 surface-salinity forecast loop for Gulf bays, with play/pause timeline, pinch-zoom, and an auto-selected region picker
 - **In-app updates** — automatically checks for Play Store updates on launch; prompts with RESTART / LATER banner when ready
 - **Favorites** — save stations with one tap; shown on home screen
 - **Use My Location** — GPS-based nearest stations
@@ -97,6 +105,7 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 | Weather | NWS weather.gov API |
 | Wave data | Open-Meteo Marine API (CC BY 4.0) |
 | Wind map | Windy Embed2 API (webview_flutter) |
+| Salinity map | NOAA NGOFS2 OFS forecast plots (tidesandcurrents CDN) |
 | Updates | Google Play In-App Update API |
 
 ---
@@ -146,7 +155,7 @@ tides-mobile/
 │   ├── lib/
 │   │   ├── models/      Data models (TideData, Conditions, WaveData, etc.)
 │   │   ├── providers/   Riverpod state providers
-│   │   ├── screens/     HomeScreen, DetailScreen, WindMapScreen, AboutScreen
+│   │   ├── screens/     HomeScreen, DetailScreen, WindMapScreen, SalinityMapScreen, AboutScreen
 │   │   ├── services/    noaa_api.dart, location_service.dart
 │   │   └── widgets/     TideChart, ConditionsCard, StationTile, WaveHeader
 │   └── android/         Android build config
@@ -166,6 +175,8 @@ tides-mobile/
   https://open-meteo.com/
 - **Windy** — animated wind/weather map visualization  
   https://windy.com/
+- **NOAA NGOFS2 OFS** — hourly surface-salinity forecast map plots (Northern Gulf of America Operational Forecast System)  
+  https://tidesandcurrents.noaa.gov/ofs/ofs_mapplots.html
 
 ---
 
