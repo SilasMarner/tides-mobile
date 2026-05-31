@@ -245,9 +245,23 @@ class _TodayView extends StatelessWidget {
   Widget build(BuildContext context) => ListView(
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            child: Text('Station ${station.id}',
-                style: const TextStyle(color: Colors.white54, fontSize: 12)),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Full station name — the app-bar title truncates when there
+                // are several toolbar actions, so show it in full here.
+                Text(station.name,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Text('Station ${station.id}',
+                    style:
+                        const TextStyle(color: Colors.white54, fontSize: 12)),
+              ],
+            ),
           ),
           ConditionsCard(c: data.conditions),
           if (data.waves != null) _WaveCard(waves: data.waves!),

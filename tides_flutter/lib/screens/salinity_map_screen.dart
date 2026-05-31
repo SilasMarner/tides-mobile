@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import '../theme.dart';
@@ -77,13 +78,23 @@ class _SalinityMapScreenState extends State<SalinityMapScreen> {
   bool _playing = true;
   bool _loading = true;
   String? _error;
+  bool _outOfCoverage = false;
   Timer? _anim;
 
   @override
   void initState() {
     super.initState();
-    _region = _nearestRegion(widget.lat, widget.lon);
-    _load();
+    final (region, dist) = _nearestRegion(widget.lat, widget.lon);
+    _region = region;
+    // NGOFS2 only models the northern Gulf of America. If the station is far
+    // from every modeled bay (e.g. East/West coast, Hawaii), don't show a
+    // misleading out-of-area map — offer to browse Gulf regions instead.
+    if (dist > 4.0) {
+      _outOfCoverage = true;
+      _loading = false;
+    } else {
+      _load();
+    }
   }
 
   @override
@@ -92,7 +103,7 @@ class _SalinityMapScreenState extends State<SalinityMapScreen> {
     super.dispose();
   }
 
-  _SalRegion _nearestRegion(double lat, double lon) {
+  (_SalRegion, double) _nearestRegion(double lat, double lon) {
     // The Gulf overview center is far offshore — exclude it from auto-pick so a
     // coastal station always lands on its local bay.
     _SalRegion best = _kRegions.first;
@@ -107,7 +118,7 @@ class _SalinityMapScreenState extends State<SalinityMapScreen> {
         best = r;
       }
     }
-    return best;
+    return (best, math.sqrt(bestD));
   }
 
   Future<void> _load() async {
@@ -251,8 +262,11 @@ class _SalinityMapScreenState extends State<SalinityMapScreen> {
                         : null,
                     onTap: () {
                       Navigator.pop(context);
-                      if (r.code != _region.code) {
-                        setState(() => _region = r);
+                      if (r.code != _region.code || _outOfCoverage) {
+                        setState(() {
+                          _region = r;
+                          _outOfCoverage = false;
+                        });
                         _load();
                       }
                     },
@@ -294,7 +308,9 @@ class _SalinityMapScreenState extends State<SalinityMapScreen> {
       body: Stack(
         children: [
           Positioned.fill(
-            child: _error != null
+            child: _outOfCoverage
+                ? _coverageView()
+                : _error != null
                 ? _errorView()
                 : _frames.isEmpty
                     ? const SizedBox()
@@ -337,6 +353,42 @@ class _SalinityMapScreenState extends State<SalinityMapScreen> {
       ),
     );
   }
+
+  Widget _coverageView() => Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.water_drop_outlined,
+                  color: Colors.white24, size: 48),
+              const SizedBox(height: 14),
+              const Text(
+                'Salinity forecast covers Gulf of America bays',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                "NOAA's NGOFS2 model doesn't reach this station's area. "
+                'You can still browse the Gulf bay maps.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white38, fontSize: 13),
+              ),
+              const SizedBox(height: 18),
+              TextButton.icon(
+                onPressed: _showRegionPicker,
+                icon: const Icon(Icons.place, color: kCyan, size: 18),
+                label: const Text('Browse Gulf regions',
+                    style: TextStyle(color: kCyan)),
+              ),
+            ],
+          ),
+        ),
+      );
 
   Widget _errorView() => Center(
         child: Column(

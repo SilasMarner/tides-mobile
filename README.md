@@ -28,7 +28,12 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 
 ## Changelog
 
-### v2.3.0 (build 17) — latest
+### v2.3.0 (build 18) — latest
+- **Week view fix** — the 7-day view now rolls forward from today instead of starting on the calendar-week Monday (which showed mostly past days, with mismatched NWS forecasts, late in the week)
+- **Station name on detail** — the full station name now appears in the detail body (the app-bar title truncates when several toolbar actions are present)
+- **Salinity out-of-area handling** — opening the salinity map for a station outside NGOFS2's Gulf coverage now shows a clear "covers Gulf of America bays" message with a *Browse Gulf regions* option, instead of a misleading out-of-area map
+
+### v2.3.0 (build 17)
 - **Salinity map** — animated NOAA NGOFS2 (Northern Gulf OFS) hourly surface-salinity forecast loop, opened from the water-drop icon in any station's toolbar. Play/pause + scrub timeline, pinch-to-zoom, and a region picker that auto-selects the Gulf bay nearest the station (Galveston, Matagorda, Corpus Christi, Sabine, Calcasieu, Mobile, Pascagoula, and a whole-Gulf overview)
 
 ### v2.3.0 (build 15)
