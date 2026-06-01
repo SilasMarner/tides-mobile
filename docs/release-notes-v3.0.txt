@@ -1,0 +1,8 @@
+Version 3.0 — our biggest update yet! 🌊
+
+• Brand-new built-in weather map with 7 layers: Wind, Waves, Swell, Rain, Temperature, Pressure & Clouds. Tap anywhere to read the value; pan and zoom freely.
+• Live animated rain radar with a scrubbable timeline.
+• Salinity map — NOAA surface-salinity forecast for Gulf bays.
+• Solunar feeding times now shaded right on the tide chart.
+• Reorder your favorites — just drag.
+• New Standard / Metric units setting.
