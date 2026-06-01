@@ -386,16 +386,19 @@ class _IsobarPainter extends CustomPainter {
     final start = (vmin / step).ceilToDouble() * step;
     final labelDecimals = step < 1 ? 1 : 0;
 
+    // Thin, clean isobars: a hairline dark contour with a soft light halo for
+    // legibility on the light basemap (no thick double-stroke that reads as
+    // "railroad tracks").
     final glow = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 4.5
+      ..strokeWidth = 2.6
       ..strokeCap = StrokeCap.round
-      ..color = Colors.black.withValues(alpha: 0.45);
+      ..color = Colors.white.withValues(alpha: 0.55);
     final line = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0
+      ..strokeWidth = 1.1
       ..strokeCap = StrokeCap.round
-      ..color = Colors.white;
+      ..color = Colors.black.withValues(alpha: 0.62);
 
     final rect = Offset.zero & size;
     final placedLabels = <Offset>[];
