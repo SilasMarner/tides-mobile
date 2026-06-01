@@ -44,7 +44,7 @@ that point; the data follows the map as you pan and zoom.
 
 ## Changelog
 
-### Unreleased — `dev` branch (the v3.0 native-maps rewrite)
+### v3.0.0 — `dev` branch (native-maps rewrite, in QA — not yet released)
 - **Native weather map** — replaced the Windy embed with a fully custom Flutter map (flutter_map + Open-Meteo, no third-party branding or WebView): a smooth GPU-scaled gradient wash plus an animated particle flow rendered with a `CustomPainter`
 - **Seven layers** — Wind, Waves, Swell, Rain, Temperature, Pressure, Clouds, chosen from a bottom-sheet layer picker; each with its own colour ramp and legend
 - **Live rain radar** — the Rain layer shows real weather radar (RainViewer) with an animated, scrubbable timeline (~2 h of frames) and a play/pause control
