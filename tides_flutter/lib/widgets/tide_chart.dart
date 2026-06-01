@@ -8,6 +8,7 @@ class TideChart extends StatefulWidget {
   final List<TidePrediction> hilo;
   final bool isToday;
   final bool metric;
+  final SolunarInfo? solunar;
 
   const TideChart({
     super.key,
@@ -15,6 +16,7 @@ class TideChart extends StatefulWidget {
     required this.hilo,
     required this.isToday,
     this.metric = false,
+    this.solunar,
   });
 
   @override
@@ -103,6 +105,38 @@ class _TideChartState extends State<TideChart> {
           strokeWidth: 1.5,
         ),
     ];
+
+    // Solunar feeding-period markers (hours of day), like the Grafana dashboard:
+    // solid green = major (peak), dashed green = minor.
+    final sol = widget.solunar;
+    if (sol != null) {
+      const solGreen = Color(0xFF66BB6A);
+      void addSol(double t, bool major) {
+        if (t < 0 || t > 23) return; // off-chart
+        verticalLines.add(VerticalLine(
+          x: t,
+          color: solGreen.withValues(alpha: major ? 0.70 : 0.40),
+          strokeWidth: major ? 1.5 : 1,
+          dashArray: major ? null : [3, 3],
+          label: VerticalLineLabel(
+            show: true,
+            alignment: Alignment.topCenter,
+            padding: const EdgeInsets.only(bottom: 2),
+            style: TextStyle(
+              color: solGreen.withValues(alpha: major ? 0.95 : 0.65),
+              fontSize: 8,
+              fontWeight: FontWeight.w700,
+            ),
+            labelResolver: (_) => major ? 'M' : 'm',
+          ),
+        ));
+      }
+
+      addSol(sol.major1, true);
+      addSol(sol.major2, true);
+      addSol(sol.minor1, false);
+      addSol(sol.minor2, false);
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

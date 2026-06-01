@@ -456,8 +456,10 @@ class _SalinityMapScreenState extends State<SalinityMapScreen> {
                 IconButton(
                   icon: Icon(_playing ? Icons.pause : Icons.play_arrow,
                       color: kCyan),
-                  iconSize: 22,
+                  iconSize: 20,
+                  padding: EdgeInsets.zero,
                   visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
                   onPressed: _togglePlay,
                 ),
                 Expanded(

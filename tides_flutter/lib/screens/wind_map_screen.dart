@@ -1200,8 +1200,10 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                 IconButton(
                   icon: Icon(_radarPlaying ? Icons.pause : Icons.play_arrow,
                       color: kCyan),
-                  iconSize: 22,
+                  iconSize: 20,
+                  padding: EdgeInsets.zero,
                   visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
                   onPressed: () {
                     setState(() => _radarPlaying = !_radarPlaying);
                     if (_radarPlaying) {
