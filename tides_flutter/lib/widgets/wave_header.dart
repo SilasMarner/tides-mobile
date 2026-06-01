@@ -68,9 +68,9 @@ class _WavePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final waves = [
-      (kCyan.withOpacity(0.25), 0.0, 18.0, size.height * 0.72),
-      (kCyan.withOpacity(0.18), 0.4, 14.0, size.height * 0.78),
-      (kCyanLight.withOpacity(0.12), 0.7, 10.0, size.height * 0.82),
+      (kCyan.withValues(alpha: 0.25), 0.0, 18.0, size.height * 0.72),
+      (kCyan.withValues(alpha: 0.18), 0.4, 14.0, size.height * 0.78),
+      (kCyanLight.withValues(alpha: 0.12), 0.7, 10.0, size.height * 0.82),
     ];
 
     for (final (color, offset, amp, baseline) in waves) {

@@ -21,7 +21,7 @@ double haversine(double lat1, double lon1, double lat2, double lon2) {
   final dlon = _rad(lon2 - lon1);
   final a = pow(sin(dlat / 2), 2) +
       cos(_rad(lat1)) * cos(_rad(lat2)) * pow(sin(dlon / 2), 2);
-  return r * 2 * asin(sqrt(max(0, min(1, a as double))));
+  return r * 2 * asin(sqrt(max(0, min(1, a))));
 }
 
 double _rad(double d) => d * pi / 180;
@@ -457,7 +457,7 @@ Future<Map<String, dynamic>?> _tryNwsFetch(
   return result.isEmpty ? null : result;
 }
 
-Conditions _parseConditions(Map<String, dynamic?> obs, int pressureTrend) {
+Conditions _parseConditions(Map<String, dynamic> obs, int pressureTrend) {
   double? tryParse(dynamic val) {
     if (val == null) return null;
     return double.tryParse(val.toString());
@@ -527,7 +527,7 @@ Map<int, double> _interpolateHourlyFromHilo(List<TidePrediction> hilo) {
   // Convert to (fractional hour, height) pairs, adding synthetic boundary
   // points one full tidal period (~12.4h) before first and after last.
   final pts = <(double, double)>[];
-  final period = 12.42; // avg tidal period in hours
+  const period = 12.42; // avg tidal period in hours
   final first = sorted.first;
   final last = sorted.last;
   final firstH = first.time.hour + first.time.minute / 60.0;
@@ -639,7 +639,7 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
     hourly.addAll(_interpolateHourlyFromHilo(hilo));
   }
 
-  final obsRaw = <String, dynamic?>{
+  final obsRaw = <String, dynamic>{
     'air_temperature': results[2],
     'wind': results[3],
     'air_pressure': results[4],

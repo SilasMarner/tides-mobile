@@ -36,7 +36,7 @@ ThemeData buildTheme() => ThemeData(
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: kCyan.withOpacity(0.4), width: 1),
+          borderSide: BorderSide(color: kCyan.withValues(alpha: 0.4), width: 1),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),

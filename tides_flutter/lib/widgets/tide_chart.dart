@@ -138,7 +138,7 @@ class _TideChartState extends State<TideChart> {
                   drawVerticalLine: false,
                   horizontalInterval: widget.metric ? 0.5 : 2,
                   getDrawingHorizontalLine: (_) =>
-                      FlLine(color: Colors.white10, strokeWidth: 1),
+                      const FlLine(color: Colors.white10, strokeWidth: 1),
                 ),
                 borderData: FlBorderData(show: false),
                 lineTouchData: LineTouchData(

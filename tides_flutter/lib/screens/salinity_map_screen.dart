@@ -334,7 +334,7 @@ class _SalinityMapScreenState extends State<SalinityMapScreen> {
           ),
           if (_loading)
             Container(
-              color: Colors.black.withOpacity(0.55),
+              color: Colors.black.withValues(alpha: 0.55),
               child: const Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -416,7 +416,7 @@ class _SalinityMapScreenState extends State<SalinityMapScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.6),
+                color: Colors.black.withValues(alpha: 0.6),
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Row(
@@ -445,7 +445,7 @@ class _SalinityMapScreenState extends State<SalinityMapScreen> {
       child: Container(
         padding: const EdgeInsets.fromLTRB(4, 2, 14, 6),
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.74),
+          color: Colors.black.withValues(alpha: 0.74),
           borderRadius: BorderRadius.circular(18),
         ),
         child: Column(

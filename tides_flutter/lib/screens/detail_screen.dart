@@ -92,14 +92,6 @@ class DetailScreen extends ConsumerWidget {
             },
           ),
           IconButton(
-            icon: const Icon(Icons.sync, color: kCyan),
-            tooltip: 'Refresh',
-            onPressed: () {
-              ref.invalidate(tideDataProvider);
-              ref.invalidate(weekDataProvider);
-            },
-          ),
-          IconButton(
             icon: const Icon(Icons.air, color: kCyan),
             tooltip: 'Wind Map',
             onPressed: () => Navigator.push(
@@ -127,11 +119,37 @@ class DetailScreen extends ConsumerWidget {
               ),
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.info_outline, color: kCyan),
-            tooltip: 'About',
-            onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const AboutScreen())),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: kCyan),
+            color: kNavyLight,
+            tooltip: 'More',
+            onSelected: (v) {
+              if (v == 'refresh') {
+                ref.invalidate(tideDataProvider);
+                ref.invalidate(weekDataProvider);
+              } else if (v == 'about') {
+                Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const AboutScreen()));
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'refresh',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.sync, color: kCyan),
+                  title: Text('Refresh', style: TextStyle(color: Colors.white)),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'about',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.info_outline, color: kCyan),
+                  title: Text('About', style: TextStyle(color: Colors.white)),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -603,7 +621,7 @@ class _WeekViewState extends State<_WeekView> {
     }
     final days = byDay.keys.toList()..sort();
 
-    final _dayNameFmt = DateFormat('EEEE'); // full day name for NWS lookup
+    final dayNameFmt = DateFormat('EEEE'); // full day name for NWS lookup
 
     return ListView.builder(
       itemCount: days.length,
@@ -616,7 +634,7 @@ class _WeekViewState extends State<_WeekView> {
             day.day == today.day;
 
         // Find matching NWS period for this day
-        final dayName = isToday ? 'today' : _dayNameFmt.format(day).toLowerCase();
+        final dayName = isToday ? 'today' : dayNameFmt.format(day).toLowerCase();
         final nwsPeriod = nwsByDay[dayName];
 
         final isExpanded = _expanded.contains(day);

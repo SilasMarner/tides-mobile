@@ -90,7 +90,7 @@ class SettingsScreen extends ConsumerWidget {
             color: kCardBg,
             child: SwitchListTile(
               value: prefs.enabled,
-              activeColor: kCyan,
+              activeThumbColor: kCyan,
               title: const Text('Tide Notifications',
                   style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
               subtitle: const Text('Alerts for tides, solunar & fishing',
@@ -209,7 +209,7 @@ class SettingsScreen extends ConsumerWidget {
                       children: [
                         SwitchListTile(
                           dense: true,
-                          activeColor: kCyan,
+                          activeThumbColor: kCyan,
                           value: on,
                           title: Text(s.name,
                               style: const TextStyle(
@@ -260,7 +260,7 @@ class SettingsScreen extends ConsumerWidget {
   }) =>
       SwitchListTile(
         dense: true,
-        activeColor: kCyan,
+        activeThumbColor: kCyan,
         secondary: Icon(icon, color: value ? kCyan : Colors.white38, size: 20),
         title: Text(label,
             style: const TextStyle(color: Colors.white, fontSize: 13)),

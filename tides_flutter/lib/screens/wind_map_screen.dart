@@ -21,7 +21,7 @@ Color _windColor(double mph) {
           : mph < 25 ? const Color(0xFFF0932B)
           : mph < 35 ? const Color(0xFFEB4D4B)
           :             const Color(0xFF6C5CE7);
-  return c.withOpacity(0.45);
+  return c.withValues(alpha: 0.45);
 }
 
 Color _waveColor(double m) {
@@ -31,7 +31,7 @@ Color _waveColor(double m) {
           : m < 2.0 ? const Color(0xFF1A5276)
           : m < 4.0 ? const Color(0xFF0D2137)
           :             const Color(0xFF07111E);
-  return c.withOpacity(0.50);
+  return c.withValues(alpha: 0.50);
 }
 
 Color _swellColor(double m) {
@@ -43,7 +43,7 @@ Color _swellColor(double m) {
           : m < 2.0 ? const Color(0xFF7E57C2)
           : m < 4.0 ? const Color(0xFFAB47BC)
           :             const Color(0xFFEC407A);
-  return c.withOpacity(0.55);
+  return c.withValues(alpha: 0.55);
 }
 
 Color _rainColor(double mm) {
@@ -53,7 +53,7 @@ Color _rainColor(double mm) {
           : mm < 5.0 ? const Color(0xFF2E86C1)
           : mm < 10  ? const Color(0xFF1A5276)
           :              const Color(0xFF4A235A);
-  return c.withOpacity(0.55);
+  return c.withValues(alpha: 0.55);
 }
 
 Color _tempColor(double degC) {
@@ -67,7 +67,7 @@ Color _tempColor(double degC) {
           : degC < 30  ? const Color(0xFFF0932B)
           : degC < 35  ? const Color(0xFFEB4D4B)
           :               const Color(0xFF922B21);
-  return c.withOpacity(0.50);
+  return c.withValues(alpha: 0.50);
 }
 
 Color _pressureColor(double hpa) {
@@ -79,12 +79,12 @@ Color _pressureColor(double hpa) {
           : hpa < 1023 ? const Color(0xFFF0932B)
           :               const Color(0xFFEB4D4B);
   // Keep the wash subtle — the isobar lines carry the detail.
-  return c.withOpacity(0.28);
+  return c.withValues(alpha: 0.28);
 }
 
 Color _cloudColor(double pct) {
   final t = (pct / 100.0).clamp(0.0, 1.0);
-  return Colors.white.withOpacity(t * 0.48);
+  return Colors.white.withValues(alpha: t * 0.48);
 }
 
 // ── Data model ────────────────────────────────────────────────────────────────
@@ -302,7 +302,7 @@ class _SmoothGradientLayer extends StatelessWidget {
   final _DataGrid field;
   final ui.Image image;
   const _SmoothGradientLayer(
-      {super.key, required this.field, required this.image});
+      {required this.field, required this.image});
 
   @override
   Widget build(BuildContext context) => CustomPaint(
@@ -339,7 +339,7 @@ class _SmoothGradientPainter extends CustomPainter {
 
 class _IsobarLayer extends StatelessWidget {
   final _DataGrid field;
-  const _IsobarLayer({super.key, required this.field});
+  const _IsobarLayer({required this.field});
 
   @override
   Widget build(BuildContext context) => CustomPaint(
@@ -390,7 +390,7 @@ class _IsobarPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4.5
       ..strokeCap = StrokeCap.round
-      ..color = Colors.black.withOpacity(0.45);
+      ..color = Colors.black.withValues(alpha: 0.45);
     final line = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0
@@ -467,7 +467,7 @@ class _IsobarPainter extends CustomPainter {
         center: at, width: tp.width + 8, height: tp.height + 4);
     canvas.drawRRect(
       RRect.fromRectAndRadius(pill, const Radius.circular(7)),
-      Paint()..color = Colors.black.withOpacity(0.65),
+      Paint()..color = Colors.black.withValues(alpha: 0.65),
     );
     tp.paint(canvas, at - Offset(tp.width / 2, tp.height / 2));
   }
@@ -523,8 +523,7 @@ class _WindParticleLayer extends StatefulWidget {
   final Color Function(double) colorFn;
   final bool skipEmpty; // for marine layers: no particles where value ≈ 0 (land)
   const _WindParticleLayer(
-      {super.key,
-      required this.field,
+      {required this.field,
       required this.colorFn,
       this.skipEmpty = false});
 
@@ -629,8 +628,8 @@ class _ParticlePainter extends CustomPainter {
       final speed = math.sqrt(u * u + v * v);
       final base = colorFn(speed);
       // Transparent = "no data here" (e.g. waves over land). Don't draw —
-      // otherwise base.withOpacity() below would paint a black dot.
-      if (base.alpha == 0) continue;
+      // otherwise the alpha blend below would paint a black dot.
+      if (base.a == 0) continue;
 
       final allPts = [
         ...p.trail.map((t) => _s(t.$1, t.$2)),
@@ -643,14 +642,14 @@ class _ParticlePainter extends CustomPainter {
           allPts[i - 1],
           allPts[i],
           linePaint
-            ..color = base.withOpacity((frac * p.opacity * 0.95).clamp(0, 1))
+            ..color = base.withValues(alpha: (frac * p.opacity * 0.95).clamp(0, 1))
             ..strokeWidth = 0.5 + frac * 1.8,
         );
       }
 
       if (allPts.isNotEmpty) {
         canvas.drawCircle(allPts.last, 2.0,
-            Paint()..color = base.withOpacity(p.opacity));
+            Paint()..color = base.withValues(alpha: p.opacity));
       }
     }
   }
@@ -858,12 +857,14 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
 
       final items = resp.data as List;
       if (items.isEmpty || items[0]['current'] == null) {
-        if (mounted && !silent) setState(() {
-          _error = def.isMarine
-              ? 'No ${def.label.toLowerCase()} data at this location'
-              : 'No data available';
-          _loading = false;
-        });
+        if (mounted && !silent) {
+          setState(() {
+            _error = def.isMarine
+                ? 'No ${def.label.toLowerCase()} data at this location'
+                : 'No data available';
+            _loading = false;
+          });
+        }
         return;
       }
 
@@ -1099,7 +1100,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                     child: Container(
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: kCyan.withOpacity(0.4),
+                        color: kCyan.withValues(alpha: 0.4),
                         border: Border.all(color: Colors.white, width: 2),
                       ),
                     ),
@@ -1116,7 +1117,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
           ),
           if (_loading)
             Container(
-              color: Colors.black.withOpacity(0.55),
+              color: Colors.black.withValues(alpha: 0.55),
               child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1162,7 +1163,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.55),
+                    color: Colors.black.withValues(alpha: 0.55),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: const Text('Tap the map to read a value',
@@ -1188,7 +1189,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
       child: Container(
         padding: const EdgeInsets.fromLTRB(4, 2, 14, 6),
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.74),
+          color: Colors.black.withValues(alpha: 0.74),
           borderRadius: BorderRadius.circular(18),
         ),
         child: Column(
@@ -1291,9 +1292,9 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         child: Container(
           padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.78),
+            color: Colors.black.withValues(alpha: 0.78),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: kCyan.withOpacity(0.5)),
+            border: Border.all(color: kCyan.withValues(alpha: 0.5)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1363,7 +1364,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
             padding:
                 const EdgeInsets.fromLTRB(14, 8, 14, 8),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.72),
+              color: Colors.black.withValues(alpha: 0.72),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Column(
