@@ -44,7 +44,7 @@ that point; the data follows the map as you pan and zoom.
 
 ## Changelog
 
-### v3.0.0 — `dev` branch (native-maps rewrite, in QA — not yet released)
+### v3.0.0 — latest release (native-maps rewrite)
 - **Native weather map** — replaced the Windy embed with a fully custom Flutter map (flutter_map + Open-Meteo, no third-party branding or WebView): a smooth GPU-scaled gradient wash plus an animated particle flow rendered with a `CustomPainter`
 - **Seven layers** — Wind, Waves, Swell, Rain, Temperature, Pressure, Clouds, chosen from a bottom-sheet layer picker; each with its own colour ramp and legend
 - **Live rain radar** — the Rain layer shows real weather radar (RainViewer) with an animated, scrubbable timeline (~2 h of frames) and a play/pause control
@@ -56,7 +56,7 @@ that point; the data follows the map as you pan and zoom.
 - **Reorder favorites** — drag the ≡ handle on any favorite to reorder your list (long-press still removes, tap still opens)
 - **Salinity map** — the native NOAA NGOFS2 surface-salinity loop (water-drop toolbar icon) carried over from main: play/pause + scrub timeline, pinch-zoom, auto-selected Gulf region, and an out-of-coverage notice for non-Gulf stations
 
-### v2.3.0 (build 19) — latest release (`main`)
+### v2.3.0 (build 19)
 - **Reorder favorites** — drag the ≡ handle on any favorite to reorder your list; the order is saved. Long-press still removes a favorite and tap still opens it.
 
 ### v2.3.0 (build 18)
