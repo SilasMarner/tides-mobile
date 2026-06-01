@@ -182,7 +182,7 @@ class AboutScreen extends StatelessWidget {
     'Sun & moon: sunrise, sunset, golden hour, phase, illumination',
     'Fishing rating (1–5 stars) based on tides, solunar timing, and wind',
     'Wave heights, swell and wind-sea breakdown from Open-Meteo Marine at each station location',
-    'Interactive Windy wind map — animated particle visualization with Wind, Waves, Rain, Temperature, and Clouds overlays',
+    'Native weather map — a custom animated map (no third-party embed) with Wind, Waves, Swell, Rain radar, Temperature, Pressure, and Clouds layers',
     'Animated salinity map — NOAA NGOFS2 hourly surface-salinity forecast loop for Gulf bays (Galveston, Matagorda, Corpus Christi, Mobile and more)',
     'Favorites and GPS-based nearest stations',
     'Notifications for tide changes, solunar majors, and best fishing days',
@@ -201,8 +201,10 @@ class AboutScreen extends StatelessWidget {
     ('NOAA CO-OPS API', 'Public Domain', 'tidesandcurrents.noaa.gov'),
     ('NWS API', 'Public Domain', 'weather.gov'),
     ('Open-Meteo Marine API', 'CC BY 4.0', 'open-meteo.com'),
-    ('Windy Embed API', 'windy.com', 'windy.com'),
-    ('webview_flutter', 'BSD 3-Clause', 'pub.dev/packages/webview_flutter'),
+    ('flutter_map', 'BSD 3-Clause', 'pub.dev/packages/flutter_map'),
+    ('RainViewer', 'Free for non-commercial', 'rainviewer.com'),
+    ('CARTO / OpenStreetMap', '© CARTO · © OpenStreetMap', 'carto.com'),
+    ('NOAA NGOFS2 OFS', 'Public Domain', 'tidesandcurrents.noaa.gov/ofs'),
   ];
 
   Widget _creditTile((String, String, String) c) => Card(
