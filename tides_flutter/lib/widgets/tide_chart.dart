@@ -106,36 +106,38 @@ class _TideChartState extends State<TideChart> {
         ),
     ];
 
-    // Solunar feeding-period markers (hours of day), like the Grafana dashboard:
-    // solid green = major (peak), dashed green = minor.
+    // Solunar feeding-period bands (like the Grafana dashboard): a green wash
+    // over each window — wider/brighter for majors (2 h), narrower/fainter for
+    // minors (1 h). Each window starts at the solunar time and runs forward,
+    // matching the fishing-rating logic; bands that cross midnight are split.
+    final solBands = <VerticalRangeAnnotation>[];
     final sol = widget.solunar;
     if (sol != null) {
       const solGreen = Color(0xFF66BB6A);
-      void addSol(double t, bool major) {
-        if (t < 0 || t > 23) return; // off-chart
-        verticalLines.add(VerticalLine(
-          x: t,
-          color: solGreen.withValues(alpha: major ? 0.70 : 0.40),
-          strokeWidth: major ? 1.5 : 1,
-          dashArray: major ? null : [3, 3],
-          label: VerticalLineLabel(
-            show: true,
-            alignment: Alignment.topCenter,
-            padding: const EdgeInsets.only(bottom: 2),
-            style: TextStyle(
-              color: solGreen.withValues(alpha: major ? 0.95 : 0.65),
-              fontSize: 8,
-              fontWeight: FontWeight.w700,
-            ),
-            labelResolver: (_) => major ? 'M' : 'm',
-          ),
-        ));
+      void addBand(double start, double dur, double alpha) {
+        start = start % 24;
+        void seg(double a, double b) {
+          a = a.clamp(0, 23).toDouble();
+          b = b.clamp(0, 23).toDouble();
+          if (b > a) {
+            solBands.add(VerticalRangeAnnotation(
+                x1: a, x2: b, color: solGreen.withValues(alpha: alpha)));
+          }
+        }
+
+        final end = start + dur;
+        if (end <= 24) {
+          seg(start, end);
+        } else {
+          seg(start, 24);
+          seg(0, end - 24);
+        }
       }
 
-      addSol(sol.major1, true);
-      addSol(sol.major2, true);
-      addSol(sol.minor1, false);
-      addSol(sol.minor2, false);
+      addBand(sol.major1, 2, 0.20);
+      addBand(sol.major2, 2, 0.20);
+      addBand(sol.minor1, 1, 0.11);
+      addBand(sol.minor2, 1, 0.11);
     }
 
     return Column(
@@ -235,6 +237,8 @@ class _TideChartState extends State<TideChart> {
                   topTitles: const AxisTitles(
                       sideTitles: SideTitles(showTitles: false)),
                 ),
+                rangeAnnotations:
+                    RangeAnnotations(verticalRangeAnnotations: solBands),
                 extraLinesData: ExtraLinesData(verticalLines: verticalLines),
                 lineBarsData: [
                   LineChartBarData(
