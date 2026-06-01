@@ -22,8 +22,10 @@ final showWeekProvider = StateProvider<bool>((_) => false);
 final weekDataProvider = FutureProvider<List<TidePrediction>>((ref) async {
   final station = ref.watch(selectedStationProvider);
   if (station == null) return [];
+  // Rolling 7-day forecast starting today (not the calendar week, which would
+  // show mostly past days late in the week and mis-map NWS day-name forecasts).
   final now = DateTime.now();
-  final monday = now.subtract(Duration(days: now.weekday - 1));
-  final sunday = monday.add(const Duration(days: 6));
-  return fetchWeekHilo(station.id, monday, sunday);
+  final today = DateTime(now.year, now.month, now.day);
+  final end = today.add(const Duration(days: 6));
+  return fetchWeekHilo(station.id, today, end);
 });

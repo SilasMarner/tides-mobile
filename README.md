@@ -36,11 +36,15 @@ that point; the data follows the map as you pan and zoom.
 |--------------------------|
 | ![Units](screenshots/settings_units.png) |
 
+| Salinity Map (NOAA NGOFS2 forecast loop) |
+|------------------------------------------|
+| ![Salinity Map](screenshots/salinity_map.png) |
+
 ---
 
 ## Changelog
 
-### Unreleased — `dev` branch
+### Unreleased — `dev` branch (the v3.0 native-maps rewrite)
 - **Native weather map** — replaced the Windy embed with a fully custom Flutter map (flutter_map + Open-Meteo, no third-party branding or WebView): a smooth GPU-scaled gradient wash plus an animated particle flow rendered with a `CustomPainter`
 - **Seven layers** — Wind, Waves, Swell, Rain, Temperature, Pressure, Clouds, chosen from a bottom-sheet layer picker; each with its own colour ramp and legend
 - **Live rain radar** — the Rain layer shows real weather radar (RainViewer) with an animated, scrubbable timeline (~2 h of frames) and a play/pause control
@@ -49,6 +53,15 @@ that point; the data follows the map as you pan and zoom.
 - **Data follows the map** — the overlay grid re-fetches to cover the visible area as you pan/zoom, so there's no hard overlay edge
 - **Units setting** — Standard (°F · mph · ft) or Metric (°C · km/h · m) in Settings; applies across the map, detail screen, tide chart, and notifications
 - **Add to favorites via long-press** — long-press a station in the list (the old button could fall under the phone's nav bar)
+- **Salinity map** — the native NOAA NGOFS2 surface-salinity loop (water-drop toolbar icon) carried over from main: play/pause + scrub timeline, pinch-zoom, auto-selected Gulf region, and an out-of-coverage notice for non-Gulf stations
+
+### v2.3.0 (build 18) — latest release (`main`)
+- **Week view fix** — the 7-day view now rolls forward from today instead of starting on the calendar-week Monday (which showed mostly past days, with mismatched NWS forecasts, late in the week)
+- **Station name on detail** — the full station name now appears in the detail body (the app-bar title truncates when several toolbar actions are present)
+- **Salinity out-of-area handling** — opening the salinity map for a station outside NGOFS2's Gulf coverage now shows a clear "covers Gulf of America bays" message with a *Browse Gulf regions* option, instead of a misleading out-of-area map
+
+### v2.3.0 (build 17)
+- **Salinity map** — animated NOAA NGOFS2 (Northern Gulf OFS) hourly surface-salinity forecast loop, opened from the water-drop icon in any station's toolbar. Play/pause + scrub timeline, pinch-to-zoom, and a region picker that auto-selects the Gulf bay nearest the station (Galveston, Matagorda, Corpus Christi, Sabine, Calcasieu, Mobile, Pascagoula, and a whole-Gulf overview)
 
 ### v2.3.0 (build 15)
 - **Wind map upgrade** — switched to Windy embed2 for full color gradient overlay, animated wind particle flow, isobar pressure lines, and a forecast timeline scrubber at the bottom
@@ -107,6 +120,7 @@ that point; the data follows the map as you pan and zoom.
   - **Tap-to-read** — tap anywhere to read the value (and direction) at that point
   - **Follows the map** — the overlay re-fetches to cover wherever you pan or zoom
 - **Units** — Standard (°F · mph · ft) or Metric (°C · km/h · m), applied everywhere
+- **Salinity map** — animated NOAA NGOFS2 surface-salinity forecast loop for Gulf bays, with play/pause timeline, pinch-zoom, and an auto-selected region picker
 - **In-app updates** — automatically checks for Play Store updates on launch; prompts with RESTART / LATER banner when ready
 - **Favorites** — save stations with a long-press; shown on home screen
 - **Use My Location** — GPS-based nearest stations
@@ -131,6 +145,7 @@ that point; the data follows the map as you pan and zoom.
 | Map forecast | Open-Meteo forecast & marine APIs |
 | Rain radar | RainViewer public API (free) |
 | Basemap tiles | CARTO Voyager (© CARTO, © OpenStreetMap) |
+| Salinity map | NOAA NGOFS2 OFS forecast plots (tidesandcurrents CDN) |
 | Updates | Google Play In-App Update API |
 
 ---
@@ -180,7 +195,7 @@ tides-mobile/
 │   ├── lib/
 │   │   ├── models/      Data models (TideData, Conditions, WaveData, etc.)
 │   │   ├── providers/   Riverpod state providers (incl. units_provider)
-│   │   ├── screens/     HomeScreen, DetailScreen, WindMapScreen, Settings, About
+│   │   ├── screens/     HomeScreen, DetailScreen, WindMapScreen, SalinityMapScreen, Settings, About
 │   │   ├── services/    noaa_api.dart, location_service.dart, notification_service.dart
 │   │   ├── utils/       unit_format.dart (Standard/Metric formatting)
 │   │   └── widgets/     TideChart, ConditionsCard, StationTile, WaveHeader
@@ -206,6 +221,8 @@ isobars, radar, and the layer system are all self-contained there.
   https://www.rainviewer.com/
 - **CARTO / OpenStreetMap** — Voyager basemap tiles for the weather map  
   https://carto.com/ · https://www.openstreetmap.org/
+- **NOAA NGOFS2 OFS** — hourly surface-salinity forecast map plots (Northern Gulf of America Operational Forecast System)  
+  https://tidesandcurrents.noaa.gov/ofs/ofs_mapplots.html
 
 ---
 
