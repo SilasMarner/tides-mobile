@@ -183,6 +183,7 @@ class AboutScreen extends StatelessWidget {
     'Fishing rating (1–5 stars) based on tides, solunar timing, and wind',
     'Wave heights, swell and wind-sea breakdown from Open-Meteo Marine at each station location',
     'Interactive Windy wind map — animated particle visualization with Wind, Waves, Rain, Temperature, and Clouds overlays',
+    'Animated salinity map — NOAA NGOFS2 hourly surface-salinity forecast loop for Gulf bays (Galveston, Matagorda, Corpus Christi, Mobile and more)',
     'Favorites and GPS-based nearest stations',
     'Notifications for tide changes, solunar majors, and best fishing days',
   ];
