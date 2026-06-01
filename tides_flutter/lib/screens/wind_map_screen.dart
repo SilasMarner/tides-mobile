@@ -402,6 +402,11 @@ class _IsobarPainter extends CustomPainter {
 
     final rect = Offset.zero & size;
     final placedLabels = <Offset>[];
+    final pendingLabels = <(Offset, String)>[];
+    // Accumulate every contour segment into one path, then stroke the whole
+    // thing in a single pass — so the halo never over-paints (nicks) a line
+    // joint and the isobars read as continuous, unbroken curves.
+    final path = ui.Path();
 
     for (var level = start; level <= vmax; level += step) {
       var labelPlacedForLevel = false;
@@ -430,11 +435,11 @@ class _IsobarPainter extends CustomPainter {
           edge(lat1, lon0, d, lat0, lon0, a); // left
 
           if (crossings.length >= 2) {
-            canvas.drawLine(crossings[0], crossings[1], glow);
-            canvas.drawLine(crossings[0], crossings[1], line);
+            path.moveTo(crossings[0].dx, crossings[0].dy);
+            path.lineTo(crossings[1].dx, crossings[1].dy);
             if (crossings.length == 4) {
-              canvas.drawLine(crossings[2], crossings[3], glow);
-              canvas.drawLine(crossings[2], crossings[3], line);
+              path.moveTo(crossings[2].dx, crossings[2].dy);
+              path.lineTo(crossings[3].dx, crossings[3].dy);
             }
 
             // Label this level once, spaced out from other labels.
@@ -443,7 +448,7 @@ class _IsobarPainter extends CustomPainter {
                   (crossings[0].dy + crossings[1].dy) / 2);
               if (rect.contains(mid) &&
                   placedLabels.every((p) => (p - mid).distance > 70)) {
-                _label(canvas, mid, level.toStringAsFixed(labelDecimals));
+                pendingLabels.add((mid, level.toStringAsFixed(labelDecimals)));
                 placedLabels.add(mid);
                 labelPlacedForLevel = true;
               }
@@ -451,6 +456,14 @@ class _IsobarPainter extends CustomPainter {
           }
         }
       }
+    }
+
+    // Stroke all isobars in one pass (halo first, hairline on top) so lines are
+    // continuous, then draw the number chips last so no line crosses over them.
+    canvas.drawPath(path, glow);
+    canvas.drawPath(path, line);
+    for (final (at, text) in pendingLabels) {
+      _label(canvas, at, text);
     }
   }
 
@@ -467,10 +480,10 @@ class _IsobarPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     )..layout();
     final pill = Rect.fromCenter(
-        center: at, width: tp.width + 8, height: tp.height + 4);
+        center: at, width: tp.width + 12, height: tp.height + 6);
     canvas.drawRRect(
-      RRect.fromRectAndRadius(pill, const Radius.circular(7)),
-      Paint()..color = Colors.black.withValues(alpha: 0.65),
+      RRect.fromRectAndRadius(pill, const Radius.circular(8)),
+      Paint()..color = Colors.black.withValues(alpha: 0.82),
     );
     tp.paint(canvas, at - Offset(tp.width / 2, tp.height / 2));
   }
