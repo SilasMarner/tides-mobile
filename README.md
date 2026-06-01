@@ -28,7 +28,10 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 
 ## Changelog
 
-### v2.3.0 (build 18) — latest
+### v2.3.0 (build 19) — latest
+- **Reorder favorites** — drag the ≡ handle on any favorite to reorder your list; the order is saved. Long-press still removes a favorite and tap still opens it.
+
+### v2.3.0 (build 18)
 - **Week view fix** — the 7-day view now rolls forward from today instead of starting on the calendar-week Monday (which showed mostly past days, with mismatched NWS forecasts, late in the week)
 - **Station name on detail** — the full station name now appears in the detail body (the app-bar title truncates when several toolbar actions are present)
 - **Salinity out-of-area handling** — opening the salinity map for a station outside NGOFS2's Gulf coverage now shows a clear "covers Gulf of America bays" message with a *Browse Gulf regions* option, instead of a misleading out-of-area map
@@ -90,7 +93,7 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 - **Wind map** — animated Windy map with color gradient overlay, isobars, and forecast timeline; overlays: Wind, Waves, Swell, Rain/Thunder, Temperature, Pressure, Clouds
 - **Salinity map** — animated NOAA NGOFS2 surface-salinity forecast loop for Gulf bays, with play/pause timeline, pinch-zoom, and an auto-selected region picker
 - **In-app updates** — automatically checks for Play Store updates on launch; prompts with RESTART / LATER banner when ready
-- **Favorites** — save stations with one tap; shown on home screen
+- **Favorites** — save stations with one tap; shown on home screen, drag the ≡ handle to reorder, long-press to remove
 - **Use My Location** — GPS-based nearest stations
 - **Notifications** — alerts for tide changes, solunar majors, and best fishing days
 

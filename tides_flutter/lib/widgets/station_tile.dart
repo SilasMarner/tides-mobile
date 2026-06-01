@@ -29,6 +29,7 @@ class StationTile extends StatelessWidget {
   final VoidCallback? onLongPress;
   final bool isFavorite;
   final Set<String>? caps;
+  final Widget? dragHandle;
 
   const StationTile({
     super.key,
@@ -37,6 +38,7 @@ class StationTile extends StatelessWidget {
     this.onLongPress,
     this.isFavorite = false,
     this.caps,
+    this.dragHandle,
   });
 
   @override
@@ -65,9 +67,19 @@ class StationTile extends StatelessWidget {
           ],
         ],
       ),
-      trailing: isFavorite
-          ? const Icon(Icons.star, color: kCyan, size: 18)
-          : const Icon(Icons.chevron_right, color: Colors.white24),
+      trailing: dragHandle != null
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isFavorite)
+                  const Icon(Icons.star, color: kCyan, size: 18),
+                const SizedBox(width: 6),
+                dragHandle!,
+              ],
+            )
+          : isFavorite
+              ? const Icon(Icons.star, color: kCyan, size: 18)
+              : const Icon(Icons.chevron_right, color: Colors.white24),
       onTap: onTap,
       onLongPress: onLongPress,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),

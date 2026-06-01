@@ -266,6 +266,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             onLongPress: _toggleFavorite,
                             favorites: favorites,
                             capsMap: capsMap,
+                            onReorder: (o, n) => ref
+                                .read(favoritesProvider.notifier)
+                                .reorder(o, n),
                           )
                         : const Center(
                             child: Text('Search for a station above to get started.',
@@ -284,6 +287,7 @@ class _StationList extends StatelessWidget {
   final void Function(Station) onLongPress;
   final List<Station> favorites;
   final Map<String, Set<String>>? capsMap;
+  final void Function(int oldIndex, int newIndex)? onReorder;
 
   const _StationList({
     required this.label,
@@ -292,6 +296,7 @@ class _StationList extends StatelessWidget {
     required this.onLongPress,
     required this.favorites,
     this.capsMap,
+    this.onReorder,
   });
 
   void _showLegend(BuildContext context) {
@@ -367,18 +372,42 @@ class _StationList extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: ListView.separated(
-              itemCount: stations.length,
-              separatorBuilder: (_, __) =>
-                  const Divider(color: Colors.white10, height: 1),
-              itemBuilder: (_, i) => StationTile(
-                station: stations[i],
-                isFavorite: favorites.any((f) => f.id == stations[i].id),
-                onTap: () => onTap(stations[i]),
-                onLongPress: () => onLongPress(stations[i]),
-                caps: capsMap?[stations[i].id],
-              ),
-            ),
+            child: onReorder != null
+                ? ReorderableListView.builder(
+                    buildDefaultDragHandles: false,
+                    itemCount: stations.length,
+                    onReorder: onReorder!,
+                    itemBuilder: (_, i) => StationTile(
+                      key: ValueKey(stations[i].id),
+                      station: stations[i],
+                      isFavorite:
+                          favorites.any((f) => f.id == stations[i].id),
+                      onTap: () => onTap(stations[i]),
+                      onLongPress: () => onLongPress(stations[i]),
+                      caps: capsMap?[stations[i].id],
+                      dragHandle: ReorderableDragStartListener(
+                        index: i,
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 4),
+                          child: Icon(Icons.drag_handle,
+                              color: Colors.white38),
+                        ),
+                      ),
+                    ),
+                  )
+                : ListView.separated(
+                    itemCount: stations.length,
+                    separatorBuilder: (_, __) =>
+                        const Divider(color: Colors.white10, height: 1),
+                    itemBuilder: (_, i) => StationTile(
+                      station: stations[i],
+                      isFavorite:
+                          favorites.any((f) => f.id == stations[i].id),
+                      onTap: () => onTap(stations[i]),
+                      onLongPress: () => onLongPress(stations[i]),
+                      caps: capsMap?[stations[i].id],
+                    ),
+                  ),
           ),
         ],
       );
