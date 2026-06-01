@@ -40,6 +40,18 @@ class FavoritesNotifier extends StateNotifier<List<Station>> {
     return true;
   }
 
+  // Reorder favorites (drag-and-drop). Uses ReorderableListView index semantics:
+  // when an item moves down, newIndex is the position *before* removal.
+  Future<void> reorder(int oldIndex, int newIndex) async {
+    if (oldIndex < 0 || oldIndex >= state.length) return;
+    if (newIndex > oldIndex) newIndex -= 1;
+    final list = [...state];
+    final item = list.removeAt(oldIndex);
+    list.insert(newIndex.clamp(0, list.length), item);
+    state = list;
+    await _save();
+  }
+
   bool contains(String stationId) => state.any((s) => s.id == stationId);
 }
 

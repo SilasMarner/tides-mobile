@@ -52,10 +52,14 @@ that point; the data follows the map as you pan and zoom.
 - **Tap-to-read** — tap anywhere on any layer to read the interpolated value (speed/height + compass direction for vector layers), unit-aware
 - **Data follows the map** — the overlay grid re-fetches to cover the visible area as you pan/zoom, so there's no hard overlay edge
 - **Units setting** — Standard (°F · mph · ft) or Metric (°C · km/h · m) in Settings; applies across the map, detail screen, tide chart, and notifications
-- **Add to favorites via long-press** — long-press a station in the list (the old button could fall under the phone's nav bar)
+- **Solunar bands on the tide chart** — shaded green feeding-period bands (wider/brighter majors, narrower/fainter minors), like the dashboard
+- **Reorder favorites** — drag the ≡ handle on any favorite to reorder your list (long-press still removes, tap still opens)
 - **Salinity map** — the native NOAA NGOFS2 surface-salinity loop (water-drop toolbar icon) carried over from main: play/pause + scrub timeline, pinch-zoom, auto-selected Gulf region, and an out-of-coverage notice for non-Gulf stations
 
-### v2.3.0 (build 18) — latest release (`main`)
+### v2.3.0 (build 19) — latest release (`main`)
+- **Reorder favorites** — drag the ≡ handle on any favorite to reorder your list; the order is saved. Long-press still removes a favorite and tap still opens it.
+
+### v2.3.0 (build 18)
 - **Week view fix** — the 7-day view now rolls forward from today instead of starting on the calendar-week Monday (which showed mostly past days, with mismatched NWS forecasts, late in the week)
 - **Station name on detail** — the full station name now appears in the detail body (the app-bar title truncates when several toolbar actions are present)
 - **Salinity out-of-area handling** — opening the salinity map for a station outside NGOFS2's Gulf coverage now shows a clear "covers Gulf of America bays" message with a *Browse Gulf regions* option, instead of a misleading out-of-area map
@@ -122,7 +126,7 @@ that point; the data follows the map as you pan and zoom.
 - **Units** — Standard (°F · mph · ft) or Metric (°C · km/h · m), applied everywhere
 - **Salinity map** — animated NOAA NGOFS2 surface-salinity forecast loop for Gulf bays, with play/pause timeline, pinch-zoom, and an auto-selected region picker
 - **In-app updates** — automatically checks for Play Store updates on launch; prompts with RESTART / LATER banner when ready
-- **Favorites** — save stations with a long-press; shown on home screen
+- **Favorites** — save a station by long-pressing it in the list (or the star on the detail screen); shown on the home screen, drag the ≡ handle to reorder, long-press to remove
 - **Use My Location** — GPS-based nearest stations
 - **Notifications** — alerts for tide changes, solunar majors, and best fishing days
 
