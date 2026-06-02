@@ -26,9 +26,13 @@ that point; the data follows the map as you pan and zoom.
 |------|-------------|-------|
 | ![Wind](screenshots/wind_map.png) | ![Layers](screenshots/wind_map_layers.png) | ![Swell](screenshots/wind_map_swell.png) |
 
-| Live rain radar (animated) | Pressure isobars | Temperature + tap-to-read |
+| NOAA radar → forecast timeline | Pressure isobars | Temperature + tap-to-read |
 |-----------------|------------------|---------------------------|
 | ![Radar](screenshots/wind_map_radar.png) | ![Pressure](screenshots/wind_map_pressure.png) | ![Temperature](screenshots/wind_map_temp.png) |
+
+| Hourly forecast strip |
+|-----------------------|
+| ![Forecast](screenshots/wind_map_radar_fcst.png) |
 
 ### Units
 
@@ -44,7 +48,23 @@ that point; the data follows the map as you pan and zoom.
 
 ## Changelog
 
-### v3.0.0 — latest release (native-maps rewrite)
+### v3.3.0 — latest release (NOAA radar + unified rain timeline)
+- **NOAA MRMS radar** — the Rain layer's live/observed portion now renders NOAA's MRMS composite reflectivity (`conus_cref_qcd`) via WMS — the same full-resolution, ~2-minute-cadence national radar mosaic the major weather apps show. Free, no API key, US coverage. Replaces RainViewer.
+- **Unified rain timeline** — one scrubbable timeline flows seamlessly from ~2 h of observed NOAA radar, through *now*, into an 18 h precipitation forecast. No mode toggle; a **NOW** button jumps back to the current frame.
+- **Hourly forecast strip** — a scrollable bottom strip shows the next 18 h: weather icon, temperature, and rain probability per hour (Open-Meteo).
+- **Smoother forecast overlay** — the forecast precipitation grid was densified (16×16) and is rendered at 128 px with bilinear interpolation, so it reads as smooth precipitation instead of blocky patches.
+- **Fishing rating on every day** — the Fishing card now appears for future days too (a solunar-vs-tide alignment score), not just today.
+- **Detail header cleanup** — full station name + ID always visible in a banner; date arrows and the TODAY/WEEK toggle share one compact row.
+
+### v3.2.0 (build 30)
+- **Hourly forecast strip** added to the Rain forecast view (weather icon · temp · rain %, 18 h ahead).
+- **Fishing rating shown for all days**, not only today.
+
+### v3.1.0 (build 28)
+- **Rain forecast mode** — a LIVE/FCST toggle (since superseded by the unified timeline in 3.3) added an 18 h Open-Meteo precipitation forecast alongside the live radar.
+- **Detail screen** station header redesigned (full name + ID banner, merged nav row).
+
+### v3.0.0 (native-maps rewrite)
 - **Native weather map** — replaced the Windy embed with a fully custom Flutter map (flutter_map + Open-Meteo, no third-party branding or WebView): a smooth GPU-scaled gradient wash plus an animated particle flow rendered with a `CustomPainter`
 - **Seven layers** — Wind, Waves, Swell, Rain, Temperature, Pressure, Clouds, chosen from a bottom-sheet layer picker; each with its own colour ramp and legend
 - **Live rain radar** — the Rain layer shows real weather radar (RainViewer) with an animated, scrubbable timeline (~2 h of frames) and a play/pause control
@@ -116,10 +136,10 @@ that point; the data follows the map as you pan and zoom.
 - **Week view** — 7 days of hi/lo tides with NWS temperature and short forecast; tap any day to expand
 - **Solunar tables** — major/minor feeding periods calculated from moon position
 - **Sun & moon** — sunrise, sunset, golden hour, moon phase and illumination percentage
-- **Fishing rating** — 1–5 star rating based on tidal movement, solunar timing, and wind
+- **Fishing rating** — 1–5 star rating based on tidal movement, solunar timing, and wind; shown for every day (future days use a solunar-vs-tide alignment score)
 - **Interactive tide chart** — tap or drag anywhere to see exact time and height
 - **Weather map** — a native, Windy-style map (no third-party embed) with a smooth gradient wash and animated particle flow. Seven layers: **Wind, Waves, Swell, Rain, Temperature, Pressure, Clouds**
-  - **Live rain radar** — real weather radar (RainViewer) with an animated, scrubbable timeline (~2 h)
+  - **NOAA radar → forecast** — a unified scrubbable timeline: ~2 h of NOAA MRMS composite-reflectivity radar flows through *now* into an 18 h precipitation forecast, with a NOW button and an hourly strip (icon · temp · rain %)
   - **Pressure isobars** — labelled contour lines, synoptic-scale view
   - **Tap-to-read** — tap anywhere to read the value (and direction) at that point
   - **Follows the map** — the overlay re-fetches to cover wherever you pan or zoom
@@ -147,7 +167,7 @@ that point; the data follows the map as you pan and zoom.
 | Wave data | Open-Meteo Marine API (CC BY 4.0) |
 | Weather map | flutter_map + latlong2 · custom `CustomPainter` gradient & particles |
 | Map forecast | Open-Meteo forecast & marine APIs |
-| Rain radar | RainViewer public API (free) |
+| Rain radar | NOAA MRMS composite reflectivity via WMS (NCEP GeoServer, free, no key) |
 | Basemap tiles | CARTO Voyager (© CARTO, © OpenStreetMap) |
 | Salinity map | NOAA NGOFS2 OFS forecast plots (tidesandcurrents CDN) |
 | Updates | Google Play In-App Update API |
@@ -221,8 +241,8 @@ isobars, radar, and the layer system are all self-contained there.
   https://api.weather.gov/
 - **Open-Meteo** — forecast (wind, temperature, pressure, cloud, precipitation) and marine (wave/swell) data for the weather map; wave data on the detail screen (CC BY 4.0)  
   https://open-meteo.com/
-- **RainViewer** — live precipitation radar tiles for the Rain layer (free public API)  
-  https://www.rainviewer.com/
+- **NOAA / NWS MRMS** — composite-reflectivity radar (`conus_cref_qcd`) for the Rain layer's live/observed timeline, served as WMS from the NCEP GeoServer (public domain, no API key)  
+  https://opengeo.ncep.noaa.gov/geoserver/conus/wms · https://mrms.ncep.noaa.gov/
 - **CARTO / OpenStreetMap** — Voyager basemap tiles for the weather map  
   https://carto.com/ · https://www.openstreetmap.org/
 - **NOAA NGOFS2 OFS** — hourly surface-salinity forecast map plots (Northern Gulf of America Operational Forecast System)  
