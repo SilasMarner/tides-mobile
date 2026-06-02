@@ -744,6 +744,21 @@ class _RadarFrame {
   const _RadarFrame(this.time, this.template, this.nowcast);
 }
 
+// ── Hourly forecast strip data ────────────────────────────────────────────────
+
+class _HourForecast {
+  final DateTime time;
+  final double tempC;
+  final int precipPct;
+  final int weatherCode;
+  const _HourForecast({
+    required this.time,
+    required this.tempC,
+    required this.precipPct,
+    required this.weatherCode,
+  });
+}
+
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 class WindMapScreen extends ConsumerStatefulWidget {
@@ -783,6 +798,8 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   List<DateTime> _forecastTimes = [];
   int _forecastIndex = 0;
   bool _forecastLoading = false;
+  // Hourly strip: single-point forecast for the bottom panel.
+  List<_HourForecast> _hourlyStrip = [];
 
   static const _n = 9;
 
@@ -832,6 +849,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         _radarMode = _RadarMode.live;
         _forecastGrids = []; _forecastImages = []; _forecastTimes = [];
         _forecastIndex = 0; _forecastLoading = false;
+        _hourlyStrip = [];
       });
     }
     if (layer != null) {
@@ -1126,6 +1144,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         _probe = null;
       });
       if (_radarPlaying) _startForecastAnim();
+      _fetchHourlyStrip();
     } catch (_) {
       if (mounted) setState(() { _forecastLoading = false; });
     }
@@ -1142,6 +1161,61 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
     final m = t.minute.toString().padLeft(2, '0');
     return '$h:$m ${t.hour < 12 ? 'AM' : 'PM'}';
+  }
+
+  String _fmtHour(DateTime t) {
+    final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
+    return '$h${t.hour < 12 ? 'a' : 'p'}';
+  }
+
+  String _wmoEmoji(int code) {
+    if (code == 0) return '☀️';
+    if (code <= 3) return '⛅';
+    if (code <= 48) return '🌫️';
+    if (code <= 55) return '🌦️';
+    if (code <= 67) return '🌧️';
+    if (code <= 77) return '🌨️';
+    if (code <= 82) return '🌦️';
+    if (code <= 86) return '🌨️';
+    return '⛈️';
+  }
+
+  Future<void> _fetchHourlyStrip() async {
+    try {
+      final resp = await _dio.get('https://api.open-meteo.com/v1/forecast',
+          queryParameters: {
+            'latitude': widget.lat.toStringAsFixed(4),
+            'longitude': widget.lon.toStringAsFixed(4),
+            'hourly': 'precipitation_probability,temperature_2m,weather_code',
+            'forecast_days': '2',
+            'timezone': 'auto',
+          });
+      final data = resp.data as Map;
+      final hourly = data['hourly'] as Map;
+      final times = (hourly['time'] as List)
+          .map((t) => DateTime.parse(t as String))
+          .toList();
+      final pcts = hourly['precipitation_probability'] as List;
+      final temps = hourly['temperature_2m'] as List;
+      final codes = hourly['weather_code'] as List;
+
+      final now = DateTime.now();
+      var start = times.indexWhere(
+          (t) => t.isAfter(now.subtract(const Duration(minutes: 30))));
+      if (start < 0) start = 0;
+      final end = math.min(start + 18, times.length);
+
+      final strip = <_HourForecast>[];
+      for (var i = start; i < end; i++) {
+        strip.add(_HourForecast(
+          time: times[i],
+          tempC: (temps[i] as num? ?? 20).toDouble(),
+          precipPct: (pcts[i] as num? ?? 0).toInt(),
+          weatherCode: (codes[i] as num? ?? 0).toInt(),
+        ));
+      }
+      if (mounted) setState(() => _hourlyStrip = strip);
+    } catch (_) {}
   }
 
   Widget _modeTab(String label, bool active, VoidCallback onTap) =>
@@ -1328,12 +1402,18 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                 ],
               ),
             ),
-          if (!_loading && _error == null) _legend(def, metric),
+          // In FCST mode show the hourly strip instead of the legend.
+          if (!_loading && _error == null &&
+              !(_radarMode == _RadarMode.forecast && _hourlyStrip.isNotEmpty))
+            _legend(def, metric),
           if (def.isRadar && _radarFrames.isNotEmpty && !_loading && _error == null)
             _radarTimeline(),
+          if (_radarMode == _RadarMode.forecast && !_loading && _error == null)
+            _hourlyStripWidget(metric),
           if (_probe != null && _field != null && !_loading && _error == null)
             _probeReadout(def, metric)
-          else if (_probe == null && _field != null && !_loading && _error == null)
+          else if (_probe == null && _field != null && !_loading &&
+              _error == null && !def.isRadar)
             Positioned(
               top: 12,
               left: 0,
@@ -1626,6 +1706,105 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   ];
   String _compass(double deg) =>
       _compassPts[((deg % 360) / 22.5).round() % 16];
+
+  // ── Hourly forecast strip (FCST mode, Rain layer) ────────────────────────────
+
+  Widget _hourlyStripWidget(bool metric) {
+    if (_hourlyStrip.isEmpty) return const SizedBox.shrink();
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.bottomCenter,
+            end: Alignment.topCenter,
+            colors: [
+              Colors.black.withValues(alpha: 0.94),
+              Colors.black.withValues(alpha: 0.72),
+            ],
+          ),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: Row(
+                  children: [
+                    Icon(Icons.calendar_today, color: kCyan, size: 11),
+                    SizedBox(width: 5),
+                    Text('HOURLY FORECAST',
+                        style: TextStyle(
+                            color: kCyan, fontSize: 11, letterSpacing: 1.2)),
+                    Spacer(),
+                    Text('Open-Meteo',
+                        style: TextStyle(
+                            color: Colors.white24, fontSize: 9)),
+                  ],
+                ),
+              ),
+              SizedBox(
+                height: 84,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                  itemCount: _hourlyStrip.length,
+                  itemBuilder: (ctx, i) =>
+                      _hourColumn(_hourlyStrip[i], i == 0, metric),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _hourColumn(_HourForecast h, bool isNow, bool metric) {
+    final label = isNow ? 'NOW' : _fmtHour(h.time);
+    final temp = metric ? h.tempC : h.tempC * 9 / 5 + 32;
+    final pct = h.precipPct;
+    final pctColor = pct >= 60
+        ? const Color(0xFF4BCFFA)
+        : pct >= 30
+            ? Colors.amber
+            : Colors.white38;
+    return Container(
+      width: 56,
+      margin: const EdgeInsets.symmetric(horizontal: 2),
+      decoration: isNow
+          ? BoxDecoration(
+              border: Border(
+                  bottom: BorderSide(color: kCyan.withValues(alpha: 0.6), width: 2)),
+            )
+          : null,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          Text(label,
+              style: TextStyle(
+                color: isNow ? kCyan : Colors.white54,
+                fontSize: 11,
+                fontWeight: isNow ? FontWeight.bold : FontWeight.normal,
+              )),
+          Text(_wmoEmoji(h.weatherCode),
+              style: const TextStyle(fontSize: 18)),
+          Text('${temp.round()}°',
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600)),
+          Text('$pct%',
+              style: TextStyle(color: pctColor, fontSize: 11)),
+        ],
+      ),
+    );
+  }
 
   Widget _legend(_LayerDef def, bool metric) => Positioned(
         bottom: 32,
