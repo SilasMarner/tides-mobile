@@ -173,6 +173,41 @@ double _centralUtcOffset(DateTime d) {
       : -6.0;
 }
 
+// Day-level fishing rating for a future date (no real-time wind or clock).
+// Scores how well the major solunar periods align with the day's tide changes —
+// the core of classic lunar fishing calendars.
+FishingInfo fishingRatingDay(List<TidePrediction> hilo, SolunarInfo sol) {
+  if (hilo.isEmpty) return const FishingInfo(stars: 1, label: 'Poor');
+
+  // Find closest gap between any major solunar period and any tide change.
+  var minDist = 24.0;
+  var bestMajorH = sol.major1;
+  for (final maj in [sol.major1, sol.major2]) {
+    for (final p in hilo) {
+      final tidH = p.time.hour + p.time.minute / 60;
+      final d = (tidH - maj).abs();
+      final dist = d > 12 ? 24 - d : d;
+      if (dist < minDist) {
+        minDist = dist;
+        bestMajorH = maj;
+      }
+    }
+  }
+
+  // Base score: tighter alignment = higher potential.
+  final score = minDist < 1.0 ? 4
+              : minDist < 2.0 ? 3
+              : minDist < 3.0 ? 2
+              : 1;
+
+  // Bonus: major during prime fishing hours (dawn 5–9 AM or dusk 4–8 PM).
+  final isPrime = (bestMajorH >= 5 && bestMajorH < 9) ||
+                  (bestMajorH >= 16 && bestMajorH < 20);
+  final clamped = (isPrime && score >= 3 ? score + 1 : score).clamp(1, 5);
+  final label = {5: 'Excellent', 4: 'Very Good', 3: 'Good', 2: 'Fair'}[clamped] ?? 'Poor';
+  return FishingInfo(stars: clamped, label: label);
+}
+
 FishingInfo fishingRating(
     List<TidePrediction> hilo, double? windMph, SolunarInfo sol) {
   final now = DateTime.now();
@@ -657,8 +692,9 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
   final moon = moonPhase(dateOnly);
   final solunar = solunarTimes(dateOnly, lon, utcOff);
   final isToday = dateOnly == DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
-  final fishing = isToday ? fishingRating(hilo, conditions.windSpeed, solunar)
-      : const FishingInfo(stars: 0, label: 'N/A');
+  final fishing = isToday
+      ? fishingRating(hilo, conditions.windSpeed, solunar)
+      : fishingRatingDay(hilo, solunar);
 
   return TideData(
     stationId: id,

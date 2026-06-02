@@ -858,7 +858,6 @@ class _FishingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!data.isToday) return const SizedBox.shrink();
     final stars = '★' * data.fishing.stars + '☆' * (5 - data.fishing.stars);
     return Card(
       color: kCardBg,
