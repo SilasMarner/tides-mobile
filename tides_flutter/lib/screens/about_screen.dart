@@ -20,7 +20,7 @@ class AboutScreen extends StatelessWidget {
                 style: TextStyle(
                     color: kCyan, fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            const Text('Version 3.2  ·  Live NOAA tide data for Android',
+            const Text('Version 3.3  ·  Live NOAA tide data for Android',
                 style: TextStyle(color: Colors.white54, fontSize: 13)),
             const SizedBox(height: 2),
             const Text('Built with Flutter',
@@ -182,7 +182,7 @@ class AboutScreen extends StatelessWidget {
     'Sun & moon: sunrise, sunset, golden hour, phase, illumination',
     'Fishing rating (1–5 stars) based on tides, solunar timing, and wind',
     'Wave heights, swell and wind-sea breakdown from Open-Meteo Marine at each station location',
-    'Native weather map — animated Wind, Waves, Swell, Temperature, Pressure, and Clouds layers, plus Rain with LIVE radar (RainViewer) and FCST mode (Open-Meteo hourly precipitation, up to 18 h ahead)',
+    'Native weather map — animated Wind, Waves, Swell, Temperature, Pressure, and Clouds layers, plus a unified Rain timeline: NOAA MRMS radar (past 2 h) flowing into an Open-Meteo precipitation forecast (up to 18 h ahead) with an hourly strip',
     'Animated salinity map — NOAA NGOFS2 hourly surface-salinity forecast loop for Gulf bays (Galveston, Matagorda, Corpus Christi, Mobile and more)',
     'Favorites and GPS-based nearest stations',
     'Notifications for tide changes, solunar majors, and best fishing days',
@@ -202,7 +202,7 @@ class AboutScreen extends StatelessWidget {
     ('NWS API', 'Public Domain', 'weather.gov'),
     ('Open-Meteo Marine API', 'CC BY 4.0', 'open-meteo.com'),
     ('flutter_map', 'BSD 3-Clause', 'pub.dev/packages/flutter_map'),
-    ('RainViewer', 'Free for non-commercial', 'rainviewer.com'),
+    ('NOAA / NWS MRMS', 'Public domain', 'mrms.ncep.noaa.gov'),
     ('CARTO / OpenStreetMap', '© CARTO · © OpenStreetMap', 'carto.com'),
     ('NOAA NGOFS2 OFS', 'Public Domain', 'tidesandcurrents.noaa.gov/ofs'),
   ];
