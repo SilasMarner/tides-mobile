@@ -20,7 +20,7 @@ class AboutScreen extends StatelessWidget {
                 style: TextStyle(
                     color: kCyan, fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            const Text('Version 3.0  ·  Live NOAA tide data for Android',
+            const Text('Version 3.1  ·  Live NOAA tide data for Android',
                 style: TextStyle(color: Colors.white54, fontSize: 13)),
             const SizedBox(height: 2),
             const Text('Built with Flutter',
@@ -182,7 +182,7 @@ class AboutScreen extends StatelessWidget {
     'Sun & moon: sunrise, sunset, golden hour, phase, illumination',
     'Fishing rating (1–5 stars) based on tides, solunar timing, and wind',
     'Wave heights, swell and wind-sea breakdown from Open-Meteo Marine at each station location',
-    'Native weather map — a custom animated map (no third-party embed) with Wind, Waves, Swell, Rain radar, Temperature, Pressure, and Clouds layers',
+    'Native weather map — animated Wind, Waves, Swell, Temperature, Pressure, and Clouds layers, plus Rain with LIVE radar (RainViewer) and FCST mode (Open-Meteo hourly precipitation, up to 18 h ahead)',
     'Animated salinity map — NOAA NGOFS2 hourly surface-salinity forecast loop for Gulf bays (Galveston, Matagorda, Corpus Christi, Mobile and more)',
     'Favorites and GPS-based nearest stations',
     'Notifications for tide changes, solunar majors, and best fishing days',

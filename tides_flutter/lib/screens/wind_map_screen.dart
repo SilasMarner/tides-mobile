@@ -159,6 +159,8 @@ class _DataGrid {
 
 enum _Layer { wind, waves, swell, rain, temp, pressure, clouds }
 
+enum _RadarMode { live, forecast }
+
 class _LayerDef {
   final String label;
   final IconData icon;
@@ -774,6 +776,13 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   int _radarIndex = 0;
   bool _radarPlaying = true;
   Timer? _radarAnim;
+  // Forecast mode: Open-Meteo hourly precipitation grids, one per hour.
+  _RadarMode _radarMode = _RadarMode.live;
+  List<_DataGrid> _forecastGrids = [];
+  List<ui.Image?> _forecastImages = [];
+  List<DateTime> _forecastTimes = [];
+  int _forecastIndex = 0;
+  bool _forecastLoading = false;
 
   static const _n = 9;
 
@@ -820,6 +829,9 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         _loading = true; _error = null;
         _field = null; _gradientImage = null; _probe = null;
         _radarFrames = [];
+        _radarMode = _RadarMode.live;
+        _forecastGrids = []; _forecastImages = []; _forecastTimes = [];
+        _forecastIndex = 0; _forecastLoading = false;
       });
     }
     if (layer != null) {
@@ -996,12 +1008,164 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     schedule();
   }
 
+  void _startForecastAnim() {
+    _radarAnim?.cancel();
+    if (_forecastGrids.length < 2) return;
+    void schedule() {
+      final atEnd = _forecastIndex >= _forecastGrids.length - 1;
+      _radarAnim = Timer(Duration(milliseconds: atEnd ? 2000 : 700), () {
+        if (!mounted || !_radarPlaying) return;
+        final idx = atEnd ? 0 : _forecastIndex + 1;
+        setState(() {
+          _forecastIndex = idx;
+          _field = _forecastGrids[idx];
+          _gradientImage = _forecastImages[idx];
+        });
+        schedule();
+      });
+    }
+    schedule();
+  }
+
+  void _setMode(_RadarMode mode) {
+    if (mode == _radarMode && !_forecastLoading) return;
+    _radarAnim?.cancel();
+    if (mode == _RadarMode.live) {
+      setState(() {
+        _radarMode = _RadarMode.live;
+        _field = null;
+        _gradientImage = null;
+        _probe = null;
+      });
+      if (_radarPlaying && _radarFrames.length >= 2) _startRadarAnim();
+    } else {
+      if (_forecastGrids.isNotEmpty) {
+        setState(() {
+          _radarMode = _RadarMode.forecast;
+          _field = _forecastGrids[_forecastIndex];
+          _gradientImage = _forecastImages[_forecastIndex];
+          _probe = null;
+        });
+        if (_radarPlaying) _startForecastAnim();
+      } else {
+        _fetchForecast();
+      }
+    }
+  }
+
+  Future<void> _fetchForecast() async {
+    if (_forecastLoading) return;
+    _radarAnim?.cancel();
+    setState(() { _forecastLoading = true; });
+
+    final cam = _mapController.camera;
+    final b = cam.visibleBounds;
+    final span = math.max(b.north - b.south, b.east - b.west) * 1.3;
+    final step = span / (_n - 1);
+    final latMin = cam.center.latitude - span / 2;
+    final lonMin = cam.center.longitude - span / 2;
+
+    final lats = <String>[], lons = <String>[];
+    for (var i = 0; i < _n; i++) {
+      for (var j = 0; j < _n; j++) {
+        lats.add((latMin + i * step).toStringAsFixed(4));
+        lons.add((lonMin + j * step).toStringAsFixed(4));
+      }
+    }
+
+    try {
+      final resp = await _dio.get('https://api.open-meteo.com/v1/forecast',
+          queryParameters: {
+            'latitude': lats.join(','),
+            'longitude': lons.join(','),
+            'hourly': 'precipitation',
+            'forecast_days': '2',
+            'timezone': 'auto',
+          });
+
+      final items = resp.data as List;
+      if (items.isEmpty || items[0]['hourly'] == null) throw Exception('no data');
+
+      final rawTimes = (items[0]['hourly']['time'] as List)
+          .map((t) => DateTime.parse(t as String))
+          .toList();
+
+      // Start at the current hour (allow 30 min buffer so we don't skip it).
+      final now = DateTime.now();
+      var start = rawTimes.indexWhere(
+          (t) => t.isAfter(now.subtract(const Duration(minutes: 30))));
+      if (start < 0) start = 0;
+      final end = math.min(start + 18, rawTimes.length);
+
+      final grids = <_DataGrid>[];
+      final images = <ui.Image?>[];
+      final times = <DateTime>[];
+
+      for (var h = start; h < end; h++) {
+        final pts = items.map<_DataPoint>((item) {
+          final list = item['hourly']['precipitation'] as List;
+          final v = (list[h] as num?)?.toDouble() ?? 0.0;
+          return _DataPoint(v);
+        }).toList();
+        final grid = _DataGrid(pts, latMin, lonMin, step, _n);
+        grids.add(grid);
+        images.add(await _buildGradientImage(grid, _rainColor));
+        times.add(rawTimes[h]);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _forecastGrids = grids;
+        _forecastImages = images;
+        _forecastTimes = times;
+        _forecastIndex = 0;
+        _forecastLoading = false;
+        _radarMode = _RadarMode.forecast;
+        _field = grids.isNotEmpty ? grids[0] : null;
+        _gradientImage = images.isNotEmpty ? images[0] : null;
+        _probe = null;
+      });
+      if (_radarPlaying) _startForecastAnim();
+    } catch (_) {
+      if (mounted) setState(() { _forecastLoading = false; });
+    }
+  }
+
   String _fmtClock(int epoch) {
     final t = DateTime.fromMillisecondsSinceEpoch(epoch * 1000);
     final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
     final m = t.minute.toString().padLeft(2, '0');
     return '$h:$m ${t.hour < 12 ? 'AM' : 'PM'}';
   }
+
+  String _fmtClock2(DateTime t) {
+    final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
+    final m = t.minute.toString().padLeft(2, '0');
+    return '$h:$m ${t.hour < 12 ? 'AM' : 'PM'}';
+  }
+
+  Widget _modeTab(String label, bool active, VoidCallback onTap) =>
+      GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+          decoration: BoxDecoration(
+            color: active ? kCyan.withValues(alpha: 0.18) : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+                color: active ? kCyan : Colors.white24, width: 1),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: active ? kCyan : Colors.white54,
+              fontSize: 10,
+              fontWeight: active ? FontWeight.bold : FontWeight.normal,
+              letterSpacing: 1.1,
+            ),
+          ),
+        ),
+      );
 
   Future<ui.Image> _buildGradientImage(
       _DataGrid field, Color Function(double) colorFn) async {
@@ -1083,10 +1247,8 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                 userAgentPackageName: 'com.mattbettinger.tides',
                 retinaMode: true,
               ),
-              // One radar layer; we swap its frame and rely on the warmed
-              // image cache (see _precacheRadar) for smooth playback. Using a
-              // single layer keeps tile loading light so panning stays crisp.
-              if (def.isRadar && _radarFrames.isNotEmpty)
+              // Live radar: RainViewer tiles (only shown in LIVE mode).
+              if (def.isRadar && _radarMode == _RadarMode.live && _radarFrames.isNotEmpty)
                 Opacity(
                   opacity: 0.72,
                   child: TileLayer(
@@ -1126,7 +1288,9 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                 attributions: [
                   const TextSourceAttribution('© CARTO'),
                   const TextSourceAttribution('© OpenStreetMap contributors'),
-                  TextSourceAttribution(def.isRadar ? 'RainViewer' : 'Open-Meteo'),
+                  TextSourceAttribution(def.isRadar
+                      ? (_radarMode == _RadarMode.live ? 'RainViewer' : 'Open-Meteo')
+                      : 'Open-Meteo'),
                 ],
               ),
             ],
@@ -1192,18 +1356,56 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     );
   }
 
-  // ── Radar animation timeline ──────────────────────────────────────────────
+  // ── Radar / Forecast animation timeline ──────────────────────────────────
 
   Widget _radarTimeline() {
-    final f = _radarFrames[_radarIndex];
-    final spanMin =
-        ((_radarFrames.last.time - _radarFrames.first.time) / 60).round();
+    final isLive = _radarMode == _RadarMode.live;
+    final frameCount = isLive ? _radarFrames.length : _forecastGrids.length;
+    final frameIdx =
+        (isLive ? _radarIndex : _forecastIndex).clamp(0, math.max(0, frameCount - 1)).toInt();
+
+    // Live: show clock time, amber if nowcast.
+    // Forecast: show clock time (always amber — always future).
+    String timeLabel;
+    bool isFuture;
+    if (isLive && _radarFrames.isNotEmpty) {
+      final f = _radarFrames[frameIdx];
+      timeLabel = f.nowcast ? '${_fmtClock(f.time)} ▸' : _fmtClock(f.time);
+      isFuture = f.nowcast;
+    } else if (!isLive && _forecastTimes.isNotEmpty) {
+      final t = _forecastTimes[frameIdx];
+      final hoursAhead = t.difference(DateTime.now()).inHours;
+      timeLabel = '${_fmtClock2(t)}  +${hoursAhead}h';
+      isFuture = true;
+    } else {
+      timeLabel = '—';
+      isFuture = false;
+    }
+
+    // Footer label: time span of available frames.
+    String startStr, midLabel, endStr;
+    if (isLive && _radarFrames.isNotEmpty) {
+      final spanMin =
+          ((_radarFrames.last.time - _radarFrames.first.time) / 60).round();
+      startStr = _fmtClock(_radarFrames.first.time);
+      midLabel = spanMin >= 60
+          ? '${(spanMin / 60).toStringAsFixed(spanMin % 60 == 0 ? 0 : 1)} h of radar'
+          : '$spanMin min of radar';
+      endStr = _fmtClock(_radarFrames.last.time);
+    } else if (!isLive && _forecastTimes.isNotEmpty) {
+      startStr = 'Now';
+      midLabel = '${_forecastTimes.length}h forecast';
+      endStr = _fmtClock2(_forecastTimes.last);
+    } else {
+      startStr = midLabel = endStr = '';
+    }
+
     return Positioned(
       top: 10,
       left: 12,
       right: 12,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(4, 2, 14, 6),
+        padding: const EdgeInsets.fromLTRB(4, 6, 14, 6),
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.74),
           borderRadius: BorderRadius.circular(18),
@@ -1211,6 +1413,38 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // LIVE / FCST mode toggle
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _modeTab('LIVE', isLive, () => _setMode(_RadarMode.live)),
+                  const SizedBox(width: 8),
+                  if (_forecastLoading)
+                    const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 1.5, color: Colors.white38),
+                        ),
+                        SizedBox(width: 5),
+                        Text('FCST',
+                            style: TextStyle(
+                                color: Colors.white38,
+                                fontSize: 10,
+                                letterSpacing: 1.1)),
+                      ],
+                    )
+                  else
+                    _modeTab(
+                        'FCST', !isLive, () => _setMode(_RadarMode.forecast)),
+                ],
+              ),
+            ),
             Row(
               children: [
                 IconButton(
@@ -1223,10 +1457,21 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                   onPressed: () {
                     setState(() => _radarPlaying = !_radarPlaying);
                     if (_radarPlaying) {
-                      if (_radarIndex >= _radarFrames.length - 1) {
-                        _radarIndex = 0;
+                      if (isLive) {
+                        if (_radarIndex >= _radarFrames.length - 1) {
+                          setState(() => _radarIndex = 0);
+                        }
+                        _startRadarAnim();
+                      } else {
+                        if (_forecastIndex >= _forecastGrids.length - 1) {
+                          setState(() {
+                            _forecastIndex = 0;
+                            _field = _forecastGrids[0];
+                            _gradientImage = _forecastImages[0];
+                          });
+                        }
+                        _startForecastAnim();
                       }
-                      _startRadarAnim();
                     } else {
                       _radarAnim?.cancel();
                     }
@@ -1243,51 +1488,60 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                     ),
                     child: Slider(
                       min: 0,
-                      max: (_radarFrames.length - 1).toDouble(),
-                      divisions: _radarFrames.length - 1,
-                      value: _radarIndex.toDouble(),
+                      max: math.max(1, frameCount - 1).toDouble(),
+                      divisions: math.max(1, frameCount - 1),
+                      value: frameIdx.toDouble(),
                       activeColor: kCyan,
                       inactiveColor: Colors.white24,
-                      onChanged: (v) {
-                        _radarAnim?.cancel();
-                        setState(() {
-                          _radarPlaying = false;
-                          _radarIndex = v.round();
-                        });
-                      },
+                      onChanged: frameCount < 2
+                          ? null
+                          : (v) {
+                              _radarAnim?.cancel();
+                              final idx = v.round();
+                              setState(() {
+                                _radarPlaying = false;
+                                if (isLive) {
+                                  _radarIndex = idx;
+                                } else {
+                                  _forecastIndex = idx;
+                                  _field = _forecastGrids[idx];
+                                  _gradientImage = _forecastImages[idx];
+                                }
+                              });
+                            },
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 SizedBox(
-                  width: 70,
+                  width: 90,
                   child: Text(
-                    f.nowcast ? '${_fmtClock(f.time)} ▸' : _fmtClock(f.time),
+                    timeLabel,
                     textAlign: TextAlign.end,
                     style: TextStyle(
-                      color: f.nowcast ? Colors.amber : Colors.white,
-                      fontSize: 12,
+                      color: isFuture ? Colors.amber : Colors.white,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
               ],
             ),
-            // Time-span bar: oldest frame on the left, latest on the right.
+            // Time-span bar
             Padding(
               padding: const EdgeInsets.only(left: 44, right: 4),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(_fmtClock(_radarFrames.first.time),
-                      style: const TextStyle(
-                          color: Colors.white54, fontSize: 9)),
-                  Text('${spanMin >= 60 ? '${(spanMin / 60).toStringAsFixed(spanMin % 60 == 0 ? 0 : 1)} h' : '$spanMin min'} of radar',
-                      style: const TextStyle(
-                          color: Colors.white38, fontSize: 9)),
-                  Text(_fmtClock(_radarFrames.last.time),
-                      style: const TextStyle(
-                          color: Colors.white54, fontSize: 9)),
+                  Text(startStr,
+                      style:
+                          const TextStyle(color: Colors.white54, fontSize: 9)),
+                  Text(midLabel,
+                      style:
+                          const TextStyle(color: Colors.white38, fontSize: 9)),
+                  Text(endStr,
+                      style:
+                          const TextStyle(color: Colors.white54, fontSize: 9)),
                 ],
               ),
             ),

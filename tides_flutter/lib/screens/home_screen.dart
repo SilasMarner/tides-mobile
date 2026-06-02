@@ -165,7 +165,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-      body: Column(
+      // Cap content width so large screens (tablets) show a centered column
+      // instead of stretching phone-width controls edge to edge.
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Column(
         children: [
           WaveHeader(locationName: _locMsg),
           Padding(
