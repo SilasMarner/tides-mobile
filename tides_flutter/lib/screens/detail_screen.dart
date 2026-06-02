@@ -51,8 +51,6 @@ class DetailScreen extends ConsumerWidget {
       appBar: AppBar(
         backgroundColor: kNavyLight,
         foregroundColor: Colors.white,
-        title: Text(station.name.toUpperCase(),
-            style: const TextStyle(color: kCyan, fontSize: 14)),
         actions: [
           IconButton(
             icon: Icon(
@@ -155,8 +153,8 @@ class DetailScreen extends ConsumerWidget {
       ),
       body: Column(
         children: [
-          _DateNav(date: date),
-          _ViewToggle(),
+          _StationBanner(station: station),
+          _NavRow(date: date),
           Expanded(
             child: showWeek
                 ? weekAsync.when(
@@ -191,53 +189,63 @@ class DetailScreen extends ConsumerWidget {
   }
 }
 
-class _ViewToggle extends ConsumerWidget {
+// ── Station banner — always visible, full name + ID ──────────────────────────
+
+class _StationBanner extends StatelessWidget {
+  final Station station;
+  const _StationBanner({required this.station});
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final showWeek = ref.watch(showWeekProvider);
-    return Container(
-      color: kNavyLight,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: SegmentedButton<bool>(
-        style: SegmentedButton.styleFrom(
-          backgroundColor: kNavy,
-          foregroundColor: Colors.white54,
-          selectedForegroundColor: kCyan,
-          selectedBackgroundColor: kNavyLight,
-          side: const BorderSide(color: kCyan, width: 1),
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        color: kNavyLight,
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              station.name,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.1,
+              ),
+            ),
+            const SizedBox(height: 1),
+            Text(
+              'Station ${station.id}',
+              style: const TextStyle(
+                  color: kCyan, fontSize: 11, letterSpacing: 0.4),
+            ),
+          ],
         ),
-        segments: const [
-          ButtonSegment(value: false, label: Text('TODAY')),
-          ButtonSegment(value: true, label: Text('WEEK')),
-        ],
-        selected: {showWeek},
-        onSelectionChanged: (s) =>
-            ref.read(showWeekProvider.notifier).state = s.first,
-      ),
-    );
-  }
+      );
 }
 
-class _DateNav extends ConsumerWidget {
+// ── Nav row — date arrows + TODAY/WEEK toggle on one line ─────────────────────
+
+class _NavRow extends ConsumerWidget {
   final DateTime date;
-  const _DateNav({required this.date});
+  const _NavRow({required this.date});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final today = DateTime.now();
     final todayOnly = DateTime(today.year, today.month, today.day);
     final isToday = date == todayOnly;
+    final showWeek = ref.watch(showWeekProvider);
 
     return Container(
       color: kNavyLight,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.fromLTRB(0, 2, 10, 4),
       child: Row(
         children: [
           IconButton(
             icon: const Icon(Icons.chevron_left, color: kCyan),
-            onPressed: () => ref
-                .read(selectedDateProvider.notifier)
-                .state = date.subtract(const Duration(days: 1)),
+            visualDensity: VisualDensity.compact,
+            onPressed: () => ref.read(selectedDateProvider.notifier).state =
+                date.subtract(const Duration(days: 1)),
           ),
           Expanded(
             child: Center(
@@ -250,9 +258,34 @@ class _DateNav extends ConsumerWidget {
           ),
           IconButton(
             icon: const Icon(Icons.chevron_right, color: kCyan),
-            onPressed: () => ref
-                .read(selectedDateProvider.notifier)
-                .state = date.add(const Duration(days: 1)),
+            visualDensity: VisualDensity.compact,
+            onPressed: () => ref.read(selectedDateProvider.notifier).state =
+                date.add(const Duration(days: 1)),
+          ),
+          const SizedBox(width: 6),
+          SizedBox(
+            height: 30,
+            child: SegmentedButton<bool>(
+              style: SegmentedButton.styleFrom(
+                backgroundColor: kNavy,
+                foregroundColor: Colors.white54,
+                selectedForegroundColor: kCyan,
+                selectedBackgroundColor: kNavyLight,
+                side: const BorderSide(color: kCyan, width: 1),
+                textStyle: const TextStyle(
+                    fontSize: 11, fontWeight: FontWeight.w600),
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                padding: EdgeInsets.zero,
+              ),
+              segments: const [
+                ButtonSegment(value: false, label: Text('TODAY')),
+                ButtonSegment(value: true, label: Text('WEEK')),
+              ],
+              selected: {showWeek},
+              onSelectionChanged: (s) =>
+                  ref.read(showWeekProvider.notifier).state = s.first,
+            ),
           ),
         ],
       ),
@@ -270,25 +303,6 @@ class _TodayView extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ListView(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Full station name — the app-bar title truncates when there
-                // are several toolbar actions, so show it in full here.
-                Text(station.name,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600)),
-                const SizedBox(height: 2),
-                Text('Station ${station.id}',
-                    style:
-                        const TextStyle(color: Colors.white54, fontSize: 12)),
-              ],
-            ),
-          ),
           ConditionsCard(c: data.conditions),
           if (data.waves != null) _WaveCard(waves: data.waves!, metric: metric),
           if (data.nws != null) _NwsCard(nws: data.nws!, metric: metric),
