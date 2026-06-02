@@ -785,7 +785,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   String? _error;
   LatLng? _probe; // point the user tapped to read a value
   Timer? _moveDebounce;
-  // Radar animation (rain layer): a series of RainViewer frames we loop over.
+  // Radar animation (rain layer): NOAA WMS frames (past) + forecast overlays.
   List<_RadarFrame> _radarFrames = [];
   int _radarIndex = 0;
   bool _radarPlaying = true;
@@ -942,81 +942,35 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     }
   }
 
-  // Live precipitation radar from RainViewer (free, no key). We load every
-  // available frame (past + nowcast) and loop through them for an animation.
+  // Live precipitation radar from NOAA MRMS composite reflectivity
+  // (conus_cref_qcd) via WMS — free, no key, US coverage, ~2 min cadence and
+  // full-resolution detail (same mosaic the major weather apps render).
+  //
+  // GeoServer's time dimension uses nearestValue="1", so we generate
+  // approximate timestamps over the past ~2h and the server snaps each request
+  // to the closest real frame — no GetCapabilities XML parsing needed. For NOAA
+  // frames `_RadarFrame.template` holds the ISO-8601 time string (not a URL).
   Future<void> _fetchRadar() async {
-    try {
-      final resp =
-          await _dio.get('https://api.rainviewer.com/public/weather-maps.json');
-      final data = resp.data as Map;
-      final host = data['host'] as String;
-      // {size}/{z}/{x}/{y}/{color}/{smooth}_{snow}.png — colour 4 = TWC scheme.
-      String tmpl(String path) => '$host$path/256/{z}/{x}/{y}/4/1_1.png';
-      final pastList = (data['radar']?['past'] as List?) ?? const [];
-      final nowcastList = (data['radar']?['nowcast'] as List?) ?? const [];
-      final frames = <_RadarFrame>[
-        for (final f in pastList)
-          _RadarFrame(f['time'] as int, tmpl(f['path'] as String), false),
-        for (final f in nowcastList)
-          _RadarFrame(f['time'] as int, tmpl(f['path'] as String), true),
-      ];
-      if (frames.isEmpty) {
-        if (mounted) {
-          setState(() { _error = 'Radar unavailable right now'; _loading = false; });
-        }
-        return;
-      }
-      if (mounted) {
-        setState(() {
-          _radarFrames = frames;
-          _radarPastCount = pastList.length;
-          // Start at the most recent observed frame (last past frame), not history.
-          _radarIndex = math.max(0, pastList.length - 1);
-          _loading = false;
-        });
-        Timer(const Duration(milliseconds: 1300), () {
-          if (mounted && _kLayers[_currentLayer]!.isRadar) _precacheRadar();
-        });
-        if (_radarPlaying) _startAnim();
-        // Auto-load the forecast overlay in the background to extend the timeline.
-        Timer(const Duration(milliseconds: 800), () {
-          if (mounted) _fetchForecast();
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() { _error = 'Could not load radar'; _loading = false; });
-      }
+    final now = DateTime.now().toUtc();
+    final frames = <_RadarFrame>[];
+    // 13 frames at 10-min spacing = the last 2 hours of observed radar.
+    for (var minAgo = 120; minAgo >= 0; minAgo -= 10) {
+      final t = now.subtract(Duration(minutes: minAgo));
+      final iso = '${t.toIso8601String().split('.').first}Z';
+      frames.add(_RadarFrame(t.millisecondsSinceEpoch ~/ 1000, iso, false));
     }
-  }
-
-  // Warm Flutter's image cache with every frame's tiles for the current view,
-  // so swapping frames during playback is instant (no per-frame tile reload).
-  void _precacheRadar() {
-    if (_radarFrames.isEmpty) return;
-    final cam = _mapController.camera;
-    final z = math.min(cam.zoom.round(), 7);
-    final b = cam.visibleBounds;
-    int lon2x(double lon) => ((lon + 180) / 360 * (1 << z)).floor();
-    int lat2y(double lat) {
-      final r = lat * math.pi / 180;
-      return ((1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2 *
-              (1 << z))
-          .floor();
-    }
-    final x0 = lon2x(b.west) - 1, x1 = lon2x(b.east) + 1;
-    final y0 = lat2y(b.north) - 1, y1 = lat2y(b.south) + 1;
-    for (final f in _radarFrames) {
-      for (var x = x0; x <= x1; x++) {
-        for (var y = y0; y <= y1; y++) {
-          final url = f.template
-              .replaceAll('{z}', '$z')
-              .replaceAll('{x}', '$x')
-              .replaceAll('{y}', '$y');
-          precacheImage(NetworkImage(url), context).catchError((_) {});
-        }
-      }
-    }
+    if (!mounted) return;
+    setState(() {
+      _radarFrames = frames;
+      _radarPastCount = frames.length; // all observed; "now" = last frame
+      _radarIndex = frames.length - 1;
+      _loading = false;
+    });
+    if (_radarPlaying) _startAnim();
+    // Auto-load the model forecast overlay to extend the timeline past now.
+    Timer(const Duration(milliseconds: 800), () {
+      if (mounted) _fetchForecast();
+    });
   }
 
   // Unified animation over all frames: radar tiles first, then forecast overlays.
@@ -1063,16 +1017,19 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   Future<void> _fetchForecast() async {
     if (_forecastGrids.isNotEmpty) return; // already loaded
 
+    // Denser grid than the live data layers (16x16 = 256 pts) so the forecast
+    // overlay reads as smooth detailed precipitation, not blocky patches.
+    const fcstN = 16;
     final cam = _mapController.camera;
     final b = cam.visibleBounds;
     final span = math.max(b.north - b.south, b.east - b.west) * 1.3;
-    final step = span / (_n - 1);
+    final step = span / (fcstN - 1);
     final latMin = cam.center.latitude - span / 2;
     final lonMin = cam.center.longitude - span / 2;
 
     final lats = <String>[], lons = <String>[];
-    for (var i = 0; i < _n; i++) {
-      for (var j = 0; j < _n; j++) {
+    for (var i = 0; i < fcstN; i++) {
+      for (var j = 0; j < fcstN; j++) {
         lats.add((latMin + i * step).toStringAsFixed(4));
         lons.add((lonMin + j * step).toStringAsFixed(4));
       }
@@ -1112,7 +1069,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
           final v = (list[h] as num?)?.toDouble() ?? 0.0;
           return _DataPoint(v);
         }).toList();
-        final grid = _DataGrid(pts, latMin, lonMin, step, _n);
+        final grid = _DataGrid(pts, latMin, lonMin, step, fcstN);
         grids.add(grid);
         images.add(await _buildGradientImage(grid, _rainColor));
         times.add(rawTimes[h]);
@@ -1285,16 +1242,24 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                 userAgentPackageName: 'com.mattbettinger.tides',
                 retinaMode: true,
               ),
-              // Radar tile layer — only when the current frame is a real radar tile.
+              // NOAA radar layer — only when the current frame is observed radar.
+              // WMS layer; the time dimension is swapped per frame (ValueKey
+              // forces a reload), and GeoServer snaps to the nearest real frame.
               if (def.isRadar && _radarFrames.isNotEmpty && _isRadarFrame(_radarIndex))
                 Opacity(
-                  opacity: 0.72,
+                  opacity: 0.78,
                   child: TileLayer(
-                    key: const ValueKey('radar'),
-                    urlTemplate: _radarFrames[_radarIndex].template,
-                    // RainViewer radar tiles only exist up to z7; scale them
-                    // up beyond that instead of requesting "unsupported" tiles.
-                    maxNativeZoom: 7,
+                    key: ValueKey('radar-${_radarFrames[_radarIndex].template}'),
+                    wmsOptions: WMSTileLayerOptions(
+                      baseUrl:
+                          'https://opengeo.ncep.noaa.gov/geoserver/conus/wms?',
+                      layers: const ['conus_cref_qcd'],
+                      format: 'image/png',
+                      transparent: true,
+                      otherParameters: {
+                        'time': _radarFrames[_radarIndex].template,
+                      },
+                    ),
                     userAgentPackageName: 'com.mattbettinger.tides',
                   ),
                 ),
@@ -1327,7 +1292,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                   const TextSourceAttribution('© CARTO'),
                   const TextSourceAttribution('© OpenStreetMap contributors'),
                   TextSourceAttribution(def.isRadar
-                      ? (_isRadarFrame(_radarIndex) ? 'RainViewer' : 'Open-Meteo')
+                      ? (_isRadarFrame(_radarIndex) ? 'NOAA / NWS' : 'Open-Meteo')
                       : 'Open-Meteo'),
                 ],
               ),
