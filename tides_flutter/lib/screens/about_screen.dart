@@ -236,31 +236,60 @@ class _CheckForUpdatesButton extends StatefulWidget {
 
 class _CheckForUpdatesButtonState extends State<_CheckForUpdatesButton> {
   bool _checking = false;
+  bool _readyToInstall = false; // download done; waiting for user to install
   String? _status;
 
   Future<void> _check() async {
-    setState(() { _checking = true; _status = null; });
+    setState(() { _checking = true; _status = null; _readyToInstall = false; });
     try {
       final info = await InAppUpdate.checkForUpdate();
       if (!mounted) return;
       switch (info.updateAvailability) {
         case UpdateAvailability.updateAvailable:
-          setState(() { _status = 'Update available — downloading in background'; });
-          await InAppUpdate.startFlexibleUpdate();
-          InAppUpdate.installUpdateListener.listen((status) {
-            if (status == InstallStatus.downloaded && mounted) {
-              setState(() { _status = 'Ready to install — restart the app'; });
-            }
-          });
+          setState(() { _status = 'Downloading update…'; });
+          // startFlexibleUpdate() resolves once the download is COMPLETE.
+          final result = await InAppUpdate.startFlexibleUpdate();
+          if (!mounted) return;
+          if (result == AppUpdateResult.success) {
+            // Download staged — but it is NOT installed until we call
+            // completeFlexibleUpdate(). Surface an Install button for that.
+            setState(() {
+              _status = 'Downloaded — tap Install to finish';
+              _readyToInstall = true;
+            });
+          } else {
+            setState(() { _status = 'Update canceled'; });
+          }
         case UpdateAvailability.updateNotAvailable:
           setState(() { _status = 'You\'re up to date'; });
         default:
           setState(() { _status = 'Could not check for updates'; });
       }
     } catch (_) {
-      if (mounted) setState(() { _status = 'Could not check for updates'; });
+      // Thrown when the app wasn't installed via Google Play (e.g. sideloaded
+      // APK) or Play Services is unavailable — in-app updates can't run then.
+      if (mounted) {
+        setState(() {
+          _status = 'Update via Google Play (sideloaded builds can\'t self-update)';
+        });
+      }
     } finally {
       if (mounted) setState(() { _checking = false; });
+    }
+  }
+
+  // Applies the staged flexible update; the app restarts into the new version.
+  Future<void> _install() async {
+    setState(() { _status = 'Installing — the app will restart…'; });
+    try {
+      await InAppUpdate.completeFlexibleUpdate();
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _status = 'Install failed — try again';
+          _readyToInstall = true;
+        });
+      }
     }
   }
 
@@ -289,13 +318,14 @@ class _CheckForUpdatesButtonState extends State<_CheckForUpdatesButton> {
                   child: CircularProgressIndicator(strokeWidth: 2, color: kCyan),
                 )
               : TextButton(
-                  onPressed: _check,
+                  onPressed: _readyToInstall ? _install : _check,
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: const Text('Check', style: TextStyle(color: kCyan, fontSize: 13)),
+                  child: Text(_readyToInstall ? 'Install' : 'Check',
+                      style: const TextStyle(color: kCyan, fontSize: 13)),
                 ),
         ],
       );

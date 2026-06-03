@@ -54,6 +54,9 @@ that point; the data follows the map as you pan and zoom.
 
 ## Changelog
 
+### v3.3.0 (build 34)
+- **Check for Updates fix** — the in-app updater downloaded a new build but never installed it (it was missing the final `completeFlexibleUpdate()` step, so "restart the app" did nothing). It now shows an **Install** button once the download finishes, which applies the update and restarts into the new version. Sideloaded builds get a clear "update via Google Play" message instead of a dead "downloading" state.
+
 ### v3.3.0 (build 33)
 - **Conditions & Waves now follow the day/week navigation** — for any day other than today, the Conditions and Waves cards show that day's forecast (Open-Meteo land + marine, sampled at midday) instead of staying stuck on today's live readings. Today still shows live NOAA observations. Cards are tagged *Forecast · midday* / *Open-Meteo forecast*.
 - **Map legend fix** — the weather-map legend now sits above the system navigation/gesture bar (was clipped on Samsung devices).
