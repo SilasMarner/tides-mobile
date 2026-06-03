@@ -4,7 +4,7 @@ A Flutter app for Android that shows real-time NOAA tide data, weather condition
 
 ## Download
 
-**[Latest release on GitHub Releases](https://github.com/SilasMarner/tides-mobile/releases/latest)** — download the `.apk` and tap to install.
+**Latest release: [v3.3.0 — Live NOAA radar + 18-hour rain forecast](https://github.com/SilasMarner/tides-mobile/releases/tag/v3.3.0)** ([always-latest link](https://github.com/SilasMarner/tides-mobile/releases/latest)) — download `tides-3.3.0.apk` and tap to install.
 
 To sideload: enable *Install unknown apps* for your file manager in Android Settings → Apps, download the APK, and tap to install.
 
