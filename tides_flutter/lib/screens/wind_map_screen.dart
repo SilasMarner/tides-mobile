@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -84,7 +85,17 @@ Color _pressureColor(double hpa) {
 
 Color _cloudColor(double pct) {
   final t = (pct / 100.0).clamp(0.0, 1.0);
-  return Colors.white.withValues(alpha: t * 0.48);
+  if (t < 0.08) return Colors.transparent; // clear sky — no wash
+  // Plain white clouds were nearly invisible on the light basemap. Ramp from a
+  // light translucent gray (thin / high cirrus) to a dark, near-opaque slate
+  // (overcast / storm anvils) so significant cover reads clearly. The pow()
+  // curve lifts mid values, so building cloud shows before it's fully overcast.
+  final e = math.pow(t, 0.7).toDouble();
+  final r = (210 - e * (210 - 45)).round();
+  final g = (216 - e * (216 - 55)).round();
+  final b = (222 - e * (222 - 72)).round();
+  final a = 0.32 + e * 0.56; // 0.32 (thin) → 0.88 (overcast/storm)
+  return Color.fromARGB((a * 255).round(), r, g, b);
 }
 
 // ── Data model ────────────────────────────────────────────────────────────────
@@ -167,6 +178,7 @@ class _LayerDef {
   final bool hasFlow;
   final bool hasIsobars;
   final bool isRadar; // overlay live weather-radar tiles instead of a grid
+  final bool isSatellite; // overlay live GOES satellite tiles instead of a grid
   final String valueVar;
   final String? directionVar;
   final Color Function(double) colorFn;
@@ -179,6 +191,7 @@ class _LayerDef {
     required this.hasFlow,
     this.hasIsobars = false,
     this.isRadar = false,
+    this.isSatellite = false,
     required this.valueVar,
     this.directionVar,
     required this.colorFn,
@@ -286,13 +299,15 @@ const _kLayers = <_Layer, _LayerDef>{
   ),
   _Layer.clouds: _LayerDef(
     label: 'Clouds', icon: Icons.cloud,
-    isMarine: false, hasFlow: false,
+    isMarine: false, hasFlow: false, isSatellite: true,
     valueVar: 'cloud_cover', colorFn: _cloudColor,
+    // Live GOES-East infrared: cloud-top temperature. Warm/low cloud is grey;
+    // colder, taller cloud (building storms → anvils) ramps green→yellow→red.
     legend: [
-      (Color(0x28FFFFFF), '<25%'),
-      (Color(0x55FFFFFF), '25–50%'),
-      (Color(0x99FFFFFF), '50–75%'),
-      (Color(0xCCFFFFFF), '>75%'),
+      (Color(0xCCBFC7CF), 'Low'),
+      (Color(0xCC56E39F), 'Mid'),
+      (Color(0xCCF9CA24), 'Tall'),
+      (Color(0xCCEB4D4B), 'Storm tops'),
     ],
   ),
 };
@@ -743,6 +758,37 @@ class _RadarFrame {
   const _RadarFrame(this.time, this.template, this.nowcast);
 }
 
+// ── Blend-mode wrapper ────────────────────────────────────────────────────────
+// Composites its child onto the layers below using a blend mode. Used to screen-
+// blend the GOES satellite overlay so black (clear-sky) pixels read as
+// transparent and only cloud/storm-top brightness shows over the basemap.
+
+class _BlendMask extends SingleChildRenderObjectWidget {
+  final BlendMode blendMode;
+  const _BlendMask({required this.blendMode, required Widget super.child});
+
+  @override
+  _RenderBlendMask createRenderObject(BuildContext context) =>
+      _RenderBlendMask(blendMode);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderBlendMask obj) {
+    obj.blendMode = blendMode;
+  }
+}
+
+class _RenderBlendMask extends RenderProxyBox {
+  BlendMode blendMode;
+  _RenderBlendMask(this.blendMode);
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    context.canvas.saveLayer(offset & size, Paint()..blendMode = blendMode);
+    super.paint(context, offset);
+    context.canvas.restore();
+  }
+}
+
 // ── Hourly forecast strip data ────────────────────────────────────────────────
 
 class _HourForecast {
@@ -835,7 +881,8 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     // Radar is a tile layer — it self-loads on pan/zoom. We deliberately do
     // NOT precache the other frames here: a burst of tile requests would
     // starve the basemap and leave the panned-to area blank.
-    if (_kLayers[_currentLayer]!.isRadar) return;
+    final cur = _kLayers[_currentLayer]!;
+    if (cur.isRadar || cur.isSatellite) return; // tile layers self-load
     _moveDebounce?.cancel();
     _moveDebounce = Timer(const Duration(milliseconds: 450), () {
       if (mounted) _fetchGrid(silent: true);
@@ -860,13 +907,21 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
       // like Windy. Other layers recenter on the station at a local view.
       _mapController.move(
         LatLng(widget.lat, widget.lon),
-        layer == _Layer.pressure ? 6.0 : layer == _Layer.rain ? 7.0 : 8.0,
+        layer == _Layer.pressure ? 6.0
+            : layer == _Layer.clouds ? 6.0   // satellite: wider, see systems
+            : layer == _Layer.rain ? 7.0 : 8.0,
       );
     }
 
     // Rain uses live weather-radar tiles rather than a sampled grid.
     if (def.isRadar) {
       await _fetchRadar();
+      return;
+    }
+
+    // Clouds is an animated GOES satellite tile layer (its own timeline).
+    if (def.isSatellite) {
+      _fetchSatellite();
       return;
     }
 
@@ -971,6 +1026,30 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     Timer(const Duration(milliseconds: 800), () {
       if (mounted) _fetchForecast();
     });
+  }
+
+  // Animated GOES-East clean-IR from NASA GIBS: 10-min frames over ~2h. GIBS
+  // runs ~25-30 min behind real time, so we floor to the 10-min grid and start
+  // ~30 min back to ensure every frame exists. Reuses the radar timeline.
+  void _fetchSatellite() {
+    final now = DateTime.now().toUtc();
+    var latest = DateTime.utc(
+        now.year, now.month, now.day, now.hour, (now.minute ~/ 10) * 10);
+    latest = latest.subtract(const Duration(minutes: 30));
+    final frames = <_RadarFrame>[];
+    for (var i = 11; i >= 0; i--) {
+      final t = latest.subtract(Duration(minutes: 10 * i));
+      final iso = '${t.toIso8601String().split('.').first}Z';
+      frames.add(_RadarFrame(t.millisecondsSinceEpoch ~/ 1000, iso, false));
+    }
+    if (!mounted) return;
+    setState(() {
+      _radarFrames = frames;
+      _radarPastCount = frames.length; // all observed; "NOW" = latest frame
+      _radarIndex = frames.length - 1;
+      _loading = false;
+    });
+    if (_radarPlaying) _startAnim();
   }
 
   // Unified animation over all frames: radar tiles first, then forecast overlays.
@@ -1235,9 +1314,13 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
               onPositionChanged: _onPositionChanged,
             ),
             children: [
+              // Satellite uses a DARK basemap so bright IR cloud/storm tops pop
+              // (like a real satellite view); other layers use the light map.
               TileLayer(
-                urlTemplate:
-                    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+                key: ValueKey(def.isSatellite ? 'dark' : 'light'),
+                urlTemplate: def.isSatellite
+                    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+                    : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
                 subdomains: const ['a', 'b', 'c', 'd'],
                 userAgentPackageName: 'com.mattbettinger.tides',
                 retinaMode: true,
@@ -1260,6 +1343,42 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                         'time': _radarFrames[_radarIndex].template,
                       },
                     ),
+                    userAgentPackageName: 'com.mattbettinger.tides',
+                  ),
+                ),
+              // Clouds: animated GOES-East clean-IR satellite from NASA GIBS
+              // (free, no key, 10-min frames). The frame's time is swapped per
+              // step (ValueKey forces reload). Screen-blended over the dark
+              // basemap so clear sky reads as transparent and cloud/storm tops
+              // glow. WMTS REST tiles are {z}/{y}/{x}; max native zoom 6.
+              if (def.isSatellite && _radarFrames.isNotEmpty)
+                _BlendMask(
+                  blendMode: BlendMode.screen,
+                  child: TileLayer(
+                    key: ValueKey('goes-${_radarFrames[_radarIndex].template}'),
+                    urlTemplate:
+                        'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/'
+                        'GOES-East_ABI_Band13_Clean_Infrared/default/'
+                        '${_radarFrames[_radarIndex].template}/'
+                        'GoogleMapsCompatible_Level6/{z}/{y}/{x}.png',
+                    maxNativeZoom: 6,
+                    userAgentPackageName: 'com.mattbettinger.tides',
+                  ),
+                ),
+              // Coastline + place labels drawn ON TOP of the satellite so the
+              // coast and bays stay visible for orientation — e.g. to see
+              // whether a cell will hit your bay/beach. The Esri Ocean
+              // reference (transparent, free) is a faint grey, so we recolour
+              // it to bright cyan (srcIn keeps the line shapes, swaps the
+              // colour) to make it pop against the dark map and the clouds.
+              if (def.isSatellite)
+                ColorFiltered(
+                  colorFilter:
+                      const ColorFilter.mode(kCyan, BlendMode.srcIn),
+                  child: TileLayer(
+                    urlTemplate:
+                        'https://services.arcgisonline.com/ArcGIS/rest/services/'
+                        'Ocean/World_Ocean_Reference/MapServer/tile/{z}/{y}/{x}',
                     userAgentPackageName: 'com.mattbettinger.tides',
                   ),
                 ),
@@ -1293,7 +1412,9 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                   const TextSourceAttribution('© OpenStreetMap contributors'),
                   TextSourceAttribution(def.isRadar
                       ? (_isRadarFrame(_radarIndex) ? 'NOAA / NWS' : 'Open-Meteo')
-                      : 'Open-Meteo'),
+                      : def.isSatellite
+                          ? 'NASA GIBS · NOAA GOES · Esri'
+                          : 'Open-Meteo'),
                 ],
               ),
             ],
@@ -1335,7 +1456,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
           if (!_loading && _error == null &&
               !(def.isRadar && _hourlyStrip.isNotEmpty))
             _legend(def, metric),
-          if (def.isRadar && _radarFrames.isNotEmpty && !_loading && _error == null)
+          if ((def.isRadar || def.isSatellite) && _radarFrames.isNotEmpty && !_loading && _error == null)
             _radarTimeline(),
           if (def.isRadar && _hourlyStrip.isNotEmpty && !_loading && _error == null)
             _hourlyStripWidget(metric),
@@ -1404,9 +1525,10 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         ? ((_radarFrames.last.time - _radarFrames.first.time) / 3600).round()
         : 0;
     final fcstH = _forecastTimes.length;
+    final noun = _kLayers[_currentLayer]!.isSatellite ? 'satellite' : 'radar';
     final midLabel = fcstH > 0
         ? '${radarH}h radar  +  ${fcstH}h forecast'
-        : '${radarH}h of radar';
+        : '${radarH}h of $noun';
 
     return Positioned(
       top: 10,

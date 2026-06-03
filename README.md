@@ -54,6 +54,10 @@ that point; the data follows the map as you pan and zoom.
 
 ## Changelog
 
+### v3.3.0 (build 35)
+- **Clouds layer → real animated satellite.** The Clouds layer was a near-invisible modeled cloud-cover wash that didn't reflect actual weather. It's now **live NASA GIBS / GOES-East clean-infrared satellite** — real cloud tops, with deep convection / storm anvils glowing green→orange→red. It animates on a **timeline play bar** (NOW, play/pause, scrub) over ~2 h of 10-minute frames, like the radar. Rendered over a dark basemap with a screen blend so clouds and storms pop and clear sky stays transparent.
+- **Bright coastline overlay** on the satellite view — the coast, bays, rivers and state lines are drawn in cyan on top of the clouds, so you can see exactly where a cell is relative to your bay or beach. Free, no API key (NASA GIBS · NOAA GOES · Esri).
+
 ### v3.3.0 (build 34)
 - **Check for Updates fix** — the in-app updater downloaded a new build but never installed it (it was missing the final `completeFlexibleUpdate()` step, so "restart the app" did nothing). It now shows an **Install** button once the download finishes, which applies the update and restarts into the new version. Sideloaded builds get a clear "update via Google Play" message instead of a dead "downloading" state.
 
