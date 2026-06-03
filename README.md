@@ -12,9 +12,15 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 
 ## Screenshots
 
-| Home | Conditions & Waves | Tides, Solunar & Moon |
+| Home | Conditions & Waves (today) | Tides, Solunar & Moon |
 |------|-------------------|----------------------|
 | ![Home](screenshots/home.png) | ![Detail](screenshots/detail_galveston.png) | ![Solunar](screenshots/detail_solunar.png) |
+
+| Future-day forecast (arrow to any day) |
+|----------------------------------------|
+| ![Forecast day](screenshots/detail_forecast.png) |
+
+*Conditions and Waves follow the day/week navigation — future days show that day's Open-Meteo forecast (tagged **Forecast · midday**); today shows live NOAA observations.*
 
 ### Weather map — native, Windy-style overlays
 
