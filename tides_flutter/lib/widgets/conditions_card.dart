@@ -7,7 +7,8 @@ import '../theme.dart';
 
 class ConditionsCard extends ConsumerWidget {
   final Conditions c;
-  const ConditionsCard({super.key, required this.c});
+  final bool forecast; // true when showing a future day's forecast, not live obs
+  const ConditionsCard({super.key, required this.c, this.forecast = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -20,9 +21,15 @@ class ConditionsCard extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('CONDITIONS',
-                  style: TextStyle(
-                      color: kCyan, fontSize: 11, letterSpacing: 1.5)),
+              Row(children: [
+                const Text('CONDITIONS',
+                    style: TextStyle(
+                        color: kCyan, fontSize: 11, letterSpacing: 1.5)),
+                const Spacer(),
+                if (forecast)
+                  const Text('Forecast · midday',
+                      style: TextStyle(color: Colors.white38, fontSize: 10)),
+              ]),
               const SizedBox(height: 10),
               Row(
                 children: [

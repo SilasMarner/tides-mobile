@@ -1,7 +1,7 @@
 name: tides
 description: Live NOAA tide conditions for Android
 publish_to: 'none'
-version: 3.3.0+32
+version: 3.3.0+33
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

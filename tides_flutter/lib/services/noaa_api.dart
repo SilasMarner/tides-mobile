@@ -7,6 +7,12 @@ export '../models/tide_data.dart' show WaveData;
 
 final _dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 12)));
 final _dateFmt = DateFormat('yyyyMMdd');
+
+// ISO date (yyyy-MM-dd) for Open-Meteo start_date/end_date params.
+String _ymd(DateTime d) =>
+    '${d.year.toString().padLeft(4, '0')}-'
+    '${d.month.toString().padLeft(2, '0')}-'
+    '${d.day.toString().padLeft(2, '0')}';
 final _timeFmt = DateFormat('yyyy-MM-dd HH:mm');
 
 const _stationsUrl =
@@ -265,15 +271,38 @@ Future<dynamic> apiGet(String url, {Map<String, String>? headers}) async {
 
 // ── Open-Meteo Marine wave data ───────────────────────────────────────────────
 
-Future<WaveData?> fetchOpenMeteoWaves(double lat, double lon) async {
-  final url = 'https://marine-api.open-meteo.com/v1/marine'
-      '?latitude=$lat&longitude=$lon'
-      '&current=wave_height,wave_direction,wave_period,'
+// Marine wave data. For today we read live "current" values; for a future day
+// we read that day's hourly forecast and take the midday (noon) sample, so the
+// Waves card follows the day/week navigation like a real marine forecast.
+Future<WaveData?> fetchOpenMeteoWaves(double lat, double lon,
+    {DateTime? day}) async {
+  final now = DateTime.now();
+  final isToday = day == null ||
+      (day.year == now.year && day.month == now.month && day.day == now.day);
+  const waveVars = 'wave_height,wave_direction,wave_period,'
       'wind_wave_height,wind_wave_direction,wind_wave_period,'
-      'swell_wave_height,swell_wave_direction,swell_wave_period'
-      '&length_unit=imperial&timezone=auto';
+      'swell_wave_height,swell_wave_direction,swell_wave_period';
+  final base = 'https://marine-api.open-meteo.com/v1/marine'
+      '?latitude=$lat&longitude=$lon&length_unit=imperial&timezone=auto';
+  final url = isToday
+      ? '$base&current=$waveVars'
+      : '$base&hourly=$waveVars&start_date=${_ymd(day)}&end_date=${_ymd(day)}';
   final data = await apiGet(url);
-  final c = data?['current'] as Map<String, dynamic>?;
+
+  Map<String, dynamic>? c;
+  if (isToday) {
+    c = data?['current'] as Map<String, dynamic>?;
+  } else {
+    final h = data?['hourly'] as Map<String, dynamic>?;
+    if (h != null) {
+      // Noon sample (index 12) of the single requested day.
+      double? at(String k) {
+        final l = h[k] as List?;
+        return (l != null && l.length > 12) ? (l[12] as num?)?.toDouble() : null;
+      }
+      c = {for (final k in waveVars.split(',')) k: at(k)};
+    }
+  }
   if (c == null) return null;
   final wh = (c['wave_height'] as num?)?.toDouble();
   if (wh == null || wh == 0) return null;
@@ -293,7 +322,52 @@ Future<WaveData?> fetchOpenMeteoWaves(double lat, double lon) async {
     swellDir: swd != null ? windDirArrow(swd) : null,
     windWaveHeight: (wwh != null && wwh > 0) ? wwh : null,
     windWavePeriod: wwp,
-    source: 'Open-Meteo',
+    source: isToday ? 'Open-Meteo' : 'Open-Meteo forecast',
+  );
+}
+
+// Forecast conditions for a future day (Open-Meteo land + marine), sampled at
+// noon. Used in place of NOAA live observations when the user navigates to a
+// day other than today, so the Conditions card reflects that day's forecast.
+Future<Conditions?> fetchForecastConditions(
+    double lat, double lon, DateTime day) async {
+  final d = _ymd(day);
+  final landUrl = 'https://api.open-meteo.com/v1/forecast'
+      '?latitude=$lat&longitude=$lon'
+      '&hourly=temperature_2m,wind_speed_10m,wind_direction_10m,'
+      'wind_gusts_10m,pressure_msl'
+      '&start_date=$d&end_date=$d'
+      '&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto';
+  final seaUrl = 'https://marine-api.open-meteo.com/v1/marine'
+      '?latitude=$lat&longitude=$lon&hourly=sea_surface_temperature'
+      '&start_date=$d&end_date=$d&timezone=auto';
+
+  final res = await Future.wait([apiGet(landUrl), apiGet(seaUrl)]);
+  final h = res[0]?['hourly'] as Map<String, dynamic>?;
+  if (h == null) return null;
+
+  double? at(Map<String, dynamic>? hh, String k) {
+    final l = hh?[k] as List?;
+    return (l != null && l.length > 12) ? (l[12] as num?)?.toDouble() : null;
+  }
+
+  final windSpeed = at(h, 'wind_speed_10m');
+  final windDir = at(h, 'wind_direction_10m');
+  final sstC = at(res[1]?['hourly'] as Map<String, dynamic>?,
+      'sea_surface_temperature');
+
+  return Conditions(
+    airTemp: at(h, 'temperature_2m'),
+    waterTemp: sstC != null ? sstC * 9 / 5 + 32 : null, // marine SST is °C
+    windSpeed: windSpeed,
+    windDir: windDir,
+    windGust: at(h, 'wind_gusts_10m'),
+    windDirStr: windDir != null ? windDirArrow(windDir) : null,
+    beaufortStr: windSpeed != null ? beaufort(windSpeed) : null,
+    pressure: at(h, 'pressure_msl'),
+    waterLevel: null, // set by caller from the day's predicted tide
+    salinity: null,
+    pressureTrend: 0,
   );
 }
 
@@ -655,7 +729,7 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
     _fetchWaterLevel(id),                      // 7
     _fetchNws(lat, lon),                       // 8
     _fetchObs(id, 'salinity'),                 // 9
-    fetchOpenMeteoWaves(lat, lon),             // 10
+    fetchOpenMeteoWaves(lat, lon, day: dateOnly), // 10
   ]);
 
   final hourlyList = results[0] as List<TidePrediction>;
@@ -692,6 +766,30 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
   final moon = moonPhase(dateOnly);
   final solunar = solunarTimes(dateOnly, lon, utcOff);
   final isToday = dateOnly == DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+
+  // NOAA only serves live (current) observations, so for any day other than
+  // today the Conditions card would wrongly keep showing "now". Swap in the
+  // day's Open-Meteo forecast (noon sample) so it follows the day/week arrows.
+  // Water level uses the day's own predicted tide height at noon.
+  if (!isToday) {
+    final fc = await fetchForecastConditions(lat, lon, dateOnly);
+    if (fc != null) {
+      conditions = Conditions(
+        airTemp: fc.airTemp,
+        waterTemp: fc.waterTemp,
+        windSpeed: fc.windSpeed,
+        windDir: fc.windDir,
+        windGust: fc.windGust,
+        windDirStr: fc.windDirStr,
+        beaufortStr: fc.beaufortStr,
+        pressure: fc.pressure,
+        waterLevel: hourly[12],
+        salinity: null,
+        pressureTrend: 0,
+      );
+    }
+  }
+
   final fishing = isToday
       ? fishingRating(hilo, conditions.windSpeed, solunar)
       : fishingRatingDay(hilo, solunar);

@@ -303,7 +303,7 @@ class _TodayView extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ListView(
         children: [
-          ConditionsCard(c: data.conditions),
+          ConditionsCard(c: data.conditions, forecast: !data.isToday),
           if (data.waves != null) _WaveCard(waves: data.waves!, metric: metric),
           if (data.nws != null) _NwsCard(nws: data.nws!, metric: metric),
           Padding(

@@ -1720,7 +1720,9 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   }
 
   Widget _legend(_LayerDef def, bool metric) => Positioned(
-        bottom: 32,
+        // Lift above the system navigation/gesture bar (e.g. Samsung) so the
+        // legend isn't clipped by it.
+        bottom: 32 + MediaQuery.of(context).viewPadding.bottom,
         left: 12,
         right: 12,
         child: Center(
