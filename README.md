@@ -58,6 +58,16 @@ that point; the data follows the map as you pan and zoom.
 
 ## Changelog
 
+### v3.3.0 (build 41)
+- **Faster date navigation** — on startup the app prefetches tide/weather data for each favorite station across a 5-day window (yesterday + today + 3 days ahead). Tapping the forward/back arrows on a favorite is instant after the background fetch completes. Non-today dates use a 6-hour cache TTL (tide predictions don't change intra-day); today keeps the existing 30-minute TTL for live conditions.
+
+### v3.3.0 (build 40)
+- **Wind map resilience during outages** — when Open-Meteo's weather service is unreachable, the wind map now falls back to the last successfully loaded grid and shows an amber banner: *"Open-Meteo down · last data Xm ago · tap to retry"*. The map stays useful during short outages instead of going blank.
+- **Better error messages** — the wind map now distinguishes between a service outage (*"Open-Meteo is temporarily down — try again in a few minutes"*), a network timeout (*"Request timed out — check your connection"*), and no data at a location, instead of the generic "Could not load data".
+
+### v3.3.0 (build 39)
+- **Softer update-check message** — when the Play Store has no update ready (e.g. a build was just uploaded and hasn't propagated yet), the message now reads *"Nothing available right now — try again later"* instead of the alarming "Could not check for updates".
+
 ### v3.3.0 (build 38)
 - **Sargassum Map screen** — dedicated 🌿 button in the detail toolbar opens a full-screen NOAA SIR (Sargassum Inundation Risk) map showing daily coastal sargassum risk for the Gulf Coast, Caribbean, and tropical Atlantic. Auto-picks the nearest region (Gulf of America, Central America, Greater Antilles, Lesser Antilles, or South America); tap the region chip to switch. Pinch-zoom up to 6× for coastline detail. Updated daily. Free, no API key (NOAA AOML / USF Optical Oceanography Lab).
 - **30-minute data cache** — NOAA tide/NWS/wave data is cached in memory with a 30-minute TTL; re-opening a station within a session is instant instead of a 5–7 s spinner.
