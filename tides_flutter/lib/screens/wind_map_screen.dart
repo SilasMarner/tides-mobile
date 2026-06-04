@@ -852,6 +852,10 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   int _radarPastCount = 0; // how many _radarFrames entries are observed (not nowcast)
   // Hourly strip: single-point forecast for the bottom panel.
   List<_HourForecast> _hourlyStrip = [];
+  // Stale-data support: when Open-Meteo is down, show the last good grid.
+  DateTime? _staleDataTime; // non-null = currently showing cached data
+  static final _gridCache =
+      <_Layer, ({_DataGrid field, ui.Image image, DateTime fetchedAt})>{};
 
   // ── Unified frame helpers ─────────────────────────────────────────────────
   int get _totalFrames => _radarFrames.length + _forecastGrids.length;
@@ -903,7 +907,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     if (!silent) {
       _radarAnim?.cancel();
       setState(() {
-        _loading = true; _error = null;
+        _loading = true; _error = null; _staleDataTime = null;
         _field = null; _gradientImage = null; _probe = null;
         _radarFrames = []; _radarPastCount = 0;
         _forecastGrids = []; _forecastImages = []; _forecastTimes = [];
@@ -911,7 +915,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
       });
     }
     if (layer != null) {
-      setState(() => _currentLayer = layer);
+      setState(() { _currentLayer = layer; _staleDataTime = null; });
       // Pressure is a synoptic-scale field — zoom out so isobars are visible,
       // like Windy. Other layers recenter on the station at a local view.
       _mapController.move(
@@ -993,15 +997,44 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
       final img = await _buildGradientImage(field, def.colorFn);
 
       if (mounted) {
+        _gridCache[_currentLayer] = (field: field, image: img, fetchedAt: DateTime.now());
         setState(() {
           _field = field;
           _gradientImage = img;
+          _staleDataTime = null;
           _loading = false;
         });
       }
-    } catch (_) {
-      if (mounted && !silent) {
-        setState(() { _error = 'Could not load data'; _loading = false; });
+    } catch (e) {
+      if (!mounted || silent) return;
+      // Try to show the last cached grid rather than a blank error screen.
+      final cached = _gridCache[_currentLayer];
+      if (cached != null) {
+        setState(() {
+          _field = cached.field;
+          _gradientImage = cached.image;
+          _staleDataTime = cached.fetchedAt;
+          _loading = false;
+        });
+      } else {
+        // No cache — show a descriptive error message.
+        final String msg;
+        if (e is DioException) {
+          if (e.type == DioExceptionType.connectionTimeout ||
+              e.type == DioExceptionType.receiveTimeout ||
+              e.type == DioExceptionType.sendTimeout) {
+            msg = 'Request timed out — check your connection';
+          } else if ((e.type == DioExceptionType.badResponse &&
+                      (e.response?.statusCode ?? 0) >= 500) ||
+                     e.type == DioExceptionType.connectionError) {
+            msg = 'Open-Meteo is temporarily down — try again in a few minutes';
+          } else {
+            msg = 'Could not load weather data';
+          }
+        } else {
+          msg = 'Could not load weather data';
+        }
+        setState(() { _error = msg; _loading = false; });
       }
     }
   }
@@ -1175,6 +1208,13 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
       if (wasPlaying) _startAnim();
       _fetchHourlyStrip();
     } catch (_) { /* forecast unavailable — radar-only is fine */ }
+  }
+
+  String _fmtStale(DateTime t) {
+    final diff = DateTime.now().difference(t);
+    if (diff.inHours >= 1) return '${diff.inHours}h ago';
+    if (diff.inMinutes >= 1) return '${diff.inMinutes}m ago';
+    return 'just now';
   }
 
   String _fmtClock(int epoch) {
@@ -1428,6 +1468,39 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
               ),
             ],
           ),
+          // Stale-data banner: Open-Meteo was unreachable; showing last cached grid.
+          // The refresh icon in the app bar retries — tap it when service recovers.
+          if (_staleDataTime != null && !_loading)
+            Positioned(
+              top: 10, left: 12, right: 12,
+              child: Center(
+                child: GestureDetector(
+                  onTap: () => _fetchGrid(),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade800.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.warning_amber_rounded,
+                            color: Colors.white, size: 13),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Open-Meteo down · last data ${_fmtStale(_staleDataTime!)} · tap to retry',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (_loading)
             Container(
               color: Colors.black.withValues(alpha: 0.55),
