@@ -17,15 +17,23 @@ String _tideCacheKey(String id, DateTime date) => '$id-${_dateFmt.format(date)}'
 String _weekCacheKey(String id, DateTime s, DateTime e) =>
     '$id-week-${_dateFmt.format(s)}-${_dateFmt.format(e)}';
 
-/// Warms the cache for [stations] today — fire-and-forget, called on startup.
+/// Warms the cache for [stations] across a window of dates on startup.
+/// Prefetches yesterday + today + 3 days ahead so forward/back navigation
+/// is instant. Non-today dates use a 6-hour TTL (tide predictions don't
+/// change intra-day; today's 30-min TTL keeps live conditions fresh).
 void schedulePrefetch(List<Station> stations) {
   final now = DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
-  for (final station in stations) {
-    final key = _tideCacheKey(station.id, today);
-    final cached = _tideCache[key];
-    if (cached != null && now.difference(cached.fetchedAt) < _cacheTtl) continue;
-    fetchAllData(station, targetDate: today).ignore();
+  // Offsets: -1 (yesterday), 0 (today), +1, +2, +3
+  for (var offset = -1; offset <= 3; offset++) {
+    final date = today.add(Duration(days: offset));
+    final ttl = offset == 0 ? _cacheTtl : const Duration(hours: 6);
+    for (final station in stations) {
+      final key = _tideCacheKey(station.id, date);
+      final cached = _tideCache[key];
+      if (cached != null && now.difference(cached.fetchedAt) < ttl) continue;
+      fetchAllData(station, targetDate: date).ignore();
+    }
   }
 }
 
