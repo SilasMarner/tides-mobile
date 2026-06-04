@@ -15,7 +15,7 @@ class TidesApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'Tides',
+        title: 'OpenTides',
         theme: buildTheme(),
         home: const HomeScreen(),
         debugShowCheckedModeBanner: false,

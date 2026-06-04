@@ -154,7 +154,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       appBar: AppBar(
         backgroundColor: kNavyLight,
         automaticallyImplyLeading: false,
-        title: const Text('~ TIDES',
+        title: const Text('~ OpenTides',
             style: TextStyle(color: kCyan, fontWeight: FontWeight.bold)),
         actions: [
           IconButton(

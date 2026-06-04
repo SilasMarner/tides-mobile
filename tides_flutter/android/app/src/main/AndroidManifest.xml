@@ -18,7 +18,7 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" tools:node="remove"/>
 
     <application
-        android:label="Tides"
+        android:label="OpenTides"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

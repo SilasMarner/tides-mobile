@@ -16,11 +16,11 @@ class AboutScreen extends StatelessWidget {
         body: ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            const Text('~ TIDES',
+            const Text('~ OpenTides',
                 style: TextStyle(
                     color: kCyan, fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            const Text('Version 3.3  ·  Live NOAA tide data for Android',
+            const Text('Version 3.3  ·  free · open · forever',
                 style: TextStyle(color: Colors.white54, fontSize: 13)),
             const SizedBox(height: 2),
             const Text('Built with Flutter',
