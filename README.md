@@ -40,9 +40,9 @@ that point; the data follows the map as you pan and zoom.
 |-----------------------|
 | ![Forecast](screenshots/wind_map_radar_fcst.png) |
 
-| Sargassum map (NOAA AFAI 7-day satellite) |
-|-------------------------------------------|
-| ![Sargassum](screenshots/wind_map_sargassum.png) |
+| Sargassum Map (NOAA SIR — daily coastal inundation risk) |
+|----------------------------------------------------------|
+| ![Sargassum Map](screenshots/sargassum_map.png) |
 
 ### Units
 
@@ -58,8 +58,8 @@ that point; the data follows the map as you pan and zoom.
 
 ## Changelog
 
-### v3.3.0 (build 37)
-- **Sargassum layer** — a new **Sargassum** entry in the weather-map layer picker shows NOAA AOML / USF satellite-derived floating algae density (AFAI 7-day cumulative). Covers the Gulf of Mexico, Caribbean Sea, and tropical Atlantic (updated daily). Tap the layers icon → scroll to Sargassum; the legend shows the data date. Free, no API key (NOAA ERDDAP WMS · USF Optical Oceanography Lab).
+### v3.3.0 (build 38)
+- **Sargassum Map screen** — dedicated 🌿 button in the detail toolbar opens a full-screen NOAA SIR (Sargassum Inundation Risk) map showing daily coastal sargassum risk for the Gulf Coast, Caribbean, and tropical Atlantic. Auto-picks the nearest region (Gulf of America, Central America, Greater Antilles, Lesser Antilles, or South America); tap the region chip to switch. Pinch-zoom up to 6× for coastline detail. Updated daily. Free, no API key (NOAA AOML / USF Optical Oceanography Lab).
 - **30-minute data cache** — NOAA tide/NWS/wave data is cached in memory with a 30-minute TTL; re-opening a station within a session is instant instead of a 5–7 s spinner.
 - **Favorites prefetch on startup** — when the app launches and you have favorites, their tide data is fetched in the background so tapping a favorite is instant.
 
