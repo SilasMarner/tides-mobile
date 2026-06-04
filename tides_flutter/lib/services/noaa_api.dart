@@ -8,6 +8,27 @@ export '../models/tide_data.dart' show WaveData;
 final _dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 12)));
 final _dateFmt = DateFormat('yyyyMMdd');
 
+// ── In-memory TTL cache ───────────────────────────────────────────────────────
+const _cacheTtl = Duration(minutes: 30);
+final _tideCache = <String, ({TideData data, DateTime fetchedAt})>{};
+final _weekCache = <String, ({List<TidePrediction> data, DateTime fetchedAt})>{};
+
+String _tideCacheKey(String id, DateTime date) => '$id-${_dateFmt.format(date)}';
+String _weekCacheKey(String id, DateTime s, DateTime e) =>
+    '$id-week-${_dateFmt.format(s)}-${_dateFmt.format(e)}';
+
+/// Warms the cache for [stations] today — fire-and-forget, called on startup.
+void schedulePrefetch(List<Station> stations) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  for (final station in stations) {
+    final key = _tideCacheKey(station.id, today);
+    final cached = _tideCache[key];
+    if (cached != null && now.difference(cached.fetchedAt) < _cacheTtl) continue;
+    fetchAllData(station, targetDate: today).ignore();
+  }
+}
+
 // ISO date (yyyy-MM-dd) for Open-Meteo start_date/end_date params.
 String _ymd(DateTime d) =>
     '${d.year.toString().padLeft(4, '0')}-'
@@ -712,6 +733,11 @@ Conditions _supplementFromNws(Conditions c, NwsForecast? nws) {
 Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
   final date = targetDate ?? DateTime.now();
   final dateOnly = DateTime(date.year, date.month, date.day);
+  final cacheKey = _tideCacheKey(station.id, dateOnly);
+  final cached = _tideCache[cacheKey];
+  if (cached != null && DateTime.now().difference(cached.fetchedAt) < _cacheTtl) {
+    return cached.data;
+  }
   final dateStr = _dateFmt.format(dateOnly);
   final utcOff = _centralUtcOffset(dateOnly);
   final id = station.id;
@@ -794,7 +820,7 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
       ? fishingRating(hilo, conditions.windSpeed, solunar)
       : fishingRatingDay(hilo, solunar);
 
-  return TideData(
+  final result = TideData(
     stationId: id,
     lat: lat,
     lon: lon,
@@ -810,10 +836,17 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
     fishing: fishing,
     waves: waves,
   );
+  _tideCache[cacheKey] = (data: result, fetchedAt: DateTime.now());
+  return result;
 }
 
 Future<List<TidePrediction>> fetchWeekHilo(
     String stationId, DateTime start, DateTime end) async {
+  final key = _weekCacheKey(stationId, start, end);
+  final cached = _weekCache[key];
+  if (cached != null && DateTime.now().difference(cached.fetchedAt) < _cacheTtl) {
+    return cached.data;
+  }
   final url = 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter'
       '?begin_date=${_dateFmt.format(start)}'
       '&end_date=${_dateFmt.format(end)}'
@@ -821,5 +854,7 @@ Future<List<TidePrediction>> fetchWeekHilo(
       '&product=predictions&datum=MLLW&time_zone=lst_ldt'
       '&interval=hilo&units=english&format=json&application=tides_flutter';
   final data = await apiGet(url);
-  return _parsePredictions((data?['predictions'] as List?) ?? []);
+  final result = _parsePredictions((data?['predictions'] as List?) ?? []);
+  _weekCache[key] = (data: result, fetchedAt: DateTime.now());
+  return result;
 }

@@ -31,7 +31,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkForUpdate());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkForUpdate();
+      // Warm the cache for favorites as soon as they load from disk.
+      ref.listenManual(favoritesProvider, (_, favorites) {
+        if (favorites.isNotEmpty) schedulePrefetch(favorites);
+      }, fireImmediately: true);
+    });
   }
 
   Future<void> _checkForUpdate() async {
