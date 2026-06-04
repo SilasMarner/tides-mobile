@@ -263,7 +263,7 @@ class _CheckForUpdatesButtonState extends State<_CheckForUpdatesButton> {
         case UpdateAvailability.updateNotAvailable:
           setState(() { _status = 'You\'re up to date'; });
         default:
-          setState(() { _status = 'Could not check for updates'; });
+          setState(() { _status = 'Nothing available right now — try again later'; });
       }
     } catch (_) {
       // Thrown when the app wasn't installed via Google Play (e.g. sideloaded
