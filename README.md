@@ -40,6 +40,10 @@ that point; the data follows the map as you pan and zoom.
 |-----------------------|
 | ![Forecast](screenshots/wind_map_radar_fcst.png) |
 
+| Sargassum map (NOAA AFAI 7-day satellite) |
+|-------------------------------------------|
+| ![Sargassum](screenshots/wind_map_sargassum.png) |
+
 ### Units
 
 | Standard / Metric toggle |
@@ -53,6 +57,11 @@ that point; the data follows the map as you pan and zoom.
 ---
 
 ## Changelog
+
+### v3.3.0 (build 37)
+- **Sargassum layer** — a new **Sargassum** entry in the weather-map layer picker shows NOAA AOML / USF satellite-derived floating algae density (AFAI 7-day cumulative). Covers the Gulf of Mexico, Caribbean Sea, and tropical Atlantic (updated daily). Tap the layers icon → scroll to Sargassum; the legend shows the data date. Free, no API key (NOAA ERDDAP WMS · USF Optical Oceanography Lab).
+- **30-minute data cache** — NOAA tide/NWS/wave data is cached in memory with a 30-minute TTL; re-opening a station within a session is instant instead of a 5–7 s spinner.
+- **Favorites prefetch on startup** — when the app launches and you have favorites, their tide data is fetched in the background so tapping a favorite is instant.
 
 ### v3.3.0 (build 35)
 - **Clouds layer → real animated satellite.** The Clouds layer was a near-invisible modeled cloud-cover wash that didn't reflect actual weather. It's now **live NASA GIBS / GOES-East clean-infrared satellite** — real cloud tops, with deep convection / storm anvils glowing green→orange→red. It animates on a **timeline play bar** (NOW, play/pause, scrub) over ~2 h of 10-minute frames, like the radar. Rendered over a dark basemap with a screen blend so clouds and storms pop and clear sky stays transparent.
