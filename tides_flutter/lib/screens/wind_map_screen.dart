@@ -83,8 +83,6 @@ Color _pressureColor(double hpa) {
   return c.withValues(alpha: 0.28);
 }
 
-Color _sargassumColor(double _) => Colors.transparent; // AFAI uses ERDDAP's own rendering
-
 Color _cloudColor(double pct) {
   final t = (pct / 100.0).clamp(0.0, 1.0);
   if (t < 0.08) return Colors.transparent; // clear sky — no wash
@@ -170,7 +168,7 @@ class _DataGrid {
 
 // ── Layer system ───────────────────────────────────────────────────────────────
 
-enum _Layer { wind, waves, swell, rain, temp, pressure, clouds, sargassum }
+enum _Layer { wind, waves, swell, rain, temp, pressure, clouds }
 
 
 class _LayerDef {
@@ -181,7 +179,6 @@ class _LayerDef {
   final bool hasIsobars;
   final bool isRadar; // overlay live weather-radar tiles instead of a grid
   final bool isSatellite; // overlay live GOES satellite tiles instead of a grid
-  final bool isSargassum; // overlay NOAA AFAI sargassum density as a fixed OverlayImage
   final String valueVar;
   final String? directionVar;
   final Color Function(double) colorFn;
@@ -195,7 +192,6 @@ class _LayerDef {
     this.hasIsobars = false,
     this.isRadar = false,
     this.isSatellite = false,
-    this.isSargassum = false,
     required this.valueVar,
     this.directionVar,
     required this.colorFn,
@@ -312,18 +308,6 @@ const _kLayers = <_Layer, _LayerDef>{
       (Color(0xCC56E39F), 'Mid'),
       (Color(0xCCF9CA24), 'Tall'),
       (Color(0xCCEB4D4B), 'Storm tops'),
-    ],
-  ),
-  _Layer.sargassum: _LayerDef(
-    label: 'Sargassum', icon: Icons.grass,
-    isMarine: true, hasFlow: false, isSargassum: true,
-    valueVar: '', colorFn: _sargassumColor,
-    // NOAA AFAI 7-day cumulative: satellite-detected floating algae density.
-    // Colors mirror ERDDAP's default AFAI palette (green→yellow→red).
-    legend: [
-      (Color(0xFF22AA44), 'Trace'),
-      (Color(0xFFDDAA00), 'Moderate'),
-      (Color(0xFFCC3300), 'Dense'),
     ],
   ),
 };
@@ -868,9 +852,6 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   int _radarPastCount = 0; // how many _radarFrames entries are observed (not nowcast)
   // Hourly strip: single-point forecast for the bottom panel.
   List<_HourForecast> _hourlyStrip = [];
-  // Sargassum (AFAI): latest ERDDAP timestamp + pre-built WMS GetMap URL.
-  String? _afaiTimestamp;
-  String? _afaiImageUrl;
 
   // ── Unified frame helpers ─────────────────────────────────────────────────
   int get _totalFrames => _radarFrames.length + _forecastGrids.length;
@@ -910,7 +891,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     // NOT precache the other frames here: a burst of tile requests would
     // starve the basemap and leave the panned-to area blank.
     final cur = _kLayers[_currentLayer]!;
-    if (cur.isRadar || cur.isSatellite || cur.isSargassum) return; // these self-load
+    if (cur.isRadar || cur.isSatellite) return; // tile layers self-load
     _moveDebounce?.cancel();
     _moveDebounce = Timer(const Duration(milliseconds: 450), () {
       if (mounted) _fetchGrid(silent: true);
@@ -937,7 +918,6 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         LatLng(widget.lat, widget.lon),
         layer == _Layer.pressure ? 6.0
             : layer == _Layer.clouds ? 6.0
-            : layer == _Layer.sargassum ? 5.0  // zoom out to show Gulf/Caribbean
             : layer == _Layer.rain ? 7.0 : 8.0,
       );
     }
@@ -951,12 +931,6 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     // Clouds is an animated GOES satellite tile layer (its own timeline).
     if (def.isSatellite) {
       _fetchSatellite();
-      return;
-    }
-
-    // Sargassum: NOAA AFAI 7-day overlay image from ERDDAP WMS.
-    if (def.isSargassum) {
-      await _fetchSargassum();
       return;
     }
 
@@ -1085,49 +1059,6 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
       _loading = false;
     });
     if (_radarPlaying) _startAnim();
-  }
-
-  // NOAA AOML AFAI 7-day sargassum/floating-algae overlay.
-  // Fetches the latest available timestamp from ERDDAP, then builds a WMS
-  // GetMap URL for the full Gulf/Caribbean extent and displays it as an
-  // OverlayImage.  Coverage bbox: lon -98→-38, lat 0→38.
-  static const _afaiBboxSW = LatLng(0, -98);
-  static const _afaiBboxNE = LatLng(38, -38);
-
-  bool _stationInAfaiBbox() {
-    return widget.lat >= 0 && widget.lat <= 38 &&
-           widget.lon >= -98 && widget.lon <= -38;
-  }
-
-  Future<void> _fetchSargassum() async {
-    setState(() { _afaiImageUrl = null; _loading = true; _error = null; });
-    // If station is outside AFAI coverage, pan to the data region center.
-    if (!_stationInAfaiBbox()) {
-      _mapController.move(const LatLng(19, -68), 4.5);
-    }
-    try {
-      // OPeNDAP subset syntax: time[last] must be in the URL, not query params.
-      final resp = await _dio.get(
-        'https://cwcgom.aoml.noaa.gov/erddap/griddap/'
-        'noaa_aoml_atlantic_oceanwatch_AFAI_7D.json'
-        '?time%5Blast%5D',
-      );
-      // ERDDAP returns {"table":{"rows":[["2026-06-03T12:00:00Z"]]}}
-      final t = (resp.data['table']['rows'][0][0] as String);
-      _afaiTimestamp = t;
-      _afaiImageUrl =
-          'https://cwcgom.aoml.noaa.gov/erddap/wms/'
-          'noaa_aoml_atlantic_oceanwatch_AFAI_7D/request'
-          '?service=WMS&version=1.3.0&request=GetMap'
-          '&crs=CRS%3A84&bbox=-98%2C0%2C-38%2C38'
-          '&width=1024&height=512'
-          '&layers=noaa_aoml_atlantic_oceanwatch_AFAI_7D%3AAFAI'
-          '&styles=&format=image%2Fpng&transparent=true'
-          '&time=${Uri.encodeComponent(t)}';
-      if (mounted) setState(() { _loading = false; });
-    } catch (_) {
-      if (mounted) setState(() { _loading = false; _error = 'Could not load sargassum data'; });
-    }
   }
 
   // Unified animation over all frames: radar tiles first, then forecast overlays.
@@ -1375,9 +1306,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
           IconButton(
             icon: const Icon(Icons.refresh, color: kCyan),
             tooltip: 'Refresh',
-            onPressed: () => _kLayers[_currentLayer]!.isSargassum
-                ? _fetchSargassum()
-                : _fetchGrid(),
+            onPressed: () => _fetchGrid(),
           ),
         ],
       ),
@@ -1462,17 +1391,6 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                     userAgentPackageName: 'com.mattbettinger.tides',
                   ),
                 ),
-              // Sargassum: NOAA AFAI 7-day overlay (fixed geographic extent).
-              if (def.isSargassum && _afaiImageUrl != null)
-                OverlayImageLayer(
-                  overlayImages: [
-                    OverlayImage(
-                      bounds: LatLngBounds(_afaiBboxSW, _afaiBboxNE),
-                      imageProvider: NetworkImage(_afaiImageUrl!),
-                      opacity: 0.80,
-                    ),
-                  ],
-                ),
               if (_field != null && _gradientImage != null)
                 _SmoothGradientLayer(field: _field!, image: _gradientImage!),
               if (_field != null && def.hasIsobars)
@@ -1505,9 +1423,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                       ? (_isRadarFrame(_radarIndex) ? 'NOAA / NWS' : 'Open-Meteo')
                       : def.isSatellite
                           ? 'NASA GIBS · NOAA GOES · Esri'
-                          : def.isSargassum
-                              ? 'NOAA AOML · USF Optical Oceanography'
-                              : 'Open-Meteo'),
+                          : 'Open-Meteo'),
                 ],
               ),
             ],
@@ -1549,24 +1465,6 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
           if (!_loading && _error == null &&
               !(def.isRadar && _hourlyStrip.isNotEmpty))
             _legend(def, metric),
-          if (def.isSargassum && !_loading && _error == null && !_stationInAfaiBbox())
-            Positioned(
-              top: 12, left: 12, right: 12,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.72),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: const Text(
-                    'Sargassum data covers Gulf of America & Caribbean',
-                    style: TextStyle(color: Colors.white70, fontSize: 11),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ),
-            ),
           if ((def.isRadar || def.isSatellite) && _radarFrames.isNotEmpty && !_loading && _error == null)
             _radarTimeline(),
           if (def.isRadar && _hourlyStrip.isNotEmpty && !_loading && _error == null)
@@ -1843,8 +1741,6 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         return '${v.toStringAsFixed(0)} hPa';
       case _Layer.clouds:
         return '${v.toStringAsFixed(0)}% cloud';
-      case _Layer.sargassum:
-        return 'N/A';
     }
   }
 
@@ -1989,14 +1885,6 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                   ],
                 ),
                 const SizedBox(height: 6),
-                if (_currentLayer == _Layer.sargassum && _afaiTimestamp != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 5),
-                    child: Text(
-                      'Data: ${_afaiTimestamp!.substring(0, 10)}',
-                      style: const TextStyle(color: Colors.white38, fontSize: 9),
-                    ),
-                  ),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: def.legendFor(metric).expand((item) => [
