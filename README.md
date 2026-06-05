@@ -4,13 +4,21 @@ A free, open-source Flutter app for Android that shows real-time NOAA tide data,
 
 ## Download
 
-**Latest release: [v3.3.0 — Live NOAA radar + 18-hour rain forecast](https://github.com/SilasMarner/tides-mobile/releases/tag/v3.3.0)** ([always-latest link](https://github.com/SilasMarner/tides-mobile/releases/latest)) — download `tides-3.3.0.apk` and tap to install.
+**Latest release: [v3.4.0 — Wind-tide, smarter bite forecast & cold-front alerts](https://github.com/SilasMarner/tides-mobile/releases/tag/v3.4.0)** ([always-latest link](https://github.com/SilasMarner/tides-mobile/releases/latest)) — download `tides-3.4.0.apk` and tap to install.
 
 To sideload: enable *Install unknown apps* for your file manager in Android Settings → Apps, download the APK, and tap to install.
 
 ---
 
 ## Screenshots
+
+### New in v3.4 — for Texas surf & bay anglers
+
+| Wind-tide (water vs. predicted) | Bite forecast + best windows | In-app User Guide | Alerts (incl. cold-front) |
+|------|------|------|------|
+| ![Wind tide](screenshots/detail_conditions.png) | ![Fishing](screenshots/detail_fishing.png) | ![User Guide](screenshots/user_guide.png) | ![Alerts](screenshots/settings_alerts.png) |
+
+*The Conditions card now shows the **wind tide** — how far the live water level sits above/below the predicted tide (north winds drain the bays, south winds stack water in). The **Fishing** card folds tide movement, wind, and barometric trend into the star rating and lists today's best **bite windows**. A new **User Guide** (About → User Guide) explains the data sources and exactly how the score and alerts are calculated.*
 
 | Home | Conditions & Waves (today) | Tides, Solunar & Moon |
 |------|-------------------|----------------------|
@@ -57,6 +65,12 @@ that point; the data follows the map as you pan and zoom.
 ---
 
 ## Changelog
+
+### v3.4.0 (build 46) — **Texas angler features + User Guide**
+- **Wind-tide indicator** — the Conditions card now shows the live water level vs. the predicted tide ("Water 0.7 ft below predicted"). On the Texas coast this reveals wind setup: north winds drain the bays and back-lakes (below prediction), south winds stack water in (above). Today only, on stations with a live water-level sensor. Computed from data already fetched — no new API.
+- **Smarter fishing score + best windows** — the 1–5 star rating now folds in **moving water** (the tide's rate of change vs. the day's strongest), a **falling-barometer** bump (fish feed ahead of fronts), and the existing solunar + wind factors. The Fishing card adds a movement line ("Incoming — strongest 2–4 PM") and today's top 2–3 **bite windows**.
+- **Cold-front alert** — a new *Pressure Drops* notification fires when the barometer is falling (a front approaching, often a strong pre-front bite). Once per day per station, reusing the existing alert framework.
+- **In-app User Guide** — a new *User Guide — how it works* button on the About page opens a plain-language guide: where the data comes from (NOAA CO-OPS, NWS, Open-Meteo Marine, on-device solunar/sun/moon), how to read the tide chart and wind tide, exactly how the fishing score and best windows are calculated, and how each alert type fires.
 
 ### v3.3.0 (build 44)
 - **Station pin on all wind map layers** — a cyan location pin marks your station on every wind map layer (Wind, Waves, Swell, Rain, Temperature, Pressure, Clouds). Visible over both the light basemap and the dark satellite view thanks to a black + white shadow.
