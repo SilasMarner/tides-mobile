@@ -50,10 +50,52 @@ class ConditionsCard extends ConsumerWidget {
               ],
               const SizedBox(height: 8),
               _windRow(metric),
+              _windTideRow(metric),
             ],
           ),
         ),
       );
+  }
+
+  // Wind tide: how far the observed water level sits above/below the predicted
+  // tide. On the TX coast, N winds drain the bays/back-lakes, S winds stack
+  // water in. Hidden on forecast days and when there's no live observation.
+  Widget _windTideRow(bool metric) {
+    final wt = c.windTide;
+    if (wt == null) return const SizedBox.shrink();
+    if (wt.abs() < 0.2) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 6),
+        child: Text('Water near predicted level',
+            style: TextStyle(color: Colors.white38, fontSize: 12)),
+      );
+    }
+    final above = wt > 0;
+    final dir = (c.windDirStr ?? '').toUpperCase();
+    String hint = '';
+    if (!above && dir.startsWith('N')) {
+      hint = ' — $dir wind draining back lakes';
+    } else if (above && dir.startsWith('S')) {
+      hint = ' — $dir wind stacking water in';
+    } else if (c.windDirStr != null) {
+      hint = ' — wind tide';
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          Icon(above ? Icons.arrow_upward : Icons.arrow_downward,
+              color: above ? kHighTide : kLowTide, size: 14),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              'Water ${fmtLen(wt.abs(), metric)} ${above ? 'above' : 'below'} predicted$hint',
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   String _fmtPressure() {

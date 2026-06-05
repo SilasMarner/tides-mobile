@@ -873,22 +873,86 @@ class _FishingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final stars = '★' * data.fishing.stars + '☆' * (5 - data.fishing.stars);
+    final f = data.fishing;
+    final stars = '★' * f.stars + '☆' * (5 - f.stars);
     return Card(
       color: kCardBg,
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('FISHING  ',
-                style: TextStyle(color: kCyan, fontSize: 11, letterSpacing: 1.5)),
-            Text(stars, style: const TextStyle(color: Colors.amber, fontSize: 16)),
-            const SizedBox(width: 8),
-            Text(data.fishing.label,
-                style: const TextStyle(color: Colors.white, fontSize: 13)),
+            Row(
+              children: [
+                const Text('FISHING  ',
+                    style: TextStyle(
+                        color: kCyan, fontSize: 11, letterSpacing: 1.5)),
+                Text(stars,
+                    style: const TextStyle(color: Colors.amber, fontSize: 16)),
+                const SizedBox(width: 8),
+                Text(f.label,
+                    style: const TextStyle(color: Colors.white, fontSize: 13)),
+              ],
+            ),
+            if (f.movement != null) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  const Icon(Icons.waves, color: Colors.white38, size: 14),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(f.movement!,
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 12)),
+                  ),
+                ],
+              ),
+            ],
+            if (f.windows.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              const Text('BEST WINDOWS',
+                  style: TextStyle(
+                      color: Colors.white38, fontSize: 9, letterSpacing: 1.2)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: f.windows.map(_windowChip).toList(),
+              ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _windowChip(BiteWindow w) {
+    String num(int h) => '${h % 12 == 0 ? 12 : h % 12}';
+    String ap(int h) => h < 12 ? 'AM' : 'PM';
+    final s = w.startH.round() % 24;
+    final e = w.endH.round() % 24;
+    final time = ap(s) == ap(e)
+        ? '${num(s)}–${num(e)} ${ap(e)}'
+        : '${num(s)} ${ap(s)}–${num(e)} ${ap(e)}';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: kCyan.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: kCyan.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(time,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600)),
+          Text(w.reason,
+              style: const TextStyle(color: Colors.white54, fontSize: 10)),
+        ],
       ),
     );
   }

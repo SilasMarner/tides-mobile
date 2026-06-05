@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:in_app_update/in_app_update.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
+import 'user_guide_screen.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
@@ -20,13 +21,32 @@ class AboutScreen extends StatelessWidget {
                 style: TextStyle(
                     color: kCyan, fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            const Text('Version 3.3  ·  free · open · forever',
+            const Text('Version 3.4  ·  free · open · forever',
                 style: TextStyle(color: Colors.white54, fontSize: 13)),
             const SizedBox(height: 2),
             const Text('Built with Flutter',
                 style: TextStyle(color: Colors.white38, fontSize: 12)),
             const SizedBox(height: 12),
             const _CheckForUpdatesButton(),
+            const SizedBox(height: 10),
+            Builder(
+              builder: (context) => SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.menu_book, size: 18),
+                  label: const Text('User Guide — how it works'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: kCyan,
+                    side: const BorderSide(color: kCyan),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => const UserGuideScreen()),
+                  ),
+                ),
+              ),
+            ),
             const Divider(color: Colors.white12, height: 32),
 
             // Features
@@ -180,12 +200,13 @@ class AboutScreen extends StatelessWidget {
     'Week view: hi/lo tides for 7 days with NWS forecast per day',
     'Solunar tables: major & minor feeding periods',
     'Sun & moon: sunrise, sunset, golden hour, phase, illumination',
-    'Fishing rating (1–5 stars) based on tides, solunar timing, and wind',
+    'Fishing rating (1–5 stars) from tide movement, solunar timing, wind, and barometric trend — with today’s best bite windows',
+    'Wind-tide readout — live water level vs. predicted, to spot north/south wind setup in the bays',
     'Wave heights, swell and wind-sea breakdown from Open-Meteo Marine at each station location',
     'Native weather map — animated Wind, Waves, Swell, Temperature, Pressure, and Clouds layers, plus a unified Rain timeline: NOAA MRMS radar (past 2 h) flowing into an Open-Meteo precipitation forecast (up to 18 h ahead) with an hourly strip',
     'Animated salinity map — NOAA NGOFS2 hourly surface-salinity forecast loop for Gulf bays (Galveston, Matagorda, Corpus Christi, Mobile and more)',
     'Favorites and GPS-based nearest stations',
-    'Notifications for tide changes, solunar majors, and best fishing days',
+    'Notifications for tide changes, solunar majors, best fishing days, and falling-barometer (cold-front) alerts',
   ];
 
   static const _credits = [

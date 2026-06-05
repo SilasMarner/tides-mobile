@@ -54,6 +54,11 @@ class NotificationPrefsNotifier extends StateNotifier<NotificationPrefs> {
     await _save();
   }
 
+  Future<void> setNotifyPressureDrop(bool v) async {
+    state = state.copyWith(notifyPressureDrop: v);
+    await _save();
+  }
+
   Future<void> toggleStation(String stationId) async {
     final current = Set<String>.from(state.stations);
     if (current.contains(stationId)) {
