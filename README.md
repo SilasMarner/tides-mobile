@@ -1,6 +1,6 @@
-# Tides — Live NOAA Tide App for Android
+# OpenTides — free · open · forever
 
-A Flutter app for Android that shows real-time NOAA tide data, weather conditions, solunar tables, and fishing ratings. Built for fishermen and boaters who need quick, reliable tidal information on the water.
+A free, open-source Flutter app for Android that shows real-time NOAA tide data, weather conditions, solunar tables, and fishing ratings. Built for fishermen and boaters who need quick, reliable tidal information on the water. No ads, no subscriptions, no data collection — free forever.
 
 ## Download
 
@@ -57,6 +57,17 @@ that point; the data follows the map as you pan and zoom.
 ---
 
 ## Changelog
+
+### v3.3.0 (build 44)
+- **Station pin on all wind map layers** — a cyan location pin marks your station on every wind map layer (Wind, Waves, Swell, Rain, Temperature, Pressure, Clouds). Visible over both the light basemap and the dark satellite view thanks to a black + white shadow.
+
+### v3.3.0 (build 43) — **OpenTides rebrand**
+- **Renamed to OpenTides** — the app is now called *OpenTides* with the tagline *free · open · forever*, reflecting its open-source, always-free identity.
+- **New launcher icon** — same navy night sky / crescent moon / cyan waves design language, updated with the OpenTides name and tagline across all Android screen densities.
+- **About screen** updated to match: *"~ OpenTides · Version 3.3 · free · open · forever"*.
+
+### v3.3.0 (build 42)
+- **Extended date prefetch** — favorites are now prefetched across a **10-day window** (2 days back + today + 7 days ahead) on startup. The full week-forward and 2-day-back navigation on any favorite is instant after background fetches complete.
 
 ### v3.3.0 (build 41)
 - **Faster date navigation** — on startup the app prefetches tide/weather data for each favorite station across a 5-day window (yesterday + today + 3 days ahead). Tapping the forward/back arrows on a favorite is instant after the background fetch completes. Non-today dates use a 6-hour cache TTL (tide predictions don't change intra-day); today keeps the existing 30-minute TTL for live conditions.
