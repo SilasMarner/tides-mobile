@@ -845,6 +845,11 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   int _radarIndex = 0;
   bool _radarPlaying = true;
   Timer? _radarAnim;
+  // Pre-fetched radar frame images (one composited GetMap PNG per frame) +
+  // the geographic bounds they cover. Pre-caching these makes playback smooth
+  // (swapping decoded images) instead of re-tiling the WMS on every frame.
+  List<String> _radarImageUrls = [];
+  LatLngBounds? _radarBounds;
   // Forecast overlay: Open-Meteo hourly precipitation grids (auto-loaded).
   List<_DataGrid> _forecastGrids = [];
   List<ui.Image?> _forecastImages = [];
@@ -891,14 +896,19 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   // the visible area — like Windy, the data follows the map.
   void _onPositionChanged(MapCamera camera, bool hasGesture) {
     if (!hasGesture) return;
-    // Radar is a tile layer — it self-loads on pan/zoom. We deliberately do
-    // NOT precache the other frames here: a burst of tile requests would
-    // starve the basemap and leave the panned-to area blank.
     final cur = _kLayers[_currentLayer]!;
-    if (cur.isRadar || cur.isSatellite) return; // tile layers self-load
+    // Satellite (GIBS) is a tile layer — it self-loads on pan/zoom.
+    if (cur.isSatellite) return;
     _moveDebounce?.cancel();
     _moveDebounce = Timer(const Duration(milliseconds: 450), () {
-      if (mounted) _fetchGrid(silent: true);
+      if (!mounted) return;
+      // Radar uses pre-fetched overlay images, so rebuild them for the new
+      // view (data follows the map, like the grid layers).
+      if (cur.isRadar) {
+        _fetchRadar();
+      } else {
+        _fetchGrid(silent: true);
+      }
     });
   }
 
@@ -910,6 +920,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         _loading = true; _error = null; _staleDataTime = null;
         _field = null; _gradientImage = null; _probe = null;
         _radarFrames = []; _radarPastCount = 0;
+        _radarImageUrls = []; _radarBounds = null;
         _forecastGrids = []; _forecastImages = []; _forecastTimes = [];
         _hourlyStrip = [];
       });
@@ -1039,14 +1050,26 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     }
   }
 
+  // lat/lon → EPSG:3857 (Web Mercator) metres, matching the map projection so
+  // a GetMap image aligns 1:1 when placed on its LatLngBounds.
+  (double, double) _toMercator(double lat, double lon) {
+    const r = 20037508.34;
+    final x = lon * r / 180.0;
+    final y = math.log(math.tan((90 + lat) * math.pi / 360.0)) /
+        (math.pi / 180.0) * r / 180.0;
+    return (x, y);
+  }
+
   // Live precipitation radar from NOAA MRMS composite reflectivity
   // (conus_cref_qcd) via WMS — free, no key, US coverage, ~2 min cadence and
   // full-resolution detail (same mosaic the major weather apps render).
   //
-  // GeoServer's time dimension uses nearestValue="1", so we generate
-  // approximate timestamps over the past ~2h and the server snaps each request
-  // to the closest real frame — no GetCapabilities XML parsing needed. For NOAA
-  // frames `_RadarFrame.template` holds the ISO-8601 time string (not a URL).
+  // Each frame is fetched as a single composited GetMap PNG covering the
+  // visible area (+ margin) and pre-cached, so animation swaps pre-decoded
+  // images instead of re-tiling the WMS per frame — which caused the
+  // stop-and-go playback. GeoServer's time dimension uses nearestValue="1",
+  // so approximate timestamps over the past ~2h snap to the closest real
+  // frame. `_RadarFrame.template` holds the ISO-8601 time string.
   Future<void> _fetchRadar() async {
     final now = DateTime.now().toUtc();
     final frames = <_RadarFrame>[];
@@ -1056,18 +1079,63 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
       final iso = '${t.toIso8601String().split('.').first}Z';
       frames.add(_RadarFrame(t.millisecondsSinceEpoch ~/ 1000, iso, false));
     }
+
+    // Visible area + 25% margin gives headroom for small pans without a reload.
+    final b = _mapController.camera.visibleBounds;
+    final latSpan = b.north - b.south;
+    final lonSpan = b.east - b.west;
+    const margin = 0.25;
+    final south = b.south - latSpan * margin;
+    final north = b.north + latSpan * margin;
+    final west = b.west - lonSpan * margin;
+    final east = b.east + lonSpan * margin;
+    final bounds = LatLngBounds(LatLng(south, west), LatLng(north, east));
+
+    final (minx, miny) = _toMercator(south, west);
+    final (maxx, maxy) = _toMercator(north, east);
+    const w = 1024;
+    final h = (((maxy - miny) / (maxx - minx)) * w).round().clamp(256, 1024);
+
+    String urlFor(_RadarFrame f) =>
+        'https://opengeo.ncep.noaa.gov/geoserver/conus/wms'
+        '?service=WMS&version=1.3.0&request=GetMap'
+        '&layers=conus_cref_qcd&crs=EPSG:3857'
+        '&bbox=$minx,$miny,$maxx,$maxy'
+        '&width=$w&height=$h'
+        '&format=image/png&transparent=true'
+        '&time=${Uri.encodeComponent(f.template)}';
+
+    final urls = [for (final f in frames) urlFor(f)];
+
     if (!mounted) return;
     setState(() {
       _radarFrames = frames;
+      _radarImageUrls = urls;
+      _radarBounds = bounds;
       _radarPastCount = frames.length; // all observed; "now" = last frame
-      _radarIndex = frames.length - 1;
+      _radarIndex = frames.length - 1; // show the latest frame immediately
+      // Forecast frames are bounds-dependent too — rebuild them for this view.
+      _forecastGrids = []; _forecastImages = []; _forecastTimes = [];
       _loading = false;
     });
+    // Pre-cache every frame BEFORE starting the loop so playback is smooth from
+    // the first pass (the latest frame above already shows live radar). Capped
+    // so a slow frame can't stall the animation indefinitely.
+    await _precacheRadar();
+    if (!mounted) return;
     if (_radarPlaying) _startAnim();
     // Auto-load the model forecast overlay to extend the timeline past now.
     Timer(const Duration(milliseconds: 800), () {
       if (mounted) _fetchForecast();
     });
+  }
+
+  Future<void> _precacheRadar() async {
+    if (!mounted) return;
+    await Future.wait([
+      for (final url in _radarImageUrls)
+        precacheImage(NetworkImage(url), context).catchError((_) {}),
+    ]).timeout(const Duration(seconds: 6), onTimeout: () => <void>[]);
   }
 
   // Animated GOES-East clean-IR from NASA GIBS: 10-min frames over ~2h. GIBS
@@ -1377,23 +1445,19 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
               // NOAA radar layer — only when the current frame is observed radar.
               // WMS layer; the time dimension is swapped per frame (ValueKey
               // forces a reload), and GeoServer snaps to the nearest real frame.
-              if (def.isRadar && _radarFrames.isNotEmpty && _isRadarFrame(_radarIndex))
-                Opacity(
-                  opacity: 0.78,
-                  child: TileLayer(
-                    key: ValueKey('radar-${_radarFrames[_radarIndex].template}'),
-                    wmsOptions: WMSTileLayerOptions(
-                      baseUrl:
-                          'https://opengeo.ncep.noaa.gov/geoserver/conus/wms?',
-                      layers: const ['conus_cref_qcd'],
-                      format: 'image/png',
-                      transparent: true,
-                      otherParameters: {
-                        'time': _radarFrames[_radarIndex].template,
-                      },
+              // Radar: pre-cached composited GetMap image for the current frame
+              // (only when the current frame is observed radar, not forecast).
+              // Swapping decoded images = smooth playback.
+              if (def.isRadar && _radarImageUrls.isNotEmpty &&
+                  _radarBounds != null && _isRadarFrame(_radarIndex))
+                OverlayImageLayer(
+                  overlayImages: [
+                    OverlayImage(
+                      bounds: _radarBounds!,
+                      imageProvider: NetworkImage(_radarImageUrls[_radarIndex]),
+                      opacity: 0.78,
                     ),
-                    userAgentPackageName: 'com.mattbettinger.tides',
-                  ),
+                  ],
                 ),
               // Clouds: animated GOES-East clean-IR satellite from NASA GIBS
               // (free, no key, 10-min frames). The frame's time is swapped per
