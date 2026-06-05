@@ -20,6 +20,10 @@ class Conditions {
   final String? windDirStr;
   final String? beaufortStr;
   final int pressureTrend; // +1 rising, -1 falling, 0 steady
+  // Observed water level minus the day's predicted tide height ("wind tide").
+  // Positive = water stacked above prediction, negative = drained below. Null
+  // when there's no live observation (future days / stations without a sensor).
+  final double? windTide;
 
   const Conditions({
     this.airTemp,
@@ -33,7 +37,37 @@ class Conditions {
     this.windDirStr,
     this.beaufortStr,
     this.pressureTrend = 0,
+    this.windTide,
   });
+
+  Conditions copyWith({
+    double? airTemp,
+    double? waterTemp,
+    double? windSpeed,
+    double? windDir,
+    double? windGust,
+    double? pressure,
+    double? waterLevel,
+    double? salinity,
+    String? windDirStr,
+    String? beaufortStr,
+    int? pressureTrend,
+    double? windTide,
+  }) =>
+      Conditions(
+        airTemp: airTemp ?? this.airTemp,
+        waterTemp: waterTemp ?? this.waterTemp,
+        windSpeed: windSpeed ?? this.windSpeed,
+        windDir: windDir ?? this.windDir,
+        windGust: windGust ?? this.windGust,
+        pressure: pressure ?? this.pressure,
+        waterLevel: waterLevel ?? this.waterLevel,
+        salinity: salinity ?? this.salinity,
+        windDirStr: windDirStr ?? this.windDirStr,
+        beaufortStr: beaufortStr ?? this.beaufortStr,
+        pressureTrend: pressureTrend ?? this.pressureTrend,
+        windTide: windTide ?? this.windTide,
+      );
 }
 
 class NwsPeriod {
@@ -103,11 +137,34 @@ class SolunarInfo {
   });
 }
 
+// A scored "go fishing" window for today, derived from tide movement +
+// solunar + dawn/dusk. Hours are decimal local time (e.g. 14.0 = 2 PM).
+class BiteWindow {
+  final double startH;
+  final double endH;
+  final String reason; // short tag, e.g. "Incoming + Major"
+
+  const BiteWindow({
+    required this.startH,
+    required this.endH,
+    required this.reason,
+  });
+}
+
 class FishingInfo {
   final int stars;
   final String label;
+  // Today only: the best 2–3 bite windows and a one-line movement summary
+  // (e.g. "Incoming — strongest 2–4 PM"). Empty/null for future days.
+  final List<BiteWindow> windows;
+  final String? movement;
 
-  const FishingInfo({required this.stars, required this.label});
+  const FishingInfo({
+    required this.stars,
+    required this.label,
+    this.windows = const [],
+    this.movement,
+  });
 }
 
 class WaveData {

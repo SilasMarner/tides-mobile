@@ -244,7 +244,8 @@ FishingInfo fishingRatingDay(List<TidePrediction> hilo, SolunarInfo sol) {
 }
 
 FishingInfo fishingRating(
-    List<TidePrediction> hilo, double? windMph, SolunarInfo sol) {
+    List<TidePrediction> hilo, double? windMph, SolunarInfo sol,
+    {int pressureTrend = 0, Map<int, double>? hourly}) {
   final now = DateTime.now();
   final nowH = now.hour + now.minute / 60;
   var score = 0;
@@ -281,9 +282,159 @@ FishingInfo fishingRating(
     score += 1;
   }
 
+  // Moving water: fish feed on current, not slack. Score the tide's rate of
+  // change now relative to the day's strongest movement (station-agnostic).
+  if (hourly != null && hourly.length > 2) {
+    final maxSlope = _maxAbsSlope(hourly);
+    if (maxSlope > 0.01) {
+      final ratio = tideSlope(hourly, nowH).abs() / maxSlope;
+      if (ratio > 0.66) {
+        score += 2;
+      } else if (ratio > 0.33) {
+        score += 1;
+      }
+    }
+  }
+
+  // Falling barometer = pre-front feeding bump.
+  if (pressureTrend < 0) score += 1;
+
   final clamped = min(score, 5);
   final label = {5: 'Excellent', 4: 'Very Good', 3: 'Good', 2: 'Fair'}[clamped] ?? 'Poor';
   return FishingInfo(stars: clamped, label: label);
+}
+
+// Observed water level minus the predicted tide height at `now`, interpolated
+// linearly between the two surrounding hourly predictions. Returns null when
+// either input is missing. Positive = water stacked above prediction.
+double? windTideResidual(
+    double? observed, Map<int, double> hourly, DateTime now) {
+  if (observed == null || hourly.isEmpty) return null;
+  final h = now.hour;
+  final frac = now.minute / 60.0;
+  final lo = hourly[h];
+  final hi = hourly[(h + 1) % 24] ?? lo;
+  if (lo == null) return null;
+  final predicted = lo + (hi! - lo) * frac;
+  return observed - predicted;
+}
+
+// Central-difference slope of the predicted tide curve at `atH` (ft per hour),
+// falling back to one-sided differences at the ends of the day.
+double tideSlope(Map<int, double> hourly, double atH) {
+  final h = atH.round().clamp(0, 23);
+  final b = hourly[h];
+  if (b == null) return 0;
+  final a = hourly[h - 1];
+  final c = hourly[h + 1];
+  if (a != null && c != null) return (c - a) / 2.0;
+  if (c != null) return c - b;
+  if (a != null) return b - a;
+  return 0;
+}
+
+double _maxAbsSlope(Map<int, double> hourly) {
+  var m = 0.0;
+  for (var h = 0; h < 24; h++) {
+    final s = tideSlope(hourly, h.toDouble()).abs();
+    if (s > m) m = s;
+  }
+  return m;
+}
+
+String _hourLabel(int h) {
+  final hh = h % 12 == 0 ? 12 : h % 12;
+  return '$hh ${h < 12 || h == 24 ? 'AM' : 'PM'}';
+}
+
+// Today's best 2–3 bite windows plus a one-line movement summary. Windows are
+// scored per-hour from tide movement + solunar proximity + dawn/dusk, then the
+// top non-overlapping peaks are returned. Pure function over already-fetched
+// data — no network.
+({String? movement, List<BiteWindow> windows}) computeBiteWindows(
+    Map<int, double> hourly, SolunarInfo sol, {DateTime? now}) {
+  if (hourly.length < 4) return (movement: null, windows: const []);
+  final maxSlope = _maxAbsSlope(hourly);
+
+  double solunarBoost(double h) {
+    var best = 0.0;
+    for (final m in [sol.major1, sol.major2]) {
+      final d = (h - m).abs();
+      final dist = d > 12 ? 24 - d : d;
+      if (dist < 1) {
+        best = max(best, 2.0);
+      } else if (dist < 2) {
+        best = max(best, 1.0);
+      }
+    }
+    for (final m in [sol.minor1, sol.minor2]) {
+      final d = (h - m).abs();
+      final dist = d > 12 ? 24 - d : d;
+      if (dist < 1) best = max(best, 0.5);
+    }
+    return best;
+  }
+
+  final scores = <int, double>{};
+  for (var h = 0; h < 24; h++) {
+    final move = maxSlope > 0.01
+        ? (tideSlope(hourly, h.toDouble()).abs() / maxSlope) * 2.0
+        : 0.0;
+    final sun = (h >= 5 && h < 9) || (h >= 16 && h < 20) ? 0.75 : 0.0;
+    scores[h] = move + solunarBoost(h.toDouble()) + sun;
+  }
+
+  // Greedily pick the top-scoring hours, keeping windows ≥3h apart.
+  final ranked = scores.keys.toList()
+    ..sort((a, b) => scores[b]!.compareTo(scores[a]!));
+  final centers = <int>[];
+  for (final h in ranked) {
+    if (scores[h]! < 1.5) break;
+    if (centers.every((c) => (c - h).abs() >= 3)) centers.add(h);
+    if (centers.length == 3) break;
+  }
+  centers.sort();
+
+  final windows = <BiteWindow>[];
+  for (final c in centers) {
+    final rising = tideSlope(hourly, c.toDouble()) >= 0;
+    final tide = maxSlope > 0.01 &&
+            tideSlope(hourly, c.toDouble()).abs() / maxSlope > 0.33
+        ? (rising ? 'Incoming' : 'Outgoing')
+        : null;
+    final sol2 = solunarBoost(c.toDouble()) >= 1.0 ? 'Major' : null;
+    final reason = [tide, sol2].whereType<String>().join(' + ');
+    windows.add(BiteWindow(
+      startH: (c - 1).toDouble().clamp(0, 23),
+      endH: (c + 1).toDouble().clamp(0, 23),
+      reason: reason.isEmpty ? 'Prime' : reason,
+    ));
+  }
+
+  // Movement summary anchored on the current hour.
+  String? movement;
+  if (maxSlope > 0.01) {
+    final n = (now ?? DateTime.now());
+    final nowH = n.hour + n.minute / 60;
+    final s = tideSlope(hourly, nowH);
+    final dir = s.abs() / maxSlope < 0.2
+        ? 'Slack'
+        : (s >= 0 ? 'Incoming' : 'Outgoing');
+    var peak = 0;
+    var peakV = 0.0;
+    for (var h = 0; h < 24; h++) {
+      final v = tideSlope(hourly, h.toDouble()).abs();
+      if (v > peakV) {
+        peakV = v;
+        peak = h;
+      }
+    }
+    movement = dir == 'Slack'
+        ? 'Slack water — strongest ${_hourLabel(peak)}–${_hourLabel((peak + 2) % 24)}'
+        : '$dir — strongest ${_hourLabel(peak)}–${_hourLabel((peak + 2) % 24)}';
+  }
+
+  return (movement: movement, windows: windows);
 }
 
 // ── API calls ──────────────────────────────────────────────────────────────────
@@ -824,9 +975,26 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
     }
   }
 
-  final fishing = isToday
-      ? fishingRating(hilo, conditions.windSpeed, solunar)
+  // Wind tide: observed water level vs. the predicted curve at this moment.
+  // Only meaningful today (live observation) and when both values exist.
+  if (isToday) {
+    final wt = windTideResidual(conditions.waterLevel, hourly, DateTime.now());
+    if (wt != null) conditions = conditions.copyWith(windTide: wt);
+  }
+
+  var fishing = isToday
+      ? fishingRating(hilo, conditions.windSpeed, solunar,
+          pressureTrend: conditions.pressureTrend, hourly: hourly)
       : fishingRatingDay(hilo, solunar);
+  if (isToday) {
+    final bite = computeBiteWindows(hourly, solunar);
+    fishing = FishingInfo(
+      stars: fishing.stars,
+      label: fishing.label,
+      windows: bite.windows,
+      movement: bite.movement,
+    );
+  }
 
   final result = TideData(
     stationId: id,

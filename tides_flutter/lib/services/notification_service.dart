@@ -1,4 +1,5 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import '../models/tide_data.dart';
@@ -108,6 +109,42 @@ class NotificationService {
         );
       }
     }
+
+    // Cold-front heads-up: falling barometer = fish often feed ahead of a
+    // front. Fired immediately on refresh (no background worker), deduped to
+    // once per station per day so repeated refreshes don't spam.
+    if (prefs.notifyPressureDrop &&
+        data.isToday &&
+        data.conditions.pressureTrend < 0) {
+      await _maybePressureAlert(stationId, stationName);
+    }
+  }
+
+  static Future<void> _maybePressureAlert(
+      String stationId, String stationName) async {
+    final sp = await SharedPreferences.getInstance();
+    final today = DateTime.now();
+    final key =
+        'pressAlert_${stationId}_${today.year}${today.month}${today.day}';
+    if (sp.getBool(key) == true) return;
+    await sp.setBool(key, true);
+    await _plugin.show(
+      _id(stationId, 'pressure', today),
+      '📉 Pressure Falling — $stationName',
+      'Barometer dropping, front approaching — fish may feed ahead of it.',
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'tides_alerts',
+          'Tide Alerts',
+          channelDescription: 'Tide, solunar, and fishing notifications',
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+        ),
+        iOS: DarwinNotificationDetails(),
+      ),
+      payload: stationId,
+    );
   }
 
   static Future<void> cancelForStation(String stationId) async {
