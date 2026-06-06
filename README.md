@@ -4,7 +4,7 @@ A free, open-source Flutter app for Android that shows real-time NOAA tide data,
 
 ## Download
 
-**Latest release: [v3.4.0 — Android Auto, night mode, Texas angler features](https://github.com/SilasMarner/tides-mobile/releases/tag/v3.4.0)** ([always-latest link](https://github.com/SilasMarner/tides-mobile/releases/latest)) — download `tides-3.4.0.apk` and tap to install.
+**Latest release: [v3.4.0 — Android Auto (with tide chart), night mode, smoother maps](https://github.com/SilasMarner/tides-mobile/releases/tag/v3.4.0)** ([always-latest link](https://github.com/SilasMarner/tides-mobile/releases/latest)) — download `tides-3.4.0.apk` and tap to install.
 
 To sideload: enable *Install unknown apps* for your file manager in Android Settings → Apps, download the APK, and tap to install.
 
@@ -79,11 +79,9 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
-### v3.4.0 (build 50, dev) — **Smoother clouds**
+### v3.4.0 (build 50) — **Richer Android Auto + smoother clouds**
+- **Android Auto station screen** — a rich pane with a rendered **tide-chart image** for today (curve + high/low dots + current-time line), the next high & low, live conditions (water temp, wind), and the fishing rating and sun/moon (computed on the phone and shared to the car). Since Android Auto can't run custom widgets, the chart is drawn to a bitmap on the phone and shown as an image — about as close to the phone view as the platform allows.
 - **Smooth cloud (satellite) playback** — the Clouds layer now uses the same technique as the rain radar: each GOES-East frame is fetched as one composited GIBS image over the visible area and pre-cached before the loop starts, so the satellite animation swaps pre-decoded frames instead of re-tiling per step. No more stop-and-go. The cloud loop also follows the map when you pan/zoom.
-
-### v3.4.0 (build 49, dev) — **Richer Android Auto screen**
-- **Android Auto station screen upgraded** from a plain tide list to a rich pane: a rendered **tide-chart image** for today (curve + high/low dots + current-time line), the next high & low, live conditions (water temp, wind), and the fishing rating and sun/moon (computed on the phone and shared to the car). Since Android Auto can't run custom widgets, the chart is drawn to a bitmap on the phone and shown as an image — about as close to the phone view as the platform allows.
 
 ### v3.4.0 (build 48) — **Android Auto + Night mode**
 - **Android Auto support** — OpenTides now appears on Android Auto car displays (same app, one install). Shows your favourite stations and the next high/low tides for any of them, fetched live from NOAA — glanceable and driver-safe. Built with Google's Car App Library; the car service stays dormant until you connect to a car, so it adds no phone-runtime cost and ~0.1 MB to the app.
