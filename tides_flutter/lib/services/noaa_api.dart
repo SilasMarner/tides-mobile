@@ -1025,10 +1025,24 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
 void _writeCarSummary(TideData d) {
   () async {
     try {
+      // Format bite windows like the detail screen ("2–4 PM" / "11 AM–1 PM").
+      String num(int h) => '${h % 12 == 0 ? 12 : h % 12}';
+      String ap(int h) => h < 12 ? 'AM' : 'PM';
+      String win(BiteWindow w) {
+        final s = w.startH.round() % 24;
+        final e = w.endH.round() % 24;
+        return ap(s) == ap(e)
+            ? '${num(s)}–${num(e)} ${ap(e)}'
+            : '${num(s)} ${ap(s)}–${num(e)} ${ap(e)}';
+      }
+
+      final best = d.fishing.windows.take(3).map(win).join(', ');
       final prefs = await SharedPreferences.getInstance();
       final json = jsonEncode({
         'stars': d.fishing.stars,
         'label': d.fishing.label,
+        'best': best,
+        'movement': d.fishing.movement ?? '',
         'sunrise': d.sun.sunrise,
         'sunset': d.sun.sunset,
         'moonPhase': d.moon.phase,

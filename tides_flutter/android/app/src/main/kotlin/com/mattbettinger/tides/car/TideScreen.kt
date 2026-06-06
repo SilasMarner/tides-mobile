@@ -35,6 +35,7 @@ class TideScreen(carContext: CarContext, private val station: CarStation) :
     private var conditions: CarConditions? = null
     private var summary: CarSummary? = null
     private var chart: Bitmap? = null
+    private var moon: Bitmap? = null
     private val main = Handler(Looper.getMainLooper())
 
     init { load() }
@@ -51,11 +52,14 @@ class TideScreen(carContext: CarContext, private val station: CarStation) :
                 val todayHilo = tides.filter { isToday(it.time) }
                 val bmp = if (hourly.isNotEmpty())
                     TideChart.render(hourly, todayHilo) else null
+                val moonBmp = if (sum?.moonPhase != null || sum?.moonPct != null)
+                    MoonRender.render(sum.moonPhase, sum.moonPct) else null
                 main.post {
                     hilo = tides
                     conditions = cond
                     summary = sum
                     chart = bmp
+                    moon = moonBmp
                     loading = false
                     invalidate()
                 }
@@ -115,14 +119,20 @@ class TideScreen(carContext: CarContext, private val station: CarStation) :
             .build()
     }
 
-    /** Builds up to four glanceable rows for the pane. */
+    /**
+     * Builds up to four rich rows for the pane:
+     *  1) Tides — next high & low.
+     *  2) Conditions — water temp, wind, water level.
+     *  3) Fishing — rating, best bite windows, tide movement.
+     *  4) Sun & Moon — a rendered moon-phase image + sun times.
+     */
     private fun buildRows(): List<Row> {
         val rows = ArrayList<Row>()
         val fmt = SimpleDateFormat("EEE h:mm a", Locale.US)
         val now = Date()
 
-        // If the chart couldn't render on this host (no level-7 image support),
-        // lead with a large chart image inside a row instead.
+        // If the chart couldn't render as the hero image on this host (no
+        // level-7 image support), lead with a large chart image in a row.
         if (chart != null && carContext.carAppApiLevel < 7) {
             val icon = CarIcon.Builder(IconCompat.createWithBitmap(chart!!)).build()
             rows.add(
@@ -133,26 +143,17 @@ class TideScreen(carContext: CarContext, private val station: CarStation) :
             )
         }
 
+        // 1) Tides — next high & low on one row.
         val nextHigh = hilo.firstOrNull { it.high && it.time.after(now) }
         val nextLow = hilo.firstOrNull { !it.high && it.time.after(now) }
-        nextHigh?.let {
-            rows.add(
-                Row.Builder()
-                    .setTitle("▲ High   ${fmt.format(it.time)}")
-                    .addText("%+.1f ft".format(it.heightFt))
-                    .build()
-            )
-        }
-        nextLow?.let {
-            rows.add(
-                Row.Builder()
-                    .setTitle("▼ Low   ${fmt.format(it.time)}")
-                    .addText("%+.1f ft".format(it.heightFt))
-                    .build()
-            )
+        if (nextHigh != null || nextLow != null) {
+            val r = Row.Builder().setTitle("Tides")
+            nextHigh?.let { r.addText("▲ High  ${fmt.format(it.time)}  ·  %+.1f ft".format(it.heightFt)) }
+            nextLow?.let { r.addText("▼ Low  ${fmt.format(it.time)}  ·  %+.1f ft".format(it.heightFt)) }
+            rows.add(r.build())
         }
 
-        // Conditions row (only the parts we actually have).
+        // 2) Conditions.
         conditions?.let { c ->
             val parts = ArrayList<String>()
             c.waterTempF?.let { parts.add("Water ${it.toInt()}°F") }
@@ -161,38 +162,57 @@ class TideScreen(carContext: CarContext, private val station: CarStation) :
                 parts.add("Wind $dir${c.windMph.toInt()} mph")
             }
             if (parts.isNotEmpty()) {
-                val wl = c.waterLevelFt?.let { "Water level %+.1f ft".format(it) } ?: "Live conditions"
-                rows.add(Row.Builder().setTitle(parts.joinToString("  ·  ")).addText(wl).build())
+                val r = Row.Builder().setTitle("Conditions").addText(parts.joinToString("  ·  "))
+                c.waterLevelFt?.let { r.addText("Water level %+.1f ft".format(it)) }
+                rows.add(r.build())
             }
         }
 
-        // Fishing + sun/moon (phone-computed, shown when cached).
+        // 3) Fishing — rating + best bite windows + movement (phone-computed).
         summary?.let { s ->
             val title = StringBuilder()
-            s.stars?.let { title.append("Fishing ").append(stars(it)) }
+            s.stars?.let { title.append(stars(it)) }
             s.fishingLabel?.let {
                 if (title.isNotEmpty()) title.append("  ·  ")
                 title.append(it)
             }
-            val sub = StringBuilder()
-            if (s.sunrise != null && s.sunset != null) sub.append("Sun ${s.sunrise}–${s.sunset}")
-            if (s.moonPhase != null) {
-                if (sub.isNotEmpty()) sub.append("  ·  ")
-                sub.append("Moon ${s.moonPhase}")
-                s.moonPct?.let { sub.append(" ${it}%") }
+            if (title.isNotEmpty()) {
+                val r = Row.Builder().setTitle("Fishing  $title")
+                s.bestTimes?.let { r.addText("Best: $it") }
+                s.movement?.let { r.addText(it) }
+                rows.add(r.build())
             }
-            if (title.isNotEmpty() || sub.isNotEmpty()) {
-                val row = Row.Builder()
-                    .setTitle(if (title.isNotEmpty()) title.toString() else "Sun & moon")
-                if (sub.isNotEmpty()) row.addText(sub.toString())
-                rows.add(row.build())
+        }
+
+        // 4) Sun & Moon — rendered moon-phase image + sun times.
+        summary?.let { s ->
+            if (s.moonPhase != null || s.sunrise != null) {
+                val moonText = StringBuilder()
+                s.moonPhase?.let { moonText.append(it) }
+                s.moonPct?.let {
+                    if (moonText.isNotEmpty()) moonText.append("  ·  ")
+                    moonText.append("$it% lit")
+                }
+                val r = Row.Builder()
+                    .setTitle(if (moonText.isNotEmpty()) moonText.toString() else "Sun & moon")
+                if (s.sunrise != null && s.sunset != null) {
+                    r.addText("Sun  ↑${s.sunrise}   ↓${s.sunset}")
+                }
+                moon?.let {
+                    r.setImage(
+                        CarIcon.Builder(IconCompat.createWithBitmap(it)).build(),
+                        Row.IMAGE_TYPE_LARGE,
+                    )
+                }
+                rows.add(r.build())
             }
         }
 
         if (rows.isEmpty()) {
             rows.add(Row.Builder().setTitle("No tide data available").build())
         }
-        return rows
+        // The Pane content limit is 4 rows; trim defensively.
+        return if (rows.size > 4) rows.subList(0, 4) else rows
     }
 
     private fun stars(n: Int): String {

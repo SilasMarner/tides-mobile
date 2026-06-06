@@ -29,6 +29,8 @@ data class CarConditions(
 data class CarSummary(
     val stars: Int?,
     val fishingLabel: String?,
+    val bestTimes: String?,
+    val movement: String?,
     val sunrise: String?,
     val sunset: String?,
     val moonPhase: String?,
@@ -89,6 +91,8 @@ object NoaaRepo {
             CarSummary(
                 stars = if (o.has("stars")) o.getInt("stars") else null,
                 fishingLabel = o.optString("label").ifEmpty { null },
+                bestTimes = o.optString("best").ifEmpty { null },
+                movement = o.optString("movement").ifEmpty { null },
                 sunrise = o.optString("sunrise").ifEmpty { null },
                 sunset = o.optString("sunset").ifEmpty { null },
                 moonPhase = o.optString("moonPhase").ifEmpty { null },
