@@ -170,9 +170,9 @@ class UserGuideScreen extends StatelessWidget {
       'Android Auto (in the car)',
       [
         'OpenTides also runs on Android Auto — it is the same app, so there is nothing extra to install. When your phone is connected to a compatible car display, OpenTides appears in the car’s app list.',
-        '• It shows your favourite stations (the ones you saved on the phone), and tapping one shows the next high and low tides — glanceable and driver-safe.',
-        '• Add the stations you want first on the phone; they then sync to the car automatically.',
-        'The car screen only runs while you are connected to a car, so it has no effect on the phone app’s battery or speed.',
+        '• Pick a favourite station and you get a glanceable, driver-safe view: a tide-chart image for today, the next high and low, live conditions (water temp and wind), and — when the phone has them — the fishing rating and sun/moon.',
+        '• Add the stations you want first on the phone; they sync to the car automatically, along with the fishing/sun/moon figures the phone computes.',
+        'Android Auto only allows simple, safety-approved layouts, so the car view can’t show the full interactive maps or charts from the phone — it’s a focused at-a-glance version. The car screen only runs while you are connected to a car, so it has no effect on the phone app’s battery or speed.',
       ],
     ),
     _Section(

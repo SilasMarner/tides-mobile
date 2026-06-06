@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/station.dart';
 import '../models/tide_data.dart';
 export '../models/tide_data.dart' show WaveData;
@@ -1013,7 +1015,28 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
     waves: waves,
   );
   _tideCache[cacheKey] = (data: result, fetchedAt: DateTime.now());
+  if (isToday) _writeCarSummary(result);
   return result;
+}
+
+/// Caches a compact per-station summary (fishing/sun/moon) to SharedPreferences
+/// so the Android Auto car module can show the phone-computed values without
+/// re-deriving the astronomy/solunar math in Kotlin. Fire-and-forget.
+void _writeCarSummary(TideData d) {
+  () async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final json = jsonEncode({
+        'stars': d.fishing.stars,
+        'label': d.fishing.label,
+        'sunrise': d.sun.sunrise,
+        'sunset': d.sun.sunset,
+        'moonPhase': d.moon.phase,
+        'moonPct': d.moon.pct,
+      });
+      await prefs.setString('car_${d.stationId}', json);
+    } catch (_) {/* best-effort */}
+  }();
 }
 
 Future<List<TidePrediction>> fetchWeekHilo(

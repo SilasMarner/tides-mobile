@@ -71,13 +71,16 @@ that point; the data follows the map as you pan and zoom.
 OpenTides runs on **Android Auto** head units as part of the same app — one install, no separate download. When the phone connects to a car, OpenTides appears in the car launcher and shows a glanceable, driver-safe view:
 
 - **Favourites list** — your saved stations, read straight from the phone app (no re-setup, no location permission needed).
-- **Tap a station → next high/low tides** — time and height for the upcoming tides, fetched live from NOAA, with a Refresh action.
+- **Station screen** — a rendered **tide-chart image** for today (curve, high/low dots, current-time line), the next high & low, live conditions (water temp, wind), and the phone-computed fishing rating and sun/moon when available. A Refresh action re-pulls live data.
 
-Built natively with Google's Car App Library (template UI). The car service is **dormant until you connect to a car**, so there's zero impact on the phone app and only ~0.1 MB added to the download.
+Android Auto only permits simple, safety-approved templates, so the car view can't project the phone's interactive maps or live charts — it's a focused at-a-glance version (the chart is drawn to an image since custom widgets can't run on the car display). Built natively with Google's Car App Library; the car service is **dormant until you connect to a car**, so there's zero impact on the phone app and only ~0.1 MB added to the download.
 
 ---
 
 ## Changelog
+
+### v3.4.0 (build 49, dev) — **Richer Android Auto screen**
+- **Android Auto station screen upgraded** from a plain tide list to a rich pane: a rendered **tide-chart image** for today (curve + high/low dots + current-time line), the next high & low, live conditions (water temp, wind), and the fishing rating and sun/moon (computed on the phone and shared to the car). Since Android Auto can't run custom widgets, the chart is drawn to a bitmap on the phone and shown as an image — about as close to the phone view as the platform allows.
 
 ### v3.4.0 (build 48) — **Android Auto + Night mode**
 - **Android Auto support** — OpenTides now appears on Android Auto car displays (same app, one install). Shows your favourite stations and the next high/low tides for any of them, fetched live from NOAA — glanceable and driver-safe. Built with Google's Car App Library; the car service stays dormant until you connect to a car, so it adds no phone-runtime cost and ~0.1 MB to the app.
