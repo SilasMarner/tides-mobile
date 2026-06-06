@@ -293,13 +293,27 @@ class _NavRow extends ConsumerWidget {
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 padding: EdgeInsets.zero,
               ),
+              // Empty selection allowed so TODAY shows unselected once you've
+              // advanced to another day — tapping it then registers and snaps
+              // back to the current day (otherwise the already-selected segment
+              // fires no event and nothing happens).
+              emptySelectionAllowed: true,
               segments: const [
                 ButtonSegment(value: false, label: Text('TODAY')),
                 ButtonSegment(value: true, label: Text('WEEK')),
               ],
-              selected: {showWeek},
-              onSelectionChanged: (s) =>
-                  ref.read(showWeekProvider.notifier).state = s.first,
+              selected: showWeek
+                  ? const {true}
+                  : (isToday ? const {false} : const <bool>{}),
+              onSelectionChanged: (s) {
+                if (s.isEmpty) return; // tapped an already-selected segment
+                final week = s.first;
+                ref.read(showWeekProvider.notifier).state = week;
+                // TODAY always returns to the current day.
+                if (!week) {
+                  ref.read(selectedDateProvider.notifier).state = todayOnly;
+                }
+              },
             ),
           ),
         ],
