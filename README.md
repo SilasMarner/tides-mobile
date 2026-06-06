@@ -4,7 +4,7 @@ A free, open-source Flutter app for Android that shows real-time NOAA tide data,
 
 ## Download
 
-**Latest release: [v3.4.0 — Wind-tide, smarter bite forecast & cold-front alerts](https://github.com/SilasMarner/tides-mobile/releases/tag/v3.4.0)** ([always-latest link](https://github.com/SilasMarner/tides-mobile/releases/latest)) — download `tides-3.4.0.apk` and tap to install.
+**Latest release: [v3.4.0 — Android Auto, night mode, Texas angler features](https://github.com/SilasMarner/tides-mobile/releases/tag/v3.4.0)** ([always-latest link](https://github.com/SilasMarner/tides-mobile/releases/latest)) — download `tides-3.4.0.apk` and tap to install.
 
 To sideload: enable *Install unknown apps* for your file manager in Android Settings → Apps, download the APK, and tap to install.
 
@@ -66,24 +66,23 @@ that point; the data follows the map as you pan and zoom.
 
 ---
 
-## Android Auto _(in testing — `dev` branch)_
+## Android Auto
 
-OpenTides runs on **Android Auto** head units as part of the same app — one install, no separate download. When the phone connects to a car, OpenTides appears in the car launcher under the weather category and shows a glanceable, driver-safe view:
+OpenTides runs on **Android Auto** head units as part of the same app — one install, no separate download. When the phone connects to a car, OpenTides appears in the car launcher and shows a glanceable, driver-safe view:
 
 - **Favourites list** — your saved stations, read straight from the phone app (no re-setup, no location permission needed).
 - **Tap a station → next high/low tides** — time and height for the upcoming tides, fetched live from NOAA, with a Refresh action.
 
-Built natively with Google's Car App Library (template UI). The car service is **dormant until you connect to a car**, so there's zero impact on the phone app and only ~0.1 MB added to the download. Currently on the `dev` branch pending on-device head-unit testing; sideload `tides-3.4-dev.apk` to try it.
+Built natively with Google's Car App Library (template UI). The car service is **dormant until you connect to a car**, so there's zero impact on the phone app and only ~0.1 MB added to the download.
 
 ---
 
 ## Changelog
 
-### v3.4.0 (build 48, dev) — **Night mode**
-- **High-contrast night mode** — a moon toggle in the home-screen top bar switches the app to a pure-black, brighter-accent theme that's easier to read in the dark with less glare. Saved across sessions and applied app-wide. The in-app User Guide now documents both night mode and Android Auto.
-
-### v3.4.0 (build 47, dev) — **Android Auto**
-- **Android Auto support** — OpenTides now appears on Android Auto car displays (same app, one install). Shows your favourite stations and the next high/low tides for any of them, fetched live from NOAA — glanceable and driver-safe. Built with Google's Car App Library (weather category); the car service stays dormant until you connect to a car, so it adds no phone-runtime cost and ~0.1 MB to the app. On `dev` pending on-device head-unit testing.
+### v3.4.0 (build 48) — **Android Auto + Night mode**
+- **Android Auto support** — OpenTides now appears on Android Auto car displays (same app, one install). Shows your favourite stations and the next high/low tides for any of them, fetched live from NOAA — glanceable and driver-safe. Built with Google's Car App Library; the car service stays dormant until you connect to a car, so it adds no phone-runtime cost and ~0.1 MB to the app.
+- **High-contrast night mode** — a moon toggle in the home-screen top bar switches the app to a pure-black, brighter-accent theme that's easier to read in the dark with less glare. Saved across sessions and applied app-wide.
+- **User Guide updated** — the in-app guide now documents both night mode and Android Auto.
 
 ### v3.4.0 (build 46) — **Texas angler features + User Guide**
 - **Wind-tide indicator** — the Conditions card now shows the live water level vs. the predicted tide ("Water 0.7 ft below predicted"). On the Texas coast this reveals wind setup: north winds drain the bays and back-lakes (below prediction), south winds stack water in (above). Today only, on stations with a live water-level sensor. Computed from data already fetched — no new API.
