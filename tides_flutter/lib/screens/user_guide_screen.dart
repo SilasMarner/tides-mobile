@@ -158,10 +158,29 @@ class UserGuideScreen extends StatelessWidget {
       ],
     ),
     _Section(
+      Icons.nightlight_round,
+      'Night mode',
+      [
+        'Tap the moon icon in the top bar of the home screen to switch to night mode. It swaps the navy background for pure black and brightens the text and cyan accents, so the screen is easier to read in the dark — handy on the water before dawn or after sunset, with less glare and more contrast.',
+        'Your choice is remembered and applies across the whole app until you tap the moon again.',
+      ],
+    ),
+    _Section(
+      Icons.directions_car,
+      'Android Auto (in the car)',
+      [
+        'OpenTides also runs on Android Auto — it is the same app, so there is nothing extra to install. When your phone is connected to a compatible car display, OpenTides appears in the car’s app list.',
+        '• It shows your favourite stations (the ones you saved on the phone), and tapping one shows the next high and low tides — glanceable and driver-safe.',
+        '• Add the stations you want first on the phone; they then sync to the car automatically.',
+        'The car screen only runs while you are connected to a car, so it has no effect on the phone app’s battery or speed.',
+      ],
+    ),
+    _Section(
       Icons.tune,
       'Tips',
       [
         '• Switch between Standard (°F, mph, ft) and Metric in Settings.',
+        '• Tap the moon icon on the home screen for a high-contrast night mode.',
         '• Tap the star on a station to save it as a favorite; the home screen also finds the nearest stations by GPS.',
         '• “N/A” simply means that station has no sensor for that reading — tides and forecast still work.',
       ],

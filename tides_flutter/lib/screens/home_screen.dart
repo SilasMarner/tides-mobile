@@ -8,6 +8,7 @@ import '../providers/detail_provider.dart';
 import '../services/location_service.dart';
 import '../services/noaa_api.dart';
 import '../providers/capabilities_provider.dart';
+import '../providers/theme_provider.dart';
 import '../widgets/wave_header.dart';
 import '../widgets/station_tile.dart';
 import '../theme.dart';
@@ -150,21 +151,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final showNearby = _nearbyStations != null && !showSearch;
     final showFavs = favorites.isNotEmpty && !showSearch && !showNearby;
 
+    final night = ref.watch(nightModeProvider);
+    final accent = accentColor(night);
+
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kNavyLight,
+        backgroundColor: appBarColor(night),
         automaticallyImplyLeading: false,
-        title: const Text('~ OpenTides',
-            style: TextStyle(color: kCyan, fontWeight: FontWeight.bold)),
+        title: Text('~ OpenTides',
+            style: TextStyle(color: accent, fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
-            icon: const Icon(Icons.info_outline, color: kCyan),
+            icon: Icon(night ? Icons.nightlight_round : Icons.nightlight_outlined,
+                color: accent),
+            tooltip: night ? 'Night mode: on' : 'Night mode: off',
+            onPressed: () => ref.read(nightModeProvider.notifier).toggle(),
+          ),
+          IconButton(
+            icon: Icon(Icons.info_outline, color: accent),
             tooltip: 'About',
             onPressed: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const AboutScreen())),
           ),
           IconButton(
-            icon: const Icon(Icons.settings, color: kCyan),
+            icon: Icon(Icons.settings, color: accent),
             tooltip: 'Settings',
             onPressed: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const SettingsScreen())),

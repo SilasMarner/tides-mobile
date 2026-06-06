@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'theme.dart';
+import 'providers/theme_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/notification_service.dart';
 
@@ -10,14 +11,17 @@ void main() async {
   runApp(const ProviderScope(child: TidesApp()));
 }
 
-class TidesApp extends StatelessWidget {
+class TidesApp extends ConsumerWidget {
   const TidesApp({super.key});
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-        title: 'OpenTides',
-        theme: buildTheme(),
-        home: const HomeScreen(),
-        debugShowCheckedModeBanner: false,
-      );
+  Widget build(BuildContext context, WidgetRef ref) {
+    final night = ref.watch(nightModeProvider);
+    return MaterialApp(
+      title: 'OpenTides',
+      theme: buildTheme(night: night),
+      home: const HomeScreen(),
+      debugShowCheckedModeBanner: false,
+    );
+  }
 }

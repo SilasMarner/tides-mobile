@@ -52,11 +52,13 @@ that point; the data follows the map as you pan and zoom.
 |----------------------------------------------------------|
 | ![Sargassum Map](screenshots/sargassum_map.png) |
 
-### Units
+### Units & Night mode
 
 | Standard / Metric toggle |
 |--------------------------|
 | ![Units](screenshots/settings_units.png) |
+
+**Night mode** — tap the moon icon in the top bar of the home screen for a high-contrast night theme: the navy background becomes pure black and the text and cyan accents brighten, so the screen is easier to read in the dark (before dawn or after sunset) with less glare. The choice is saved and applies across the whole app.
 
 | Salinity Map (NOAA NGOFS2 forecast loop) |
 |------------------------------------------|
@@ -76,6 +78,9 @@ Built natively with Google's Car App Library (template UI). The car service is *
 ---
 
 ## Changelog
+
+### v3.4.0 (build 48, dev) — **Night mode**
+- **High-contrast night mode** — a moon toggle in the home-screen top bar switches the app to a pure-black, brighter-accent theme that's easier to read in the dark with less glare. Saved across sessions and applied app-wide. The in-app User Guide now documents both night mode and Android Auto.
 
 ### v3.4.0 (build 47, dev) — **Android Auto**
 - **Android Auto support** — OpenTides now appears on Android Auto car displays (same app, one install). Shows your favourite stations and the next high/low tides for any of them, fetched live from NOAA — glanceable and driver-safe. Built with Google's Car App Library (weather category); the car service stays dormant until you connect to a car, so it adds no phone-runtime cost and ~0.1 MB to the app. On `dev` pending on-device head-unit testing.
