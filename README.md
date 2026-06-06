@@ -79,7 +79,7 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
-### v3.4.0 (build 52, dev) — **Fuller Android Auto screen**
+### v3.4.0 (build 52) — **Fuller Android Auto screen**
 - **More on the car screen** — the Android Auto station view now also shows the **best bite times** and the tide-movement line, a rendered **moon-phase picture**, and sun times, alongside the existing tide-chart image, next high/low, and live conditions. The fishing/sun/moon figures are computed on the phone and shared to the car; the moon disc is drawn from the phase + percent illuminated.
 
 ### v3.4.0 (build 51) — **TODAY button fix**
