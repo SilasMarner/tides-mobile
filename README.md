@@ -64,7 +64,21 @@ that point; the data follows the map as you pan and zoom.
 
 ---
 
+## Android Auto _(in testing — `dev` branch)_
+
+OpenTides runs on **Android Auto** head units as part of the same app — one install, no separate download. When the phone connects to a car, OpenTides appears in the car launcher under the weather category and shows a glanceable, driver-safe view:
+
+- **Favourites list** — your saved stations, read straight from the phone app (no re-setup, no location permission needed).
+- **Tap a station → next high/low tides** — time and height for the upcoming tides, fetched live from NOAA, with a Refresh action.
+
+Built natively with Google's Car App Library (template UI). The car service is **dormant until you connect to a car**, so there's zero impact on the phone app and only ~0.1 MB added to the download. Currently on the `dev` branch pending on-device head-unit testing; sideload `tides-3.4-dev.apk` to try it.
+
+---
+
 ## Changelog
+
+### v3.4.0 (build 47, dev) — **Android Auto**
+- **Android Auto support** — OpenTides now appears on Android Auto car displays (same app, one install). Shows your favourite stations and the next high/low tides for any of them, fetched live from NOAA — glanceable and driver-safe. Built with Google's Car App Library (weather category); the car service stays dormant until you connect to a car, so it adds no phone-runtime cost and ~0.1 MB to the app. On `dev` pending on-device head-unit testing.
 
 ### v3.4.0 (build 46) — **Texas angler features + User Guide**
 - **Wind-tide indicator** — the Conditions card now shows the live water level vs. the predicted tide ("Water 0.7 ft below predicted"). On the Texas coast this reveals wind setup: north winds drain the bays and back-lakes (below prediction), south winds stack water in (above). Today only, on stations with a live water-level sensor. Computed from data already fetched — no new API.
