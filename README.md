@@ -79,6 +79,9 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.0 (build 50, dev) — **Smoother clouds**
+- **Smooth cloud (satellite) playback** — the Clouds layer now uses the same technique as the rain radar: each GOES-East frame is fetched as one composited GIBS image over the visible area and pre-cached before the loop starts, so the satellite animation swaps pre-decoded frames instead of re-tiling per step. No more stop-and-go. The cloud loop also follows the map when you pan/zoom.
+
 ### v3.4.0 (build 49, dev) — **Richer Android Auto screen**
 - **Android Auto station screen upgraded** from a plain tide list to a rich pane: a rendered **tide-chart image** for today (curve + high/low dots + current-time line), the next high & low, live conditions (water temp, wind), and the fishing rating and sun/moon (computed on the phone and shared to the car). Since Android Auto can't run custom widgets, the chart is drawn to a bitmap on the phone and shown as an image — about as close to the phone view as the platform allows.
 

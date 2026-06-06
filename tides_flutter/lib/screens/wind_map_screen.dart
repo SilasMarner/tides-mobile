@@ -897,15 +897,15 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   void _onPositionChanged(MapCamera camera, bool hasGesture) {
     if (!hasGesture) return;
     final cur = _kLayers[_currentLayer]!;
-    // Satellite (GIBS) is a tile layer — it self-loads on pan/zoom.
-    if (cur.isSatellite) return;
     _moveDebounce?.cancel();
     _moveDebounce = Timer(const Duration(milliseconds: 450), () {
       if (!mounted) return;
-      // Radar uses pre-fetched overlay images, so rebuild them for the new
-      // view (data follows the map, like the grid layers).
+      // Radar and clouds use pre-fetched overlay images, so rebuild them for
+      // the new view (data follows the map, like the grid layers).
       if (cur.isRadar) {
         _fetchRadar();
+      } else if (cur.isSatellite) {
+        _fetchSatellite();
       } else {
         _fetchGrid(silent: true);
       }
@@ -1141,7 +1141,14 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   // Animated GOES-East clean-IR from NASA GIBS: 10-min frames over ~2h. GIBS
   // runs ~25-30 min behind real time, so we floor to the 10-min grid and start
   // ~30 min back to ensure every frame exists. Reuses the radar timeline.
-  void _fetchSatellite() {
+  //
+  // Like the radar, each frame is fetched as one composited GIBS WMS image
+  // over the visible area (+ margin) and pre-cached, so playback swaps
+  // pre-decoded images instead of re-tiling GIBS every frame (which made the
+  // cloud loop stutter). The image is an opaque IR greyscale (dark = warm/
+  // clear, white = cold/cloud), screen-blended over the dark basemap so clear
+  // sky reads through and cloud/storm tops glow.
+  Future<void> _fetchSatellite() async {
     final now = DateTime.now().toUtc();
     var latest = DateTime.utc(
         now.year, now.month, now.day, now.hour, (now.minute ~/ 10) * 10);
@@ -1152,13 +1159,44 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
       final iso = '${t.toIso8601String().split('.').first}Z';
       frames.add(_RadarFrame(t.millisecondsSinceEpoch ~/ 1000, iso, false));
     }
+
+    final b = _mapController.camera.visibleBounds;
+    final latSpan = b.north - b.south;
+    final lonSpan = b.east - b.west;
+    const margin = 0.25;
+    final south = b.south - latSpan * margin;
+    final north = b.north + latSpan * margin;
+    final west = b.west - lonSpan * margin;
+    final east = b.east + lonSpan * margin;
+    final bounds = LatLngBounds(LatLng(south, west), LatLng(north, east));
+
+    final (minx, miny) = _toMercator(south, west);
+    final (maxx, maxy) = _toMercator(north, east);
+    const w = 1024;
+    final h = (((maxy - miny) / (maxx - minx)) * w).round().clamp(256, 1024);
+
+    String urlFor(_RadarFrame f) =>
+        'https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi'
+        '?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap'
+        '&LAYERS=GOES-East_ABI_Band13_Clean_Infrared&CRS=EPSG:3857'
+        '&BBOX=$minx,$miny,$maxx,$maxy'
+        '&WIDTH=$w&HEIGHT=$h'
+        '&FORMAT=image/png&TRANSPARENT=true'
+        '&TIME=${Uri.encodeComponent(f.template)}';
+
+    final urls = [for (final f in frames) urlFor(f)];
+
     if (!mounted) return;
     setState(() {
       _radarFrames = frames;
+      _radarImageUrls = urls;
+      _radarBounds = bounds;
       _radarPastCount = frames.length; // all observed; "NOW" = latest frame
       _radarIndex = frames.length - 1;
       _loading = false;
     });
+    await _precacheRadar();
+    if (!mounted) return;
     if (_radarPlaying) _startAnim();
   }
 
@@ -1460,22 +1498,21 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                   ],
                 ),
               // Clouds: animated GOES-East clean-IR satellite from NASA GIBS
-              // (free, no key, 10-min frames). The frame's time is swapped per
-              // step (ValueKey forces reload). Screen-blended over the dark
-              // basemap so clear sky reads as transparent and cloud/storm tops
-              // glow. WMTS REST tiles are {z}/{y}/{x}; max native zoom 6.
-              if (def.isSatellite && _radarFrames.isNotEmpty)
+              // (free, no key, 10-min frames). Each frame is a pre-cached
+              // composited GIBS WMS image (smooth playback, like the radar),
+              // screen-blended over the dark basemap so clear sky reads through
+              // and cloud/storm tops glow.
+              if (def.isSatellite && _radarImageUrls.isNotEmpty &&
+                  _radarBounds != null && _isRadarFrame(_radarIndex))
                 _BlendMask(
                   blendMode: BlendMode.screen,
-                  child: TileLayer(
-                    key: ValueKey('goes-${_radarFrames[_radarIndex].template}'),
-                    urlTemplate:
-                        'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/'
-                        'GOES-East_ABI_Band13_Clean_Infrared/default/'
-                        '${_radarFrames[_radarIndex].template}/'
-                        'GoogleMapsCompatible_Level6/{z}/{y}/{x}.png',
-                    maxNativeZoom: 6,
-                    userAgentPackageName: 'com.mattbettinger.tides',
+                  child: OverlayImageLayer(
+                    overlayImages: [
+                      OverlayImage(
+                        bounds: _radarBounds!,
+                        imageProvider: NetworkImage(_radarImageUrls[_radarIndex]),
+                      ),
+                    ],
                   ),
                 ),
               // Coastline + place labels drawn ON TOP of the satellite so the
