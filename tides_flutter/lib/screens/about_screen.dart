@@ -82,6 +82,27 @@ class AboutScreen extends StatelessWidget {
             const SizedBox(height: 6),
             const Text('github.com/SilasMarner/tides-mobile',
                 style: TextStyle(color: kCyan, fontSize: 12)),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.email_outlined, size: 18),
+                label: const Text('Email the author'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: kCyan,
+                  side: const BorderSide(color: kCyan),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onPressed: () => launchUrl(
+                  Uri(
+                    scheme: 'mailto',
+                    path: 'tides-mobile.human695@passmail.com',
+                    query: 'subject=OpenTides feedback',
+                  ),
+                  mode: LaunchMode.externalApplication,
+                ),
+              ),
+            ),
             const Divider(color: Colors.white12, height: 32),
 
             // Legal
