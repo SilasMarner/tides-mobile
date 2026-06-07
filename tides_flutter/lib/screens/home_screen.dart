@@ -23,7 +23,8 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with WidgetsBindingObserver {
   final _ctrl = TextEditingController();
   bool _locating = false;
   String? _locMsg;
@@ -32,6 +33,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkForUpdate();
       // Warm the cache for favorites as soon as they load from disk.
@@ -39,6 +41,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         if (favorites.isNotEmpty) schedulePrefetch(favorites);
       }, fireImmediately: true);
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Coming back to the foreground: refresh today's (live) conditions for
+    // favorites in the background so a long-backgrounded session isn't stale.
+    if (state == AppLifecycleState.resumed) {
+      final favorites = ref.read(favoritesProvider);
+      if (favorites.isNotEmpty) schedulePrefetch(favorites);
+    }
   }
 
   Future<void> _checkForUpdate() async {
@@ -86,12 +105,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
   Future<void> _locateMe() async {
     setState(() { _locating = true; _locMsg = null; _nearbyStations = null; });
     final loc = await getLocation();
@@ -134,6 +147,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final now = DateTime.now();
     ref.read(selectedDateProvider.notifier).state =
         DateTime(now.year, now.month, now.day);
+    // Warm the days around today for this station (covers non-favorites) so
+    // scrubbing forward/back in the detail screen is instant.
+    schedulePrefetch([s]);
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => DetailScreen(station: s)),

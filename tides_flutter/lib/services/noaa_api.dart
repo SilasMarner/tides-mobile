@@ -10,33 +10,269 @@ export '../models/tide_data.dart' show WaveData;
 final _dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 12)));
 final _dateFmt = DateFormat('yyyyMMdd');
 
-// ── In-memory TTL cache ───────────────────────────────────────────────────────
-const _cacheTtl = Duration(minutes: 30);
+// ── Two-tier TTL cache (in-memory + disk) ──────────────────────────────────────
+// Today's entry blends in live observations, so it expires quickly; every other
+// day is pure (static) tide predictions + that day's forecast and stays valid
+// for the rest of the day. Tide predictions are astronomical and never change,
+// so each computed day is also mirrored to SharedPreferences and rehydrated on
+// the next cold start (see [hydrateCacheFromDisk]) — that way reopening the app
+// after Android has evicted the process doesn't refetch every day you scrub to.
+const _cacheTtl = Duration(minutes: 30);          // today (live conditions)
+const _staticTtl = Duration(hours: 12);           // other days (predictions)
 final _tideCache = <String, ({TideData data, DateTime fetchedAt})>{};
 final _weekCache = <String, ({List<TidePrediction> data, DateTime fetchedAt})>{};
+
+const _tideDiskPrefix = 'tcache_';
+const _weekDiskPrefix = 'wcache_';
 
 String _tideCacheKey(String id, DateTime date) => '$id-${_dateFmt.format(date)}';
 String _weekCacheKey(String id, DateTime s, DateTime e) =>
     '$id-week-${_dateFmt.format(s)}-${_dateFmt.format(e)}';
 
-/// Warms the cache for [stations] across a 10-day window on startup.
-/// Prefetches 2 days back + today + 7 days ahead so forward/back navigation
-/// is instant. Today uses a 30-min TTL (live conditions change frequently);
-/// all other dates use a 6-hour TTL (tide predictions are static intra-day).
-void schedulePrefetch(List<Station> stations) {
+DateTime _todayOnly() {
   final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
+  return DateTime(now.year, now.month, now.day);
+}
+
+Duration _ttlFor(DateTime dateOnly) =>
+    dateOnly == _todayOnly() ? _cacheTtl : _staticTtl;
+
+/// Whether a cached [TideData] may still be served. Beyond the TTL check this
+/// rejects an entry whose today-ness has flipped (the app sat open across
+/// midnight, or a stale "today" was rehydrated from disk) — those carry live
+/// conditions that would otherwise be shown for the wrong day.
+bool _tideFresh(TideData d, DateTime fetchedAt) {
+  if (d.isToday != (d.targetDate == _todayOnly())) return false;
+  return DateTime.now().difference(fetchedAt) < _ttlFor(d.targetDate);
+}
+
+/// Warms the cache for [stations] across a 10-day window. Prefetches 2 days
+/// back + today + 7 days ahead so forward/back navigation is instant. Skips
+/// days that are already cached and fresh (in memory or rehydrated from disk).
+void schedulePrefetch(List<Station> stations) {
+  final today = _todayOnly();
   // Offsets: -2, -1, 0 (today), +1 … +7
   for (var offset = -2; offset <= 7; offset++) {
     final date = today.add(Duration(days: offset));
-    final ttl = offset == 0 ? _cacheTtl : const Duration(hours: 6);
     for (final station in stations) {
-      final key = _tideCacheKey(station.id, date);
-      final cached = _tideCache[key];
-      if (cached != null && now.difference(cached.fetchedAt) < ttl) continue;
+      final cached = _tideCache[_tideCacheKey(station.id, date)];
+      if (cached != null && _tideFresh(cached.data, cached.fetchedAt)) continue;
       fetchAllData(station, targetDate: date).ignore();
     }
   }
+}
+
+/// Loads previously-persisted station-days back into the in-memory cache on
+/// startup so a cold launch can serve them without any network call. Drops
+/// entries that are too old, for days we no longer navigate to, or whose
+/// today-ness has since flipped. Best-effort: any failure just leaves the
+/// cache cold. Call once, before the first screen reads tide data.
+Future<void> hydrateCacheFromDisk() async {
+  try {
+    final sp = await SharedPreferences.getInstance();
+    final now = DateTime.now();
+    final today = _todayOnly();
+    final cutoff = today.subtract(const Duration(days: 2)); // matches prefetch window
+    for (final k in sp.getKeys().toList()) {
+      try {
+        if (k.startsWith(_tideDiskPrefix)) {
+          final raw = sp.getString(k);
+          if (raw == null) continue;
+          final j = jsonDecode(raw) as Map<String, dynamic>;
+          final fetchedAt = DateTime.fromMillisecondsSinceEpoch(j['f'] as int);
+          final data = _tideFromJson(j['d'] as Map<String, dynamic>);
+          final stale = data.targetDate.isBefore(cutoff) ||
+              now.difference(fetchedAt) > const Duration(days: 7) ||
+              data.isToday != (data.targetDate == today);
+          if (stale) {
+            await sp.remove(k);
+            continue;
+          }
+          _tideCache[k.substring(_tideDiskPrefix.length)] =
+              (data: data, fetchedAt: fetchedAt);
+        } else if (k.startsWith(_weekDiskPrefix)) {
+          final raw = sp.getString(k);
+          if (raw == null) continue;
+          final j = jsonDecode(raw) as Map<String, dynamic>;
+          final fetchedAt = DateTime.fromMillisecondsSinceEpoch(j['f'] as int);
+          if (now.difference(fetchedAt) > const Duration(days: 7)) {
+            await sp.remove(k);
+            continue;
+          }
+          final list = (j['d'] as List)
+              .map((e) => _predFromJson(e as Map<String, dynamic>))
+              .toList();
+          _weekCache[k.substring(_weekDiskPrefix.length)] =
+              (data: list, fetchedAt: fetchedAt);
+        }
+      } catch (_) {
+        await sp.remove(k); // corrupt/unreadable entry
+      }
+    }
+  } catch (_) {/* best-effort — cache stays cold */}
+}
+
+// Mirror a freshly-computed entry to disk (fire-and-forget). Wraps the payload
+// with its fetch timestamp so TTLs survive a restart.
+void _persistTide(String key, TideData data, DateTime fetchedAt) {
+  () async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      await sp.setString(
+          '$_tideDiskPrefix$key',
+          jsonEncode({'f': fetchedAt.millisecondsSinceEpoch, 'd': _tideToJson(data)}));
+    } catch (_) {/* best-effort */}
+  }();
+}
+
+void _persistWeek(String key, List<TidePrediction> data, DateTime fetchedAt) {
+  () async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      await sp.setString(
+          '$_weekDiskPrefix$key',
+          jsonEncode({
+            'f': fetchedAt.millisecondsSinceEpoch,
+            'd': data.map(_predToJson).toList(),
+          }));
+    } catch (_) {/* best-effort */}
+  }();
+}
+
+// ── TideData ⇄ JSON (for the disk cache) ───────────────────────────────────────
+// Compact keys keep the persisted blobs small. Doubles round-trip through num.
+
+double? _d(dynamic v) => (v as num?)?.toDouble();
+
+Map<String, dynamic> _predToJson(TidePrediction p) => {
+      't': p.time.millisecondsSinceEpoch,
+      'h': p.height,
+      if (p.type != null) 'y': p.type,
+    };
+TidePrediction _predFromJson(Map<String, dynamic> j) => TidePrediction(
+      time: DateTime.fromMillisecondsSinceEpoch(j['t'] as int),
+      height: (j['h'] as num).toDouble(),
+      type: j['y'] as String?,
+    );
+
+Map<String, dynamic> _condToJson(Conditions c) => {
+      'at': c.airTemp, 'wt': c.waterTemp, 'ws': c.windSpeed, 'wd': c.windDir,
+      'wg': c.windGust, 'pr': c.pressure, 'wl': c.waterLevel, 'sa': c.salinity,
+      'wds': c.windDirStr, 'bs': c.beaufortStr, 'pt': c.pressureTrend,
+      'wti': c.windTide,
+    };
+Conditions _condFromJson(Map<String, dynamic> j) => Conditions(
+      airTemp: _d(j['at']), waterTemp: _d(j['wt']), windSpeed: _d(j['ws']),
+      windDir: _d(j['wd']), windGust: _d(j['wg']), pressure: _d(j['pr']),
+      waterLevel: _d(j['wl']), salinity: _d(j['sa']),
+      windDirStr: j['wds'] as String?, beaufortStr: j['bs'] as String?,
+      pressureTrend: (j['pt'] as num?)?.toInt() ?? 0, windTide: _d(j['wti']),
+    );
+
+Map<String, dynamic>? _nwsToJson(NwsForecast? n) => n == null
+    ? null
+    : {
+        'c': n.condition, 't': n.temp, 'r': n.rainPct, 'ws': n.windSpeed,
+        'wd': n.windDir,
+        'p': n.periods
+            .map((p) => {
+                  'n': p.name, 's': p.shortForecast, 'd': p.detail, 't': p.temp,
+                })
+            .toList(),
+      };
+NwsForecast? _nwsFromJson(Map<String, dynamic>? j) => j == null
+    ? null
+    : NwsForecast(
+        condition: j['c'] as String, temp: (j['t'] as num).toInt(),
+        rainPct: (j['r'] as num).toInt(), windSpeed: j['ws'] as String,
+        windDir: j['wd'] as String,
+        periods: ((j['p'] as List?) ?? [])
+            .map((e) => e as Map<String, dynamic>)
+            .map((m) => NwsPeriod(
+                  name: m['n'] as String, shortForecast: m['s'] as String,
+                  detail: m['d'] as String, temp: (m['t'] as num).toInt(),
+                ))
+            .toList(),
+      );
+
+Map<String, dynamic>? _waveToJson(WaveData? w) => w == null
+    ? null
+    : {
+        'wh': w.waveHeight, 'dp': w.domPeriod, 'wd': w.waveDir,
+        'sh': w.swellHeight, 'sp': w.swellPeriod, 'sd': w.swellDir,
+        'wwh': w.windWaveHeight, 'wwp': w.windWavePeriod, 'src': w.source,
+      };
+WaveData? _waveFromJson(Map<String, dynamic>? j) => j == null
+    ? null
+    : WaveData(
+        waveHeight: (j['wh'] as num).toDouble(),
+        domPeriod: (j['dp'] as num).toDouble(),
+        waveDir: j['wd'] as String?, swellHeight: _d(j['sh']),
+        swellPeriod: _d(j['sp']), swellDir: j['sd'] as String?,
+        windWaveHeight: _d(j['wwh']), windWavePeriod: _d(j['wwp']),
+        source: j['src'] as String,
+      );
+
+Map<String, dynamic> _tideToJson(TideData d) => {
+      'id': d.stationId, 'lat': d.lat, 'lon': d.lon,
+      'date': d.targetDate.millisecondsSinceEpoch, 'today': d.isToday,
+      'hr': {for (final e in d.hourly.entries) '${e.key}': e.value},
+      'hl': d.hilo.map(_predToJson).toList(),
+      'cond': _condToJson(d.conditions),
+      'nws': _nwsToJson(d.nws),
+      'sun': {'sr': d.sun.sunrise, 'ss': d.sun.sunset, 'n': d.sun.noon, 'g': d.sun.golden},
+      'moon': {'p': d.moon.phase, 'pct': d.moon.pct},
+      'sol': {'M1': d.solunar.major1, 'M2': d.solunar.major2,
+              'm1': d.solunar.minor1, 'm2': d.solunar.minor2},
+      'fish': {
+        's': d.fishing.stars, 'l': d.fishing.label, 'mv': d.fishing.movement,
+        'w': d.fishing.windows
+            .map((w) => {'s': w.startH, 'e': w.endH, 'r': w.reason})
+            .toList(),
+      },
+      'wave': _waveToJson(d.waves),
+    };
+
+TideData _tideFromJson(Map<String, dynamic> j) {
+  final sun = j['sun'] as Map<String, dynamic>;
+  final moon = j['moon'] as Map<String, dynamic>;
+  final sol = j['sol'] as Map<String, dynamic>;
+  final fish = j['fish'] as Map<String, dynamic>;
+  return TideData(
+    stationId: j['id'] as String,
+    lat: (j['lat'] as num).toDouble(),
+    lon: (j['lon'] as num).toDouble(),
+    targetDate: DateTime.fromMillisecondsSinceEpoch(j['date'] as int),
+    isToday: j['today'] as bool,
+    hourly: (j['hr'] as Map<String, dynamic>)
+        .map((k, v) => MapEntry(int.parse(k), (v as num).toDouble())),
+    hilo: (j['hl'] as List)
+        .map((e) => _predFromJson(e as Map<String, dynamic>))
+        .toList(),
+    conditions: _condFromJson(j['cond'] as Map<String, dynamic>),
+    nws: _nwsFromJson(j['nws'] as Map<String, dynamic>?),
+    sun: SunInfo(
+        sunrise: sun['sr'] as String, sunset: sun['ss'] as String,
+        noon: sun['n'] as String, golden: sun['g'] as String),
+    moon: MoonInfo(phase: moon['p'] as String, pct: (moon['pct'] as num).toInt()),
+    solunar: SolunarInfo(
+        major1: (sol['M1'] as num).toDouble(), major2: (sol['M2'] as num).toDouble(),
+        minor1: (sol['m1'] as num).toDouble(), minor2: (sol['m2'] as num).toDouble()),
+    fishing: FishingInfo(
+      stars: (fish['s'] as num).toInt(),
+      label: fish['l'] as String,
+      movement: fish['mv'] as String?,
+      windows: ((fish['w'] as List?) ?? [])
+          .map((e) => e as Map<String, dynamic>)
+          .map((m) => BiteWindow(
+                startH: (m['s'] as num).toDouble(),
+                endH: (m['e'] as num).toDouble(),
+                reason: m['r'] as String,
+              ))
+          .toList(),
+    ),
+    waves: _waveFromJson(j['wave'] as Map<String, dynamic>?),
+  );
 }
 
 // ISO date (yyyy-MM-dd) for Open-Meteo start_date/end_date params.
@@ -896,7 +1132,7 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
   final dateOnly = DateTime(date.year, date.month, date.day);
   final cacheKey = _tideCacheKey(station.id, dateOnly);
   final cached = _tideCache[cacheKey];
-  if (cached != null && DateTime.now().difference(cached.fetchedAt) < _cacheTtl) {
+  if (cached != null && _tideFresh(cached.data, cached.fetchedAt)) {
     return cached.data;
   }
   final dateStr = _dateFmt.format(dateOnly);
@@ -1014,7 +1250,9 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
     fishing: fishing,
     waves: waves,
   );
-  _tideCache[cacheKey] = (data: result, fetchedAt: DateTime.now());
+  final fetchedAt = DateTime.now();
+  _tideCache[cacheKey] = (data: result, fetchedAt: fetchedAt);
+  _persistTide(cacheKey, result, fetchedAt);
   if (isToday) _writeCarSummary(result);
   return result;
 }
@@ -1057,7 +1295,8 @@ Future<List<TidePrediction>> fetchWeekHilo(
     String stationId, DateTime start, DateTime end) async {
   final key = _weekCacheKey(stationId, start, end);
   final cached = _weekCache[key];
-  if (cached != null && DateTime.now().difference(cached.fetchedAt) < _cacheTtl) {
+  if (cached != null &&
+      DateTime.now().difference(cached.fetchedAt) < _staticTtl) {
     return cached.data;
   }
   final url = 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter'
@@ -1068,6 +1307,8 @@ Future<List<TidePrediction>> fetchWeekHilo(
       '&interval=hilo&units=english&format=json&application=tides_flutter';
   final data = await apiGet(url);
   final result = _parsePredictions((data?['predictions'] as List?) ?? []);
-  _weekCache[key] = (data: result, fetchedAt: DateTime.now());
+  final fetchedAt = DateTime.now();
+  _weekCache[key] = (data: result, fetchedAt: fetchedAt);
+  _persistWeek(key, result, fetchedAt);
   return result;
 }

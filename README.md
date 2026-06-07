@@ -79,6 +79,10 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.0 (build 53) — **Faster reopen + Email the author**
+- **Tide data survives a restart** — previously-viewed days are now mirrored to disk, so reopening the app after Android has evicted it from memory serves them instantly instead of re-fetching every day you scrub to. Tide predictions are astronomical and never change, so the cache is safe to persist; today's live conditions still refresh on their own short timer, and the days around a station you open are warmed in the background (favorites and the station you just tapped). Coming back to the foreground also refreshes favorites' current conditions.
+- **Email the author** — the About screen now has an *Email the author* button that opens your mail app pre-addressed to the project contact, with a subject line filled in.
+
 ### v3.4.0 (build 52) — **Fuller Android Auto screen**
 - **More on the car screen** — the Android Auto station view now also shows the **best bite times** and the tide-movement line, a rendered **moon-phase picture**, and sun times, alongside the existing tide-chart image, next high/low, and live conditions. The fishing/sun/moon figures are computed on the phone and shared to the car; the moon disc is drawn from the phase + percent illuminated.
 

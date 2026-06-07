@@ -4,10 +4,14 @@ import 'theme.dart';
 import 'providers/theme_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/notification_service.dart';
+import 'services/noaa_api.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService.init();
+  // Rehydrate the on-disk tide cache so reopening after Android evicted the
+  // process serves previously-viewed days instantly, without refetching.
+  await hydrateCacheFromDisk();
   runApp(const ProviderScope(child: TidesApp()));
 }
 
