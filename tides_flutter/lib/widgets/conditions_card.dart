@@ -51,6 +51,7 @@ class ConditionsCard extends ConsumerWidget {
               const SizedBox(height: 8),
               _windRow(metric),
               _windTideRow(metric),
+              _waterAdvisory(),
             ],
           ),
         ),
@@ -71,14 +72,18 @@ class ConditionsCard extends ConsumerWidget {
       );
     }
     final above = wt > 0;
-    final dir = (c.windDirStr ?? '').toUpperCase();
     String hint = '';
-    if (!above && dir.startsWith('N')) {
-      hint = ' — $dir wind draining back lakes';
-    } else if (above && dir.startsWith('S')) {
-      hint = ' — $dir wind stacking water in';
-    } else if (c.windDirStr != null) {
-      hint = ' — wind tide';
+    // At/above 1 ft the dedicated advisory below spells out the cause and
+    // impact, so keep this line terse and don't say "stacking" twice.
+    if (wt.abs() < 1.0) {
+      final dir = (c.windDirStr ?? '').toUpperCase();
+      if (!above && dir.startsWith('N')) {
+        hint = ' — $dir wind draining back lakes';
+      } else if (above && dir.startsWith('S')) {
+        hint = ' — $dir wind stacking water in';
+      } else if (c.windDirStr != null) {
+        hint = ' — wind tide';
+      }
     }
     return Padding(
       padding: const EdgeInsets.only(top: 6),
@@ -92,6 +97,44 @@ class ConditionsCard extends ConsumerWidget {
               'Water ${fmtLen(wt.abs(), metric)} ${above ? 'above' : 'below'} predicted$hint',
               style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Heads-up when the wind has stacked water well above — or drained it well
+  // below — the predicted tide (|wind tide| ≥ 1 ft). Texas Gulf framing:
+  // stacked water floods the open beach and back-bays; drained water leaves the
+  // flats and ramps unusually low. Driven purely off the residual, so it fires
+  // for any station with a live water-level reading, not just the Gulf ones.
+  Widget _waterAdvisory() {
+    final wt = c.windTide;
+    if (wt == null || wt.abs() < 1.0) return const SizedBox.shrink();
+    final high = wt > 0;
+    final color = high ? const Color(0xFFFFB74D) : kCyanLight;
+    final text = high
+        ? 'Elevated water — beach driving and access may be limited; '
+            'water stacking into the bays.'
+        : 'Low water — bay flats and launch ramps may be unusually low; '
+            'back-lake and beach access can be limited.';
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(high ? Icons.warning_amber_rounded : Icons.info_outline,
+              color: color, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(text,
+                style: TextStyle(color: color, fontSize: 12, height: 1.35)),
           ),
         ],
       ),
