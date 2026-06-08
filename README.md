@@ -44,9 +44,9 @@ that point; the data follows the map as you pan and zoom.
 |-----------------|------------------|---------------------------|
 | ![Radar](screenshots/wind_map_radar.png) | ![Pressure](screenshots/wind_map_pressure.png) | ![Temperature](screenshots/wind_map_temp.png) |
 
-| Hourly forecast strip |
-|-----------------------|
-| ![Forecast](screenshots/wind_map_radar_fcst.png) |
+| Seas — NOAA WaveWatch III | Hourly forecast strip |
+|---------------------------|-----------------------|
+| ![Seas](screenshots/seas_map.png) | ![Forecast](screenshots/wind_map_radar_fcst.png) |
 
 | Sargassum Map (NOAA SIR — daily coastal inundation risk) |
 |----------------------------------------------------------|

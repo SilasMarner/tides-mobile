@@ -153,6 +153,7 @@ class UserGuideScreen extends StatelessWidget {
       'Maps',
       [
         '• Weather map — animated Wind, Waves, Swell, Temperature, Pressure, and Clouds layers, plus a Rain timeline that flows NOAA radar (past 2 hrs) into an 18-hour forecast. Tap anywhere to read the value at that point.',
+        '• Seas map — NOAA WaveWatch III offshore significant-wave-height forecast, stepped through the next ~48 hours. Opens on the open Gulf; tap to read wave height in ft/m.',
         '• Salinity map — NOAA NGOFS2 hourly surface-salinity loop for Gulf bays.',
         '• Sargassum map — NOAA’s daily coastal seaweed inundation risk.',
       ],

@@ -225,6 +225,7 @@ class AboutScreen extends StatelessWidget {
     'Wind-tide readout — live water level vs. predicted, to spot north/south wind setup in the bays',
     'Wave heights, swell and wind-sea breakdown from Open-Meteo Marine at each station location',
     'Native weather map — animated Wind, Waves, Swell, Temperature, Pressure, and Clouds layers, plus a unified Rain timeline: NOAA MRMS radar (past 2 h) flowing into an Open-Meteo precipitation forecast (up to 18 h ahead) with an hourly strip',
+    'Seas map — NOAA WaveWatch III offshore significant-wave-height forecast, animated through the next ~48 hours (StormSurf-style), with tap-to-read wave height',
     'Animated salinity map — NOAA NGOFS2 hourly surface-salinity forecast loop for Gulf bays (Galveston, Matagorda, Corpus Christi, Mobile and more)',
     'Favorites and GPS-based nearest stations',
     'Notifications for tide changes, solunar majors, best fishing days, and falling-barometer (cold-front) alerts',
