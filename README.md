@@ -79,6 +79,10 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.0 (build 54) — **Seas (NOAA WaveWatch III) map layer**
+- **New Seas layer** — a smooth, animated offshore **significant-wave-height** map from NOAA's WaveWatch III model (via the PacIOOS ERDDAP mirror), in the spirit of StormSurf's Gulf sea-height charts. Opens at a wide offshore view, steps through the next ~48 hours of forecast (play/scrub), and reads wave height in ft/m on tap. Vivid blue→green→yellow→red colour ramp so sea state pops; land is masked out.
+- **Sharper map gradients** — fixed the weather-map overlay so each layer now draws its full interpolated field instead of stretching a small corner of it; Wind, Waves, Temperature, etc. all render with correct spatial detail.
+
 ### v3.4.0 (build 53) — **Faster reopen + wind-tide advisory + Email the author**
 - **Tide data survives a restart** — previously-viewed days are now mirrored to disk, so reopening the app after Android has evicted it from memory serves them instantly instead of re-fetching every day you scrub to. Tide predictions are astronomical and never change, so the cache is safe to persist; today's live conditions still refresh on their own short timer, and the days around a station you open are warmed in the background (favorites and the station you just tapped). Coming back to the foreground also refreshes favorites' current conditions.
 - **Wind-tide advisory** — when wind has stacked water **1 ft or more above** the predicted tide, the Conditions card now adds a heads-up that beach driving and access may be limited and water is stacking into the bays; the opposite case (water drained **1 ft or more below** predicted) warns that bay flats and launch ramps may be unusually low. Works for any station with a live water-level reading.

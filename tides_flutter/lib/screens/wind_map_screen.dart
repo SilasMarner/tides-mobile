@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:dio/dio.dart';
@@ -33,6 +34,22 @@ Color _waveColor(double m) {
           : m < 4.0 ? const Color(0xFF0D2137)
           :             const Color(0xFF07111E);
   return c.withValues(alpha: 0.50);
+}
+
+// Seas (NOAA WaveWatch III significant wave height, metres). A vivid
+// StormSurf-style ramp — blue (calm) through green/yellow to red (big swell) —
+// so offshore sea state reads clearly over the light basemap, where the Waves
+// layer's subtle all-blue wash would wash out. Transparent over land/no-data.
+Color _seasColor(double m) {
+  if (m < 0.1) return Colors.transparent;
+  final c = m < 0.5 ? const Color(0xFF3A7BD5)   // calm — blue
+          : m < 1.0 ? const Color(0xFF00B4D8)   // light chop — cyan
+          : m < 1.5 ? const Color(0xFF2ECC71)   // building — green
+          : m < 2.0 ? const Color(0xFFF1C40F)   // moderate — yellow
+          : m < 3.0 ? const Color(0xFFF39C12)   // rough — orange
+          : m < 4.0 ? const Color(0xFFE74C3C)   // high — red
+          :             const Color(0xFF8E44AD); // very high — purple
+  return c.withValues(alpha: 0.60);
 }
 
 Color _swellColor(double m) {
@@ -166,9 +183,30 @@ class _DataGrid {
   }
 }
 
+// Bilinear sample of a regular native grid (e.g. NOAA WW3 0.5° cells) at an
+// arbitrary lat/lon. `g[i][j]` is indexed from (lat0, lon0) with `step` spacing;
+// NaN cells (land / no model data) count as 0 so they wash out transparently.
+double _sampleNative(List<List<double>> g, int nLat, int nLon, double lat0,
+    double lon0, double step, double lat, double lon) {
+  final fi = (lat - lat0) / step;
+  final fj = (lon - lon0) / step;
+  final i0 = fi.floor().clamp(0, nLat - 2);
+  final j0 = fj.floor().clamp(0, nLon - 2);
+  final tx = (fi - i0).clamp(0.0, 1.0);
+  final ty = (fj - j0).clamp(0.0, 1.0);
+  double v(int i, int j) {
+    final x = g[i][j];
+    return x.isNaN ? 0.0 : x;
+  }
+  return v(i0, j0) * (1 - tx) * (1 - ty) +
+      v(i0, j0 + 1) * (1 - tx) * ty +
+      v(i0 + 1, j0) * tx * (1 - ty) +
+      v(i0 + 1, j0 + 1) * tx * ty;
+}
+
 // ── Layer system ───────────────────────────────────────────────────────────────
 
-enum _Layer { wind, waves, swell, rain, temp, pressure, clouds }
+enum _Layer { wind, waves, swell, seas, rain, temp, pressure, clouds }
 
 
 class _LayerDef {
@@ -179,6 +217,7 @@ class _LayerDef {
   final bool hasIsobars;
   final bool isRadar; // overlay live weather-radar tiles instead of a grid
   final bool isSatellite; // overlay live GOES satellite tiles instead of a grid
+  final bool isSeas; // animated NOAA WaveWatch III forecast (own timeline)
   final String valueVar;
   final String? directionVar;
   final Color Function(double) colorFn;
@@ -192,6 +231,7 @@ class _LayerDef {
     this.hasIsobars = false,
     this.isRadar = false,
     this.isSatellite = false,
+    this.isSeas = false,
     required this.valueVar,
     this.directionVar,
     required this.colorFn,
@@ -256,6 +296,27 @@ const _kLayers = <_Layer, _LayerDef>{
       (Color(0xFF5C6BC0), '0.5–1m'),
       (Color(0xFF7E57C2), '1–2m'),
       (Color(0xFFAB47BC), '>2m'),
+    ],
+  ),
+  // NOAA WaveWatch III significant wave height — animated offshore forecast.
+  // Same units/colours as the Waves layer (metres), but model-sourced from NOAA
+  // and stepped through the forecast like StormSurf's Gulf sea-height map.
+  _Layer.seas: _LayerDef(
+    label: 'Seas (WW3)', icon: Icons.tsunami,
+    isMarine: true, hasFlow: false, isSeas: true,
+    valueVar: 'Thgt',
+    colorFn: _seasColor,
+    legend: [
+      (Color(0xFF3A7BD5), '<3'),
+      (Color(0xFF2ECC71), '3–5'),
+      (Color(0xFFF39C12), '6–10'),
+      (Color(0xFFE74C3C), '>10 ft'),
+    ],
+    legendMetric: [
+      (Color(0xFF3A7BD5), '<1'),
+      (Color(0xFF2ECC71), '1–1.5'),
+      (Color(0xFFF39C12), '2–3'),
+      (Color(0xFFE74C3C), '>3m'),
     ],
   ),
   _Layer.rain: _LayerDef(
@@ -339,7 +400,10 @@ class _SmoothGradientPainter extends CustomPainter {
     final se = camera.latLngToScreenPoint(LatLng(field.latMin, field.lonMax));
     canvas.drawImageRect(
       image,
-      Rect.fromLTWH(0, 0, field.n.toDouble(), field.n.toDouble()),
+      // Source is the whole rendered gradient image (built at a fixed pixel
+      // size in _buildGradientImage), not field.n — sampling only an n×n corner
+      // would stretch a sliver of the data across the whole overlay.
+      Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
       Rect.fromLTRB(nw.x.toDouble(), nw.y.toDouble(),
                     se.x.toDouble(), se.y.toDouble()),
       Paint()..filterQuality = FilterQuality.medium,
@@ -855,6 +919,12 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   List<ui.Image?> _forecastImages = [];
   List<DateTime> _forecastTimes = [];
   int _radarPastCount = 0; // how many _radarFrames entries are observed (not nowcast)
+  // Seas (NOAA WaveWatch III): animated significant-wave-height forecast frames,
+  // each a pre-rendered gradient over its own _DataGrid. Own simple timeline.
+  List<({DateTime time, _DataGrid grid, ui.Image image})> _seasFrames = [];
+  int _seasIndex = 0;
+  bool _seasPlaying = true;
+  Timer? _seasAnim;
   // Hourly strip: single-point forecast for the bottom panel.
   List<_HourForecast> _hourlyStrip = [];
   // Stale-data support: when Open-Meteo is down, show the last good grid.
@@ -870,6 +940,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   int _forecastFrameIdx(int i) => i - _radarFrames.length;
 
   static const _n = 9;
+  static const _seasN = 24; // upsample WW3 0.5° onto a finer grid for smoothness
 
   static final _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 15),
@@ -889,6 +960,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   void dispose() {
     _moveDebounce?.cancel();
     _radarAnim?.cancel();
+    _seasAnim?.cancel();
     super.dispose();
   }
 
@@ -923,16 +995,19 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         _radarImageUrls = []; _radarBounds = null;
         _forecastGrids = []; _forecastImages = []; _forecastTimes = [];
         _hourlyStrip = [];
+        _seasAnim?.cancel(); _seasFrames = []; _seasIndex = 0;
       });
     }
     if (layer != null) {
       setState(() { _currentLayer = layer; _staleDataTime = null; });
       // Pressure is a synoptic-scale field — zoom out so isobars are visible,
-      // like Windy. Other layers recenter on the station at a local view.
+      // like Windy. Seas (offshore WW3) also opens wide so the open Gulf fills
+      // the view. Other layers recenter on the station at a local view.
       _mapController.move(
         LatLng(widget.lat, widget.lon),
         layer == _Layer.pressure ? 6.0
             : layer == _Layer.clouds ? 6.0
+            : layer == _Layer.seas ? 6.5
             : layer == _Layer.rain ? 7.0 : 8.0,
       );
     }
@@ -940,6 +1015,12 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     // Rain uses live weather-radar tiles rather than a sampled grid.
     if (def.isRadar) {
       await _fetchRadar();
+      return;
+    }
+
+    // Seas is the animated NOAA WaveWatch III forecast (its own timeline).
+    if (def.isSeas) {
+      await _fetchSeas(silent: silent);
       return;
     }
 
@@ -1239,6 +1320,138 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
       _radarPlaying = true;
     });
     _startAnim();
+  }
+
+  // NOAA WaveWatch III significant wave height (Thgt, metres) from the PacIOOS
+  // ERDDAP mirror — a 0.5° global wave model with a 5-day hourly forecast. One
+  // griddap JSON request pulls the next ~48 h (3-hourly, via the time stride)
+  // over the view bbox; each time step is resampled onto a finer grid and
+  // pre-rendered, then animated — a smooth, NOAA-sourced offshore sea-height
+  // loop like StormSurf's Gulf map. ERDDAP longitude is 0–360.
+  Future<void> _fetchSeas({bool silent = false}) async {
+    _seasAnim?.cancel();
+    final cam = _mapController.camera;
+    final b = cam.visibleBounds;
+    final span = math.max(b.north - b.south, b.east - b.west) * 1.3;
+    final step = span / (_seasN - 1);
+    final latMin = cam.center.latitude - span / 2;
+    final lonMin = cam.center.longitude - span / 2; // −180..180 (map coords)
+    final latMax = latMin + span;
+    final lonMax = lonMin + span;
+    double to360(double d) => d < 0 ? d + 360 : d;
+    final lonLo = to360(lonMin), lonHi = to360(lonMax);
+
+    final nowUtc = DateTime.now().toUtc();
+    final startHr =
+        DateTime.utc(nowUtc.year, nowUtc.month, nowUtc.day, nowUtc.hour);
+    final endHr = startHr.add(const Duration(hours: 48));
+    String iso(DateTime t) => '${t.toIso8601String().split('.').first}Z';
+
+    // [time (every 3rd index = 3-hourly)][depth (all)][lat range][lon range]
+    final q = 'Thgt%5B(${iso(startHr)}):3:(${iso(endHr)})%5D%5B%5D'
+        '%5B(${latMin.toStringAsFixed(3)}):(${latMax.toStringAsFixed(3)})%5D'
+        '%5B(${lonLo.toStringAsFixed(3)}):(${lonHi.toStringAsFixed(3)})%5D';
+    final url =
+        'https://pae-paha.pacioos.hawaii.edu/erddap/griddap/ww3_global.json?$q';
+
+    try {
+      final resp = await _dio.get(url);
+      final body = resp.data is String
+          ? jsonDecode(resp.data as String)
+          : resp.data;
+      final table = (body as Map)['table'] as Map;
+      final rows = table['rows'] as List;
+
+      // Group values by time; collect the native lat/lon axes.
+      final order = <String>[];
+      final byTime = <String, List<(double, double, double)>>{};
+      final latSet = <double>{}, lonSet = <double>{};
+      for (final r in rows) {
+        final t = r[0] as String;
+        final lat = (r[2] as num).toDouble();
+        final lon = (r[3] as num).toDouble();
+        final raw = r[4];
+        final val = raw == null ? double.nan : (raw as num).toDouble();
+        if (!byTime.containsKey(t)) { byTime[t] = []; order.add(t); }
+        byTime[t]!.add((lat, lon, val));
+        latSet.add(lat); lonSet.add(lon);
+      }
+      final nLat = latSet.length, nLon = lonSet.length;
+      if (nLat < 2 || nLon < 2 || order.isEmpty) {
+        throw Exception('no offshore wave data in view');
+      }
+      final lat0 = latSet.reduce(math.min), lon0 = lonSet.reduce(math.min);
+      const native = 0.5;
+
+      final frames = <({DateTime time, _DataGrid grid, ui.Image image})>[];
+      for (final t in order) {
+        // Native 2-D grid for this time step (NaN = land / no data).
+        final g = List.generate(
+            nLat, (_) => List<double>.filled(nLon, double.nan),
+            growable: false);
+        for (final (lat, lon, val) in byTime[t]!) {
+          final i = ((lat - lat0) / native).round();
+          final j = ((lon - lon0) / native).round();
+          if (i >= 0 && i < nLat && j >= 0 && j < nLon) g[i][j] = val;
+        }
+        // Resample onto our finer square grid (map coords for render/probe).
+        final pts = <_DataPoint>[];
+        for (var ii = 0; ii < _seasN; ii++) {
+          final lat = latMin + ii * step;
+          for (var jj = 0; jj < _seasN; jj++) {
+            final lon = lonMin + jj * step;
+            final v = _sampleNative(
+                g, nLat, nLon, lat0, lon0, native, lat, to360(lon));
+            pts.add(_DataPoint(v));
+          }
+        }
+        final grid = _DataGrid(pts, latMin, lonMin, step, _seasN);
+        frames.add((
+          time: DateTime.parse(t),
+          grid: grid,
+          image: await _buildGradientImage(grid, _seasColor),
+        ));
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _seasFrames = frames;
+        _seasIndex = 0;
+        _field = frames.first.grid;
+        _gradientImage = frames.first.image;
+        _loading = false;
+        _error = null;
+        _staleDataTime = null;
+      });
+      if (_seasPlaying) _startSeasAnim();
+    } catch (e) {
+      if (!mounted || silent) return; // a failed pan-refetch keeps the old loop
+      if (_seasFrames.isEmpty) {
+        setState(() {
+          _error = 'No NOAA wave model data for this area';
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  void _startSeasAnim() {
+    _seasAnim?.cancel();
+    if (_seasFrames.length < 2) return;
+    void schedule() {
+      final atEnd = _seasIndex >= _seasFrames.length - 1;
+      _seasAnim = Timer(Duration(milliseconds: atEnd ? 1800 : 650), () {
+        if (!mounted || !_seasPlaying) return;
+        final next = atEnd ? 0 : _seasIndex + 1;
+        setState(() {
+          _seasIndex = next;
+          _field = _seasFrames[next].grid;
+          _gradientImage = _seasFrames[next].image;
+        });
+        schedule();
+      });
+    }
+    schedule();
   }
 
   Future<void> _fetchForecast() async {
@@ -1582,7 +1795,9 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                       ? (_isRadarFrame(_radarIndex) ? 'NOAA / NWS' : 'Open-Meteo')
                       : def.isSatellite
                           ? 'NASA GIBS · NOAA GOES · Esri'
-                          : 'Open-Meteo'),
+                          : def.isSeas
+                              ? 'NOAA NWS WaveWatch III · PacIOOS ERDDAP'
+                              : 'Open-Meteo'),
                 ],
               ),
             ],
@@ -1659,12 +1874,14 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
             _legend(def, metric),
           if ((def.isRadar || def.isSatellite) && _radarFrames.isNotEmpty && !_loading && _error == null)
             _radarTimeline(),
+          if (def.isSeas && _seasFrames.isNotEmpty && !_loading && _error == null)
+            _seasTimeline(),
           if (def.isRadar && _hourlyStrip.isNotEmpty && !_loading && _error == null)
             _hourlyStripWidget(metric),
           if (_probe != null && _field != null && !_loading && _error == null)
             _probeReadout(def, metric)
           else if (_probe == null && _field != null && !_loading &&
-              _error == null && !def.isRadar)
+              _error == null && !def.isRadar && !def.isSeas)
             Positioned(
               top: 12,
               left: 0,
@@ -1869,11 +2086,120 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
 
   // ── Touch-to-read value ───────────────────────────────────────────────────
 
+  // ── Seas (WW3) forecast timeline ─────────────────────────────────────────
+  Widget _seasTimeline() {
+    final total = _seasFrames.length;
+    final idx = _seasIndex.clamp(0, math.max(0, total - 1)).toInt();
+    final t = _seasFrames[idx].time;
+    final hoursAhead = t.difference(DateTime.now().toUtc()).inHours;
+    final label = hoursAhead <= 0
+        ? 'now'
+        : '${_fmtClock2(t.toLocal())}  +${hoursAhead}h';
+    final spanH = total > 1
+        ? _seasFrames.last.time.difference(_seasFrames.first.time).inHours
+        : 0;
+
+    return Positioned(
+      top: 10,
+      left: 12,
+      right: 12,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(4, 6, 14, 6),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.74),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  icon: Icon(_seasPlaying ? Icons.pause : Icons.play_arrow,
+                      color: kCyan),
+                  iconSize: 20,
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  constraints:
+                      const BoxConstraints(minWidth: 34, minHeight: 34),
+                  onPressed: () {
+                    setState(() => _seasPlaying = !_seasPlaying);
+                    if (_seasPlaying) {
+                      _startSeasAnim();
+                    } else {
+                      _seasAnim?.cancel();
+                    }
+                  },
+                ),
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 2,
+                      thumbShape:
+                          const RoundSliderThumbShape(enabledThumbRadius: 6),
+                      overlayShape:
+                          const RoundSliderOverlayShape(overlayRadius: 12),
+                    ),
+                    child: Slider(
+                      min: 0,
+                      max: math.max(1, total - 1).toDouble(),
+                      divisions: math.max(1, total - 1),
+                      value: idx.toDouble(),
+                      activeColor: kCyan,
+                      inactiveColor: Colors.white24,
+                      onChanged: total < 2
+                          ? null
+                          : (v) {
+                              _seasAnim?.cancel();
+                              final ni = v.round();
+                              setState(() {
+                                _seasPlaying = false;
+                                _seasIndex = ni;
+                                _field = _seasFrames[ni].grid;
+                                _gradientImage = _seasFrames[ni].image;
+                              });
+                            },
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 86,
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.end,
+                    style: TextStyle(
+                      color: hoursAhead <= 0 ? Colors.white : Colors.amber,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(left: 8, right: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('NOAA WaveWatch III  ·  ${spanH}h forecast',
+                      style: const TextStyle(
+                          color: Colors.white38, fontSize: 9)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _probeReadout(_LayerDef def, bool metric) {
     final sample = _field!.pointAt(_probe!.latitude, _probe!.longitude);
     final text = _readoutText(def, sample, metric);
     return Positioned(
-      top: 12,
+      // Drop below the Seas forecast timeline, which occupies the top strip.
+      top: def.isSeas ? 72 : 12,
       left: 12,
       right: 12,
       child: Center(
@@ -1921,6 +2247,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         return '${s.toStringAsFixed(0)} ${metric ? 'km/h' : 'mph'}$dirStr';
       case _Layer.waves:
       case _Layer.swell:
+      case _Layer.seas:
         if (v < 0.05) return 'No waves here';
         final h = metric ? v : v * 3.28084; // grid values are metres
         return '${h.toStringAsFixed(1)} ${metric ? 'm' : 'ft'}$dirStr';
