@@ -41,7 +41,7 @@ Color _waveColor(double m) {
 // so offshore sea state reads clearly over the light basemap, where the Waves
 // layer's subtle all-blue wash would wash out. Transparent over land/no-data.
 Color _seasColor(double m) {
-  if (m < 0.1) return Colors.transparent;
+  if (!m.isFinite || m < 0.1) return Colors.transparent;
   final c = m < 0.5 ? const Color(0xFF3A7BD5)   // calm — blue
           : m < 1.0 ? const Color(0xFF00B4D8)   // light chop — cyan
           : m < 1.5 ? const Color(0xFF2ECC71)   // building — green
@@ -120,7 +120,10 @@ Color _cloudColor(double pct) {
 class _DataPoint {
   final double value;
   final double? direction;
-  const _DataPoint(this.value, [this.direction]);
+  // Water fraction 0..1 — used by the Seas layer's land mask (1 = full data,
+  // 0 = land/no model data). Defaults to 1 so all other layers are unaffected.
+  final double coverage;
+  const _DataPoint(this.value, [this.direction, this.coverage = 1.0]);
 }
 
 class _DataGrid {
@@ -151,6 +154,22 @@ class _DataGrid {
 
   double primaryAt(double lat, double lon) =>
       _bilinear(lat, lon)?.value ?? 0;
+
+  /// Bilinearly-interpolated water coverage (0..1) at a point — the Seas land
+  /// mask. 0 outside the grid. Other layers leave coverage at 1 everywhere.
+  double coverageAt(double lat, double lon) {
+    final fi = (lat - latMin) / step;
+    final fj = (lon - lonMin) / step;
+    final i0 = fi.floor(), j0 = fj.floor();
+    final i1 = i0 + 1, j1 = j0 + 1;
+    if (i0 < 0 || i1 >= n || j0 < 0 || j1 >= n) return 0;
+    final tx = fi - i0, ty = fj - j0;
+    double c(int i, int j) => pts[i * n + j].coverage;
+    return c(i0, j0) * (1 - tx) * (1 - ty) +
+        c(i0, j1) * (1 - tx) * ty +
+        c(i1, j0) * tx * (1 - ty) +
+        c(i1, j1) * tx * ty;
+  }
 
   /// Interpolated value + direction at a point (null if outside the grid).
   _DataPoint? pointAt(double lat, double lon) => _bilinear(lat, lon);
@@ -184,24 +203,154 @@ class _DataGrid {
 }
 
 // Bilinear sample of a regular native grid (e.g. NOAA WW3 0.5° cells) at an
-// arbitrary lat/lon. `g[i][j]` is indexed from (lat0, lon0) with `step` spacing;
-// NaN cells (land / no model data) count as 0 so they wash out transparently.
-double _sampleNative(List<List<double>> g, int nLat, int nLon, double lat0,
-    double lon0, double step, double lat, double lon) {
+// arbitrary lat/lon. `g[i][j]` is indexed from (lat0, lon0) with `step` spacing.
+// Returns (value, coverage): the interpolation runs over only the non-NaN
+// (water) corners, and `coverage` is the summed weight of those corners
+// (1 = all four are water, 0 = all land). The caller uses coverage as a land
+// mask so the wash fades out at the coast instead of bleeding inland.
+(double, double) _sampleNative(List<List<double>> g, int nLat, int nLon,
+    double lat0, double lon0, double step, double lat, double lon) {
   final fi = (lat - lat0) / step;
   final fj = (lon - lon0) / step;
   final i0 = fi.floor().clamp(0, nLat - 2);
   final j0 = fj.floor().clamp(0, nLon - 2);
   final tx = (fi - i0).clamp(0.0, 1.0);
   final ty = (fj - j0).clamp(0.0, 1.0);
-  double v(int i, int j) {
+  final corners = <(int, int, double)>[
+    (i0, j0, (1 - tx) * (1 - ty)),
+    (i0, j0 + 1, (1 - tx) * ty),
+    (i0 + 1, j0, tx * (1 - ty)),
+    (i0 + 1, j0 + 1, tx * ty),
+  ];
+  var sumV = 0.0, sumW = 0.0;
+  for (final (i, j, w) in corners) {
     final x = g[i][j];
-    return x.isNaN ? 0.0 : x;
+    if (!x.isNaN) {
+      sumV += x * w;
+      sumW += w;
+    }
   }
-  return v(i0, j0) * (1 - tx) * (1 - ty) +
-      v(i0, j0 + 1) * (1 - tx) * ty +
-      v(i0 + 1, j0) * tx * (1 - ty) +
-      v(i0 + 1, j0 + 1) * tx * ty;
+  return (sumW > 0 ? sumV / sumW : 0.0, sumW);
+}
+
+// Renders a [field] to a smooth gradient image by sampling its bilinear
+// interpolation at every pixel. Top-level so the prefetch path can reuse it.
+// When [masked] (Seas), the per-point water coverage feathers the edge: fully
+// transparent below ~0.4 coverage, ramping to full over 0.4–0.7 — a soft
+// coastline with no colour bleeding onto land.
+Future<ui.Image> _buildGradientImage(
+    _DataGrid field, Color Function(double) colorFn,
+    {int imgN = 128, bool masked = false}) async {
+  final recorder = ui.PictureRecorder();
+  final c = Canvas(recorder);
+  final latSpan = field.latMax - field.latMin;
+  final lonSpan = field.lonMax - field.lonMin;
+  for (var row = 0; row < imgN; row++) {
+    for (var col = 0; col < imgN; col++) {
+      final lat = field.latMax - (row / (imgN - 1)) * latSpan;
+      final lon = field.lonMin + (col / (imgN - 1)) * lonSpan;
+      var color = colorFn(field.primaryAt(lat, lon));
+      if (masked) {
+        final cov = field.coverageAt(lat, lon);
+        if (cov < 0.4) continue; // land — leave transparent
+        final f = ((cov - 0.4) / 0.3).clamp(0.0, 1.0); // soft coastline feather
+        if (f < 1.0) color = color.withValues(alpha: color.a * f);
+      }
+      c.drawRect(
+        Rect.fromLTWH(col.toDouble(), row.toDouble(), 1, 1),
+        Paint()..color = color,
+      );
+    }
+  }
+  final pict = recorder.endRecording();
+  return pict.toImage(imgN, imgN);
+}
+
+// ── Prefetch (warm the map before it opens) ──────────────────────────────────
+// When the user taps the weather-map (wind) icon we kick off the default Wind
+// layer's data + the basemap tiles around the station, so the map paints
+// immediately instead of showing a spinner over grey tiles.
+final _prefetchDio = Dio(BaseOptions(
+  connectTimeout: const Duration(seconds: 12),
+  receiveTimeout: const Duration(seconds: 15),
+));
+final _prefetchCache =
+    <String, ({_DataGrid field, ui.Image image, DateTime fetchedAt})>{};
+String _prefetchKey(double lat, double lon) =>
+    'wind_${lat.toStringAsFixed(1)}_${lon.toStringAsFixed(1)}';
+
+int _tileX(double lon, int z) => ((lon + 180) / 360 * (1 << z)).floor();
+int _tileY(double lat, int z) {
+  final r = lat * math.pi / 180;
+  return ((1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2 * (1 << z))
+      .floor();
+}
+
+// Fetches the Wind grid (Open-Meteo current wind) for a geometry and renders
+// it. Shared by the prefetch path and could be reused elsewhere.
+Future<({_DataGrid field, ui.Image image})?> _fetchWindGrid(
+    Dio dio, double latMin, double lonMin, double step, int n) async {
+  final lats = <String>[], lons = <String>[];
+  for (var i = 0; i < n; i++) {
+    for (var j = 0; j < n; j++) {
+      lats.add((latMin + i * step).toStringAsFixed(4));
+      lons.add((lonMin + j * step).toStringAsFixed(4));
+    }
+  }
+  final resp = await dio.get('https://api.open-meteo.com/v1/forecast',
+      queryParameters: {
+        'latitude': lats.join(','),
+        'longitude': lons.join(','),
+        'current': 'wind_speed_10m,wind_direction_10m',
+        'wind_speed_unit': 'mph',
+        'forecast_days': '1',
+      });
+  final items = resp.data as List;
+  if (items.isEmpty || items[0]['current'] == null) return null;
+  final pts = items.map<_DataPoint>((item) {
+    final c = item['current'] as Map? ?? {};
+    return _DataPoint((c['wind_speed_10m'] as num?)?.toDouble() ?? 0.0,
+        (c['wind_direction_10m'] as num?)?.toDouble());
+  }).toList();
+  final field = _DataGrid(pts, latMin, lonMin, step, n);
+  return (field: field, image: await _buildGradientImage(field, _windColor));
+}
+
+/// Warms the Wind grid + basemap tiles for [lat]/[lon] so the weather map opens
+/// smoothly. Fire-and-forget; safe to call repeatedly (cached, deduped by TTL).
+void prefetchWindMap(double lat, double lon, BuildContext context) {
+  final key = _prefetchKey(lat, lon);
+  final cached = _prefetchCache[key];
+  if (cached == null ||
+      DateTime.now().difference(cached.fetchedAt) > const Duration(minutes: 20)) {
+    () async {
+      try {
+        const span = 14.0, n = 9; // ≈ the zoom-8 initial view
+        final g = await _fetchWindGrid(
+            _prefetchDio, lat - span / 2, lon - span / 2, span / (n - 1), n);
+        if (g != null) {
+          _prefetchCache[key] =
+              (field: g.field, image: g.image, fetchedAt: DateTime.now());
+        }
+      } catch (_) {/* best-effort */}
+    }();
+  }
+  // Warm the CARTO basemap tiles (z7–9, 3×3 around the station).
+  () async {
+    try {
+      for (final z in [7, 8, 9]) {
+        final cx = _tileX(lon, z), cy = _tileY(lat, z);
+        for (var dx = -1; dx <= 1; dx++) {
+          for (var dy = -1; dy <= 1; dy++) {
+            if (!context.mounted) return;
+            final url = 'https://a.basemaps.cartocdn.com/rastertiles/voyager/'
+                '$z/${cx + dx}/${cy + dy}@2x.png';
+            precacheImage(NetworkImage(url), context).catchError((_) {});
+          }
+        }
+      }
+    } catch (_) {/* best-effort */}
+  }();
 }
 
 // ── Layer system ───────────────────────────────────────────────────────────────
@@ -932,6 +1081,22 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   static final _gridCache =
       <_Layer, ({_DataGrid field, ui.Image image, DateTime fetchedAt})>{};
 
+  // Per-session (this map instance) grid cache, so re-selecting a layer paints
+  // instantly then refines. Instance-scoped, so it's always this station's data.
+  final _sessionGrids =
+      <_Layer, ({_DataGrid field, ui.Image image, DateTime fetchedAt})>{};
+  bool _firstLoad = true; // first grid fetch can paint a prefetched grid
+
+  double _initialZoom(_Layer l) => l == _Layer.pressure
+      ? 6.0
+      : l == _Layer.clouds
+          ? 6.0
+          : l == _Layer.seas
+              ? 6.5
+              : l == _Layer.rain
+                  ? 7.0
+                  : 8.0;
+
   // ── Unified frame helpers ─────────────────────────────────────────────────
   int get _totalFrames => _radarFrames.length + _forecastGrids.length;
   bool _isRadarFrame(int i) => i < _radarFrames.length;
@@ -985,7 +1150,36 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   }
 
   Future<void> _fetchGrid({_Layer? layer, bool silent = false}) async {
-    final def = _kLayers[layer ?? _currentLayer]!;
+    final l = layer ?? _currentLayer;
+    final def = _kLayers[l]!;
+
+    // Instant paint from a warm grid (no spinner), then refine silently — uses
+    // this session's cache for layer re-selects, and the prefetch cache (warmed
+    // when the wind icon was tapped) for the very first Wind load.
+    if (!silent && !def.isRadar && !def.isSatellite && !def.isSeas) {
+      final firstWind = _firstLoad && l == _Layer.wind;
+      _firstLoad = false;
+      final warm = _sessionGrids[l] ??
+          (firstWind ? _prefetchCache[_prefetchKey(widget.lat, widget.lon)] : null);
+      if (warm != null &&
+          DateTime.now().difference(warm.fetchedAt) <
+              const Duration(minutes: 30)) {
+        if (layer != null) {
+          _mapController.move(LatLng(widget.lat, widget.lon), _initialZoom(l));
+        }
+        setState(() {
+          _currentLayer = l;
+          _field = warm.field;
+          _gradientImage = warm.image;
+          _loading = false;
+          _error = null;
+          _probe = null;
+          _staleDataTime = null;
+        });
+        return _fetchGrid(silent: true); // refine to the exact view
+      }
+    }
+
     if (!silent) {
       _radarAnim?.cancel();
       setState(() {
@@ -1003,13 +1197,8 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
       // Pressure is a synoptic-scale field — zoom out so isobars are visible,
       // like Windy. Seas (offshore WW3) also opens wide so the open Gulf fills
       // the view. Other layers recenter on the station at a local view.
-      _mapController.move(
-        LatLng(widget.lat, widget.lon),
-        layer == _Layer.pressure ? 6.0
-            : layer == _Layer.clouds ? 6.0
-            : layer == _Layer.seas ? 6.5
-            : layer == _Layer.rain ? 7.0 : 8.0,
-      );
+      // Pressure/Seas open wide (synoptic / offshore); others recenter local.
+      _mapController.move(LatLng(widget.lat, widget.lon), _initialZoom(layer));
     }
 
     // Rain uses live weather-radar tiles rather than a sampled grid.
@@ -1089,7 +1278,9 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
       final img = await _buildGradientImage(field, def.colorFn);
 
       if (mounted) {
-        _gridCache[_currentLayer] = (field: field, image: img, fetchedAt: DateTime.now());
+        final entry = (field: field, image: img, fetchedAt: DateTime.now());
+        _gridCache[_currentLayer] = entry;
+        _sessionGrids[_currentLayer] = entry; // instant on re-select
         setState(() {
           _field = field;
           _gradientImage = img;
@@ -1338,8 +1529,13 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     final lonMin = cam.center.longitude - span / 2; // −180..180 (map coords)
     final latMax = latMin + span;
     final lonMax = lonMin + span;
+    // ERDDAP longitude is 0–360. `shift` maps a 0–360 longitude into a frame
+    // anchored at lonLo, so a view crossing the 0/360 seam (antimeridian) stays
+    // contiguous; for the common case it's the identity.
     double to360(double d) => d < 0 ? d + 360 : d;
     final lonLo = to360(lonMin), lonHi = to360(lonMax);
+    final crosses = lonHi < lonLo;
+    double shift(double l) => l < lonLo - 1e-6 ? l + 360 : l;
 
     final nowUtc = DateTime.now().toUtc();
     final startHr =
@@ -1347,29 +1543,37 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     final endHr = startHr.add(const Duration(hours: 48));
     String iso(DateTime t) => '${t.toIso8601String().split('.').first}Z';
 
-    // [time (every 3rd index = 3-hourly)][depth (all)][lat range][lon range]
-    final q = 'Thgt%5B(${iso(startHr)}):3:(${iso(endHr)})%5D%5B%5D'
-        '%5B(${latMin.toStringAsFixed(3)}):(${latMax.toStringAsFixed(3)})%5D'
-        '%5B(${lonLo.toStringAsFixed(3)}):(${lonHi.toStringAsFixed(3)})%5D';
-    final url =
-        'https://pae-paha.pacioos.hawaii.edu/erddap/griddap/ww3_global.json?$q';
+    // [time (every 3rd index = 3-hourly)][depth (all)][lat range][lon range].
+    // A seam-crossing view needs two requests (lonLo→359.5 and 0→lonHi).
+    String urlFor(double lo, double hi) {
+      final q = 'Thgt%5B(${iso(startHr)}):3:(${iso(endHr)})%5D%5B%5D'
+          '%5B(${latMin.toStringAsFixed(3)}):(${latMax.toStringAsFixed(3)})%5D'
+          '%5B(${lo.toStringAsFixed(3)}):(${hi.toStringAsFixed(3)})%5D';
+      return 'https://pae-paha.pacioos.hawaii.edu/erddap/griddap/ww3_global.json?$q';
+    }
+    final urls = crosses
+        ? [urlFor(lonLo, 359.5), urlFor(0.0, lonHi)]
+        : [urlFor(lonLo, lonHi)];
 
     try {
-      final resp = await _dio.get(url);
-      final body = resp.data is String
-          ? jsonDecode(resp.data as String)
-          : resp.data;
-      final table = (body as Map)['table'] as Map;
-      final rows = table['rows'] as List;
+      final rows = <dynamic>[];
+      for (final url in urls) {
+        final resp = await _dio.get(url);
+        final body = resp.data is String
+            ? jsonDecode(resp.data as String)
+            : resp.data;
+        rows.addAll(((body as Map)['table'] as Map)['rows'] as List);
+      }
 
-      // Group values by time; collect the native lat/lon axes.
+      // Group values by time; collect the native lat/lon axes (lon shifted
+      // into the contiguous frame).
       final order = <String>[];
       final byTime = <String, List<(double, double, double)>>{};
       final latSet = <double>{}, lonSet = <double>{};
       for (final r in rows) {
         final t = r[0] as String;
         final lat = (r[2] as num).toDouble();
-        final lon = (r[3] as num).toDouble();
+        final lon = shift((r[3] as num).toDouble());
         final raw = r[4];
         final val = raw == null ? double.nan : (raw as num).toDouble();
         if (!byTime.containsKey(t)) { byTime[t] = []; order.add(t); }
@@ -1394,22 +1598,24 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
           final j = ((lon - lon0) / native).round();
           if (i >= 0 && i < nLat && j >= 0 && j < nLon) g[i][j] = val;
         }
-        // Resample onto our finer square grid (map coords for render/probe).
+        // Resample onto our finer square grid (map coords for render/probe),
+        // carrying the per-point water coverage as a soft land mask.
         final pts = <_DataPoint>[];
         for (var ii = 0; ii < _seasN; ii++) {
           final lat = latMin + ii * step;
           for (var jj = 0; jj < _seasN; jj++) {
             final lon = lonMin + jj * step;
-            final v = _sampleNative(
-                g, nLat, nLon, lat0, lon0, native, lat, to360(lon));
-            pts.add(_DataPoint(v));
+            final (v, cov) = _sampleNative(
+                g, nLat, nLon, lat0, lon0, native, lat, shift(to360(lon)));
+            pts.add(_DataPoint(v, null, cov));
           }
         }
         final grid = _DataGrid(pts, latMin, lonMin, step, _seasN);
         frames.add((
           time: DateTime.parse(t),
           grid: grid,
-          image: await _buildGradientImage(grid, _seasColor),
+          image: await _buildGradientImage(grid, _seasColor,
+              imgN: 192, masked: true),
         ));
       }
 
@@ -1604,31 +1810,6 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     } catch (_) {}
   }
 
-
-  Future<ui.Image> _buildGradientImage(
-      _DataGrid field, Color Function(double) colorFn) async {
-    // Render at 128×128 regardless of data grid size. We sample the grid's
-    // bilinear interpolation at every pixel so the output is smooth — no
-    // blocky stretched tiles even though the underlying data is only 9×9.
-    const imgN = 128;
-    final recorder = ui.PictureRecorder();
-    final c = Canvas(recorder);
-    final latSpan = field.latMax - field.latMin;
-    final lonSpan = field.lonMax - field.lonMin;
-    for (var row = 0; row < imgN; row++) {
-      for (var col = 0; col < imgN; col++) {
-        final lat = field.latMax - (row / (imgN - 1)) * latSpan;
-        final lon = field.lonMin + (col / (imgN - 1)) * lonSpan;
-        final val = field.primaryAt(lat, lon);
-        c.drawRect(
-          Rect.fromLTWH(col.toDouble(), row.toDouble(), 1, 1),
-          Paint()..color = colorFn(val),
-        );
-      }
-    }
-    final pict = recorder.endRecording();
-    return pict.toImage(imgN, imgN);
-  }
 
   void _showLayerPicker() {
     showModalBottomSheet(

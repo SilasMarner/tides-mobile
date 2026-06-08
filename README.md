@@ -79,6 +79,12 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.0 (build 55) — **Map tune-up: cleaner coasts, smoother open**
+- **No waves on land** — the Seas (WaveWatch III) layer now carries a water-coverage mask, so the wash follows the coastline with a soft edge instead of bleeding onto land.
+- **Works on every coast** — robust longitude handling (incl. the antimeridian) and graceful empty-view behavior; verified on the Gulf and the Pacific.
+- **Smoother open** — tapping the weather-map icon now prefetches the default Wind layer's data and the basemap tiles around the station, and the map caches grids per session, so opening it (and switching layers) is near-instant instead of showing a spinner over grey tiles.
+- **Crisper offshore detail** — higher-resolution Seas render; also fixes the gradient overlay so layers draw their full field.
+
 ### v3.4.0 (build 54) — **Seas (NOAA WaveWatch III) map layer**
 - **New Seas layer** — a smooth, animated offshore **significant-wave-height** map from NOAA's WaveWatch III model (via the PacIOOS ERDDAP mirror), in the spirit of StormSurf's Gulf sea-height charts. Opens at a wide offshore view, steps through the next ~48 hours of forecast (play/scrub), and reads wave height in ft/m on tap. Vivid blue→green→yellow→red colour ramp so sea state pops; land is masked out.
 - **Sharper map gradients** — fixed the weather-map overlay so each layer now draws its full interpolated field instead of stretching a small corner of it; Wind, Waves, Temperature, etc. all render with correct spatial detail.

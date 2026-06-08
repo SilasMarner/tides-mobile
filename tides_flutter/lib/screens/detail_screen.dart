@@ -93,16 +93,20 @@ class DetailScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.air, color: kCyan),
             tooltip: 'Wind Map',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => WindMapScreen(
-                  lat: station.lat,
-                  lon: station.lon,
-                  stationName: station.name,
+            onPressed: () {
+              // Warm the default layer + basemap tiles so the map opens smoothly.
+              prefetchWindMap(station.lat, station.lon, context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => WindMapScreen(
+                    lat: station.lat,
+                    lon: station.lon,
+                    stationName: station.name,
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
           IconButton(
             icon: const Icon(Icons.water_drop, color: kCyan),
