@@ -13,9 +13,10 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <!-- Plugin injects these but app uses inexact alarms only — strip them -->
+    <!-- SCHEDULE_EXACT_ALARM requires runtime user grant — keep removed -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" tools:node="remove"/>
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM" tools:node="remove"/>
+    <!-- USE_EXACT_ALARM (API 32+): no user grant needed; needed for exactAllowWhileIdle scheduling -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
 
     <application
         android:label="OpenTides"
@@ -63,7 +64,7 @@
             android:exported="false"
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"/>
         <receiver
-            android:exported="false"
+            android:exported="true"
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED"/>

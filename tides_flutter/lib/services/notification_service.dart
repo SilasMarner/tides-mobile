@@ -9,6 +9,7 @@ import '../utils/unit_format.dart';
 class NotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
   static bool _initialized = false;
+  static bool _canExact = false;
 
   static Future<void> init() async {
     if (_initialized) return;
@@ -23,6 +24,13 @@ class NotificationService {
     await _plugin.initialize(
       const InitializationSettings(android: android, iOS: ios),
     );
+
+    // API 31+: exact alarms need SCHEDULE_EXACT_ALARM or USE_EXACT_ALARM.
+    // Cache once so every _schedule() call doesn't do a platform roundtrip.
+    final androidImpl = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    _canExact = await androidImpl?.canScheduleExactNotifications() ?? false;
+
     _initialized = true;
   }
 
@@ -183,7 +191,9 @@ class NotificationService {
         ),
         iOS: DarwinNotificationDetails(),
       ),
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      androidScheduleMode: _canExact
+          ? AndroidScheduleMode.exactAllowWhileIdle
+          : AndroidScheduleMode.inexactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
     );

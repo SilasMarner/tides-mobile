@@ -783,6 +783,9 @@ class _WindParticleLayerState extends State<_WindParticleLayer>
   late final Ticker _ticker;
   Duration? _lastTick;
   static const _maxParticles = 600;
+  // Repaint signal for the painter — lets the Ticker drive the canvas without a
+  // full widget rebuild (setState) every frame. Bumped once per tick.
+  final _repaint = ValueNotifier<int>(0);
 
   @override
   void initState() {
@@ -828,20 +831,28 @@ class _WindParticleLayerState extends State<_WindParticleLayer>
       _particles.add(p);
     }
 
-    setState(() {});
+    // Repaint the canvas only — no widget rebuild. The painter reads the live
+    // _particles list, so the mutated positions show on the next frame.
+    _repaint.value++;
   }
 
   @override
   void dispose() {
     _ticker.dispose();
+    _repaint.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => CustomPaint(
-        painter: _ParticlePainter(List.unmodifiable(_particles),
-            MapCamera.of(context), widget.field, widget.colorFn),
-        child: const SizedBox.expand(),
+  Widget build(BuildContext context) => RepaintBoundary(
+        child: CustomPaint(
+          // Live list + repaint Listenable: animation frames repaint just the
+          // canvas; only a real camera change (pan/zoom) rebuilds for the new
+          // projection.
+          painter: _ParticlePainter(_particles, MapCamera.of(context),
+              widget.field, widget.colorFn, _repaint),
+          child: const SizedBox.expand(),
+        ),
       );
 }
 
@@ -852,7 +863,9 @@ class _ParticlePainter extends CustomPainter {
   final MapCamera camera;
   final _DataGrid? field;
   final Color Function(double) colorFn;
-  _ParticlePainter(this.particles, this.camera, this.field, this.colorFn);
+  _ParticlePainter(this.particles, this.camera, this.field, this.colorFn,
+      Listenable repaint)
+      : super(repaint: repaint);
 
   Offset _s(double lat, double lon) {
     final pt = camera.latLngToScreenPoint(LatLng(lat, lon));
@@ -1857,6 +1870,19 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
             options: MapOptions(
               initialCenter: LatLng(widget.lat, widget.lon),
               initialZoom: 8.0,
+              // Keep zoom in a useful band: out past ~4 the 9×9 grid is
+              // meaningless; in past ~11 the basemap/grid stops adding detail.
+              minZoom: 4,
+              maxZoom: 11,
+              // Tighten the feel: rotation off (disorienting on a data map),
+              // keep drag + fling momentum + pinch/double-tap zoom.
+              interactionOptions: const InteractionOptions(
+                flags: InteractiveFlag.drag |
+                    InteractiveFlag.flingAnimation |
+                    InteractiveFlag.pinchMove |
+                    InteractiveFlag.pinchZoom |
+                    InteractiveFlag.doubleTapZoom,
+              ),
               onTap: (_, latLng) {
                 if (_field != null) setState(() => _probe = latLng);
               },
