@@ -7,6 +7,7 @@ class NotificationPrefs {
   final bool notifySolunarMajor; // major feeding windows
   final bool notifyFishing;     // fishing rating 4+ stars
   final bool notifyPressureDrop; // barometric drop = approaching front
+  final bool notifyUpwelling;   // SST well below normal = upwelling signal
   final Set<String> stations;   // station IDs with notifications on
 
   const NotificationPrefs({
@@ -16,6 +17,7 @@ class NotificationPrefs {
     this.notifySolunarMajor = true,
     this.notifyFishing = true,
     this.notifyPressureDrop = true,
+    this.notifyUpwelling = true,
     this.stations = const {},
   });
 
@@ -26,6 +28,7 @@ class NotificationPrefs {
     bool? notifySolunarMajor,
     bool? notifyFishing,
     bool? notifyPressureDrop,
+    bool? notifyUpwelling,
     Set<String>? stations,
   }) =>
       NotificationPrefs(
@@ -35,6 +38,7 @@ class NotificationPrefs {
         notifySolunarMajor: notifySolunarMajor ?? this.notifySolunarMajor,
         notifyFishing: notifyFishing ?? this.notifyFishing,
         notifyPressureDrop: notifyPressureDrop ?? this.notifyPressureDrop,
+        notifyUpwelling: notifyUpwelling ?? this.notifyUpwelling,
         stations: stations ?? this.stations,
       );
 
@@ -45,6 +49,7 @@ class NotificationPrefs {
         'notifySolunarMajor': notifySolunarMajor,
         'notifyFishing': notifyFishing,
         'notifyPressureDrop': notifyPressureDrop,
+        'notifyUpwelling': notifyUpwelling,
         'stations': stations.toList(),
       };
 
@@ -56,6 +61,7 @@ class NotificationPrefs {
         notifySolunarMajor: j['notifySolunarMajor'] as bool? ?? true,
         notifyFishing: j['notifyFishing'] as bool? ?? true,
         notifyPressureDrop: j['notifyPressureDrop'] as bool? ?? true,
+        notifyUpwelling: j['notifyUpwelling'] as bool? ?? true,
         stations: Set<String>.from(
             (j['stations'] as List<dynamic>? ?? []).cast<String>()),
       );

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/tide_data.dart';
+import '../providers/detail_provider.dart'
+    show kUpwellingThresholdC, sstAnomalyProvider;
 import '../providers/units_provider.dart';
 import '../utils/unit_format.dart';
 import '../theme.dart';
@@ -13,6 +15,9 @@ class ConditionsCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final metric = ref.watch(unitsProvider);
+    // The anomaly is a "today" reading — don't pin it on future-day forecasts.
+    final sstAnomaly =
+        forecast ? null : ref.watch(sstAnomalyProvider).valueOrNull;
     return Card(
         color: kCardBg,
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -52,6 +57,7 @@ class ConditionsCard extends ConsumerWidget {
               _windRow(metric),
               _windTideRow(metric),
               _waterAdvisory(),
+              _upwellingAdvisory(sstAnomaly, metric),
             ],
           ),
         ),
@@ -135,6 +141,38 @@ class ConditionsCard extends ConsumerWidget {
           Expanded(
             child: Text(text,
                 style: TextStyle(color: color, fontSize: 12, height: 1.35)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Upwelling heads-up: the daily MUR SST anomaly near the station is well
+  // below normal. Worded as "likely" — a cold-front cooldown can produce the
+  // same signal — but either way colder water is moving in.
+  Widget _upwellingAdvisory(double? a, bool metric) {
+    if (a == null || a > kUpwellingThresholdC) return const SizedBox.shrink();
+    const color = kCyanLight;
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.waves, color: color, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+                'Upwelling likely — water ~${fmtTempDelta(a.abs(), metric)} '
+                'colder than normal. Cooler, often nutrient-rich water moving '
+                'in; bite patterns may shift.',
+                style:
+                    const TextStyle(color: color, fontSize: 12, height: 1.35)),
           ),
         ],
       ),

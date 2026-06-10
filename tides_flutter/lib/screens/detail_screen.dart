@@ -15,6 +15,7 @@ import '../services/noaa_api.dart' show fmtHhmm, WaveData;
 import '../theme.dart';
 import 'about_screen.dart';
 import 'wind_map_screen.dart';
+import 'water_temp_map_screen.dart';
 import 'salinity_map_screen.dart';
 import 'sargassum_map_screen.dart';
 
@@ -43,6 +44,21 @@ class DetailScreen extends ConsumerWidget {
         if (data != null && data.isToday && notifEnabled) {
           NotificationService.scheduleForStation(
               station.id, station.name, data, notifPrefs,
+              metric: ref.read(unitsProvider));
+        }
+      });
+    });
+
+    // Upwelling heads-up when the daily SST anomaly loads well below normal.
+    // Dedup (once per station per day) lives in the service.
+    ref.listen(sstAnomalyProvider, (_, next) {
+      next.whenData((anom) {
+        if (anom != null &&
+            anom <= kUpwellingThresholdC &&
+            notifEnabled &&
+            notifPrefs.notifyUpwelling) {
+          NotificationService.maybeUpwellingAlert(
+              station.id, station.name, anom,
               metric: ref.read(unitsProvider));
         }
       });
@@ -90,51 +106,80 @@ class DetailScreen extends ConsumerWidget {
                   .toggleStation(station.id);
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.air, color: kCyan),
-            tooltip: 'Wind Map',
-            onPressed: () {
-              // Warm the default layer + basemap tiles so the map opens smoothly.
-              prefetchWindMap(station.lat, station.lon, context);
+          // All four map screens live under one globe menu — four standalone
+          // icons would truncate the AppBar on narrow phones.
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.public, color: kCyan),
+            color: kNavyLight,
+            tooltip: 'Maps',
+            onSelected: (v) {
+              Widget screen;
+              switch (v) {
+                case 'wind':
+                  // Warm the default layer + basemap tiles so the map opens
+                  // smoothly.
+                  prefetchWindMap(station.lat, station.lon, context);
+                  screen = WindMapScreen(
+                      lat: station.lat,
+                      lon: station.lon,
+                      stationName: station.name);
+                case 'watertemp':
+                  screen = WaterTempMapScreen(
+                      lat: station.lat,
+                      lon: station.lon,
+                      stationName: station.name);
+                case 'salinity':
+                  screen = SalinityMapScreen(
+                      lat: station.lat,
+                      lon: station.lon,
+                      stationName: station.name);
+                default:
+                  screen = SargassumMapScreen(
+                      lat: station.lat,
+                      lon: station.lon,
+                      stationName: station.name);
+              }
               Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => WindMapScreen(
-                    lat: station.lat,
-                    lon: station.lon,
-                    stationName: station.name,
-                  ),
-                ),
-              );
+                  context, MaterialPageRoute(builder: (_) => screen));
             },
-          ),
-          IconButton(
-            icon: const Icon(Icons.water_drop, color: kCyan),
-            tooltip: 'Salinity Map',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => SalinityMapScreen(
-                  lat: station.lat,
-                  lon: station.lon,
-                  stationName: station.name,
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'wind',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.air, color: kCyan),
+                  title:
+                      Text('Wind Map', style: TextStyle(color: Colors.white)),
                 ),
               ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.grass, color: kCyan),
-            tooltip: 'Sargassum Map',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => SargassumMapScreen(
-                  lat: station.lat,
-                  lon: station.lon,
-                  stationName: station.name,
+              PopupMenuItem(
+                value: 'watertemp',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.thermostat, color: kCyan),
+                  title: Text('Water Temp Map',
+                      style: TextStyle(color: Colors.white)),
                 ),
               ),
-            ),
+              PopupMenuItem(
+                value: 'salinity',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.water_drop, color: kCyan),
+                  title: Text('Salinity Map',
+                      style: TextStyle(color: Colors.white)),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'sargassum',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.grass, color: kCyan),
+                  title: Text('Sargassum Map',
+                      style: TextStyle(color: Colors.white)),
+                ),
+              ),
+            ],
           ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert, color: kCyan),
@@ -144,6 +189,7 @@ class DetailScreen extends ConsumerWidget {
               if (v == 'refresh') {
                 ref.invalidate(tideDataProvider);
                 ref.invalidate(weekDataProvider);
+                ref.invalidate(sstAnomalyProvider);
               } else if (v == 'about') {
                 Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const AboutScreen()));
