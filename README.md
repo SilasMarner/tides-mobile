@@ -52,7 +52,7 @@ that point; the data follows the map as you pan and zoom.
 |----------------------------------------------------------|
 | ![Sargassum Map](screenshots/sargassum_map.png) |
 
-### New in v3.5 — Water Temp map, turbidity & upwelling alerts
+### New in v3.4.1 — Water Temp map, turbidity & upwelling alerts
 
 A new **Water Temp** map renders NOAA CoastWatch data straight onto the
 pannable map — pick a layer and the data follows the map as you move:
@@ -101,11 +101,12 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
-### v3.5.0 (build 58) — **Water Temp map, turbidity & upwelling alerts**
+### v3.4.1 (build 58) — **Water Temp map, turbidity & upwelling alerts**
 - **Water Temp map** — a new three-layer ocean map from NOAA CoastWatch ERDDAP (free, no key): **sea-surface temperature** gradient (JPL MUR, 1 km daily), **upwelling** (SST anomaly vs. normal — blue = colder-than-normal water), and **turbidity** (MODIS Kd490 8-day water clarity). Server-rendered overlays follow the map as you pan/zoom, with per-layer legends (°F/°C aware), a data-age chip, and a friendly retry when NOAA is slow.
 - **Upwelling advisory + alert** — when the daily SST anomaly near a station drops 1.5 °C or more below normal, the Conditions card shows an *Upwelling likely* heads-up, and stations with notifications enabled get a once-a-day alert (new per-alert toggle in Settings). Cold anomalies can also follow fronts, so the wording stays honest ("likely").
 - **Maps menu** — the wind, water-temp, salinity and sargassum maps now live under a single globe icon on the station screen, so the toolbar doesn't crowd on narrow phones.
-- Refresh on the station screen now also re-pulls the SST anomaly.
+- **Readable turbidity** — blue = clear, cyan→yellow→red = murkier, and the 4 km satellite grid is smoothed into a continuous wash instead of hard pixels.
+- Refresh on the station screen now also re-pulls the SST anomaly; the in-app User Guide gained a "Water temp, upwelling & turbidity" section.
 
 ### v3.4.0 (build 55) — **Map tune-up: cleaner coasts, smoother open**
 - **No waves on land** — the Seas (WaveWatch III) layer now carries a water-coverage mask, so the wash follows the coastline with a soft edge instead of bleeding onto land.
