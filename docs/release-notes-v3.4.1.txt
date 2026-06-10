@@ -1,0 +1,10 @@
+v3.4.1 (build 58) — Water Temp map, turbidity & upwelling alerts
+
+NEW: Water Temp map — three NOAA satellite layers on the pannable map:
+• Sea-surface temperature gradient (JPL MUR, 1 km daily) — find the breaks and edges where fish stack up.
+• Upwelling — water temperature vs. normal; blue = colder-than-normal water moving in.
+• Turbidity — water clarity at a glance (blue = clear, yellow/red = murky).
+
+NEW: Upwelling advisory on the Conditions card plus an optional once-a-day alert when water near your station runs well colder than normal.
+
+All maps now live under one globe menu on the station screen. User Guide updated.

@@ -789,6 +789,49 @@ Future<Conditions?> fetchForecastConditions(
   );
 }
 
+// ── Sea-surface temperature anomaly (upwelling signal) ───────────────────────
+//
+// NOAA CoastWatch ERDDAP, JPL MUR daily SST anomaly vs. the long-term normal.
+// A strongly negative anomaly near the coast usually means upwelling (or a
+// cold-front cooldown) — either way, colder-than-normal water moving in.
+// Only the pfeg host is used: the coastwatch.noaa.gov mirror has been
+// unreliable (503s) while pfeg stayed up.
+const _erddap = 'https://coastwatch.pfeg.noaa.gov/erddap/griddap';
+
+/// Mean SST anomaly (°C) in a ±0.15° box around (lat,lon) from the MUR daily
+/// anomaly grid. Negative = colder than normal = possible upwelling. Null when
+/// every cell is land-masked or ERDDAP is unreachable. The grid updates daily,
+/// so results are cached per rounded point per UTC day; a NaN sentinel marks
+/// "fetched, no data" so a down server isn't re-queried on every refresh.
+Future<double?> fetchSstAnomaly(double lat, double lon) async {
+  final day = DateTime.now().toUtc();
+  final key = 'sstAnom_${lat.toStringAsFixed(1)}_${lon.toStringAsFixed(1)}_'
+      '${_dateFmt.format(day)}';
+  final sp = await SharedPreferences.getInstance();
+  final cached = sp.getDouble(key);
+  if (cached != null) return cached.isNaN ? null : cached;
+
+  final url = '$_erddap/jplMURSST41anom1day.json'
+      '?sstAnom%5B(last)%5D'
+      '%5B(${lat - 0.15}):(${lat + 0.15})%5D'
+      '%5B(${lon - 0.15}):(${lon + 0.15})%5D';
+  final data = await apiGet(url);
+  final rows = data?['table']?['rows'] as List?;
+  if (rows == null) return null; // transient failure — don't cache
+
+  final vals = [
+    for (final r in rows)
+      if ((r as List).last != null) (r.last as num).toDouble()
+  ];
+  if (vals.isEmpty) {
+    await sp.setDouble(key, double.nan);
+    return null;
+  }
+  final mean = vals.reduce((a, b) => a + b) / vals.length;
+  await sp.setDouble(key, mean);
+  return mean;
+}
+
 // ── Station capability map ────────────────────────────────────────────────────
 //
 // NOAA mdapi valid type= values:

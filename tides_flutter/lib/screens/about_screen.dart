@@ -21,7 +21,7 @@ class AboutScreen extends StatelessWidget {
                 style: TextStyle(
                     color: kCyan, fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            const Text('Version 3.4  ·  free · open · forever',
+            const Text('Version 3.4.1  ·  free · open · forever',
                 style: TextStyle(color: Colors.white54, fontSize: 13)),
             const SizedBox(height: 2),
             const Text('Built with Flutter',
@@ -226,9 +226,10 @@ class AboutScreen extends StatelessWidget {
     'Wave heights, swell and wind-sea breakdown from Open-Meteo Marine at each station location',
     'Native weather map — animated Wind, Waves, Swell, Temperature, Pressure, and Clouds layers, plus a unified Rain timeline: NOAA MRMS radar (past 2 h) flowing into an Open-Meteo precipitation forecast (up to 18 h ahead) with an hourly strip',
     'Seas map — NOAA WaveWatch III offshore significant-wave-height forecast, animated through the next ~48 hours (StormSurf-style), with tap-to-read wave height',
+    'Water Temp map — NOAA CoastWatch satellite layers: sea-surface temperature gradient (JPL MUR 1 km daily), upwelling (SST anomaly vs. normal), and turbidity / water clarity (MODIS Kd490); the data follows the map as you pan',
     'Animated salinity map — NOAA NGOFS2 hourly surface-salinity forecast loop for Gulf bays (Galveston, Matagorda, Corpus Christi, Mobile and more)',
     'Favorites and GPS-based nearest stations',
-    'Notifications for tide changes, solunar majors, best fishing days, and falling-barometer (cold-front) alerts',
+    'Notifications for tide changes, solunar majors, best fishing days, falling-barometer (cold-front) and upwelling alerts',
   ];
 
   static const _credits = [
@@ -248,6 +249,8 @@ class AboutScreen extends StatelessWidget {
     ('NOAA / NWS MRMS', 'Public domain', 'mrms.ncep.noaa.gov'),
     ('CARTO / OpenStreetMap', '© CARTO · © OpenStreetMap', 'carto.com'),
     ('NOAA NGOFS2 OFS', 'Public Domain', 'tidesandcurrents.noaa.gov/ofs'),
+    ('NOAA CoastWatch ERDDAP', 'Public Domain', 'coastwatch.pfeg.noaa.gov/erddap'),
+    ('JPL MUR SST (GHRSST)', 'Public Domain', 'podaac.jpl.nasa.gov'),
   ];
 
   Widget _creditTile((String, String, String) c) => Card(

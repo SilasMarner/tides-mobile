@@ -17,6 +17,19 @@ final tideDataProvider = FutureProvider<TideData?>((ref) async {
   return fetchAllData(station, targetDate: date);
 });
 
+/// SST anomaly at/below this (°C vs. normal) reads as an upwelling signal —
+/// shared by the Conditions-card banner and the upwelling notification.
+const kUpwellingThresholdC = -1.5;
+
+/// Daily MUR SST anomaly near the selected station (°C). Deliberately
+/// independent of [tideDataProvider] so a slow or down ERDDAP server can
+/// never delay the tide screen.
+final sstAnomalyProvider = FutureProvider<double?>((ref) async {
+  final station = ref.watch(selectedStationProvider);
+  if (station == null) return null;
+  return fetchSstAnomaly(station.lat, station.lon);
+});
+
 final showWeekProvider = StateProvider<bool>((_) => false);
 
 final weekDataProvider = FutureProvider<List<TidePrediction>>((ref) async {

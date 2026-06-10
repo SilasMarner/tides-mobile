@@ -18,6 +18,13 @@ String fmtTempInt(int f, bool metric) {
   return '$v${metric ? '°C' : '°F'}';
 }
 
+/// Temperature *difference* (anomaly/delta). Pass the value in °C — deltas
+/// scale by 1.8 with no +32 offset, so `fmtTemp` would be wrong here.
+String fmtTempDelta(double c, bool metric, {int decimals = 1}) {
+  final v = metric ? c : c * 1.8;
+  return '${v.toStringAsFixed(decimals)}${metric ? '°C' : '°F'}';
+}
+
 /// A length such as water level or wave height. Pass the value in feet.
 String fmtLen(double? ft, bool metric, {int decimals = 1, String na = 'N/A'}) {
   if (ft == null) return na;

@@ -155,6 +155,43 @@ class NotificationService {
     );
   }
 
+  /// Upwelling heads-up: SST anomaly well below normal near the station.
+  /// The anomaly arrives via its own provider (not TideData), so this is a
+  /// standalone entry point rather than part of [scheduleForStation]. Fired
+  /// immediately when the anomaly loads, deduped to once per station per day.
+  static Future<void> maybeUpwellingAlert(
+    String stationId,
+    String stationName,
+    double anomalyC, {
+    bool metric = false,
+  }) async {
+    await init();
+    final sp = await SharedPreferences.getInstance();
+    final today = DateTime.now();
+    final key =
+        'upwellAlert_${stationId}_${today.year}${today.month}${today.day}';
+    if (sp.getBool(key) == true) return;
+    await sp.setBool(key, true);
+    await _plugin.show(
+      _id(stationId, 'upwelling', today),
+      '🌊 Upwelling Detected — $stationName',
+      'Water ${fmtTempDelta(anomalyC.abs(), metric)} colder than normal — '
+          'cooler, often nutrient-rich water moving in near this station.',
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'tides_alerts',
+          'Tide Alerts',
+          channelDescription: 'Tide, solunar, and fishing notifications',
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+        ),
+        iOS: DarwinNotificationDetails(),
+      ),
+      payload: stationId,
+    );
+  }
+
   static Future<void> cancelForStation(String stationId) async {
     final pending = await _plugin.pendingNotificationRequests();
     for (final n in pending) {
