@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -34,6 +35,9 @@ class _LayerDef {
   final String variable;
   final String palette;
   final String ageNote; // how fresh "(last)" actually is
+  // Coarse grids (4km MODIS) render as visible blocks: request the PNG near
+  // the data's native cell size and gaussian-blur it on screen instead.
+  final double? smoothCellDeg;
   const _LayerDef({
     required this.label,
     required this.icon,
@@ -41,6 +45,7 @@ class _LayerDef {
     required this.variable,
     required this.palette,
     required this.ageNote,
+    this.smoothCellDeg,
   });
 }
 
@@ -68,6 +73,7 @@ const _kLayers = {
     variable: 'k490',
     palette: 'Rainbow2',
     ageNote: 'MODIS 8-day composite · gaps = clouds',
+    smoothCellDeg: 1 / 24, // MODIS Kd490 grid is ~4km (0.0417°)
   ),
 };
 
@@ -129,7 +135,10 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
   (double, double) _rangeFor(_Layer l) => switch (l) {
         _Layer.sst => _sstRange(),
         _Layer.anomaly => (-5, 5),
-        _Layer.turbidity => (0, 2),
+        // Min sits below the data floor (Kd490 ≥ ~0.02) so Rainbow2's purple
+        // band falls out of range and the clearest water renders BLUE — blue
+        // = clear reads naturally; purple = clear confused people.
+        _Layer.turbidity => (-0.5, 2),
       };
 
   // Re-fetch when the user pans/zooms so the overlay follows the map. The
@@ -182,10 +191,15 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
     final latA = latAscending ? b.south : b.north;
     final latB = latAscending ? b.north : b.south;
     // PNG aspect must match the bounds it's pinned on or the data shifts.
-    const w = 512;
+    // For coarse grids, ~1 pixel per data cell: ERDDAP draws cells as hard
+    // blocks, so a near-native render + the on-screen blur upscales into a
+    // smooth gradient instead of chunky 4km squares.
+    final w = def.smoothCellDeg != null
+        ? ((b.east - b.west) / def.smoothCellDeg!).round().clamp(96, 512)
+        : 512;
     final h = ((b.north - b.south) / (b.east - b.west) * w)
         .round()
-        .clamp(128, 768);
+        .clamp(64, 768);
     return 'https://coastwatch.pfeg.noaa.gov/erddap/griddap/'
         '${def.dataset}.transparentPng'
         '?${def.variable}%5B(last)%5D%5B($latA):($latB)%5D%5B(${b.west}):(${b.east})%5D'
@@ -328,15 +342,18 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
                 panBuffer: 2,
               ),
               if (_overlayUrl != null && _overlayBounds != null)
-                OverlayImageLayer(
-                  overlayImages: [
-                    OverlayImage(
-                      bounds: _overlayBounds!,
-                      imageProvider: NetworkImage(_overlayUrl!),
-                      // Basemap coastline/labels read through the wash.
-                      opacity: 0.75,
-                    ),
-                  ],
+                _smoothed(
+                  def,
+                  OverlayImageLayer(
+                    overlayImages: [
+                      OverlayImage(
+                        bounds: _overlayBounds!,
+                        imageProvider: NetworkImage(_overlayUrl!),
+                        // Basemap coastline/labels read through the wash.
+                        opacity: 0.75,
+                      ),
+                    ],
+                  ),
                 ),
               MarkerLayer(markers: [
                 Marker(
@@ -441,6 +458,16 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
     );
   }
 
+  // Gaussian-blur coarse-grid layers so 4km cells melt into a smooth wash;
+  // decal tile mode keeps the blur from smearing past transparent edges.
+  Widget _smoothed(_LayerDef def, Widget child) => def.smoothCellDeg == null
+      ? child
+      : ImageFiltered(
+          imageFilter: ui.ImageFilter.blur(
+              sigmaX: 3, sigmaY: 3, tileMode: ui.TileMode.decal),
+          child: child,
+        );
+
   // ── Legend ──────────────────────────────────────────────────────────────────
   //
   // Chip colors approximate the ERDDAP palettes (Rainbow2 cold→hot,
@@ -468,8 +495,8 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
         ];
       case _Layer.turbidity:
         return [
-          (const Color(0xFF8E44AD), 'Clear'),
-          (const Color(0xFF29B6D8), 'Slight'),
+          (const Color(0xFF2D6FE0), 'Clear'),
+          (const Color(0xFF35C6DC), 'Slight'),
           (const Color(0xFFE8C233), 'Murky'),
           (const Color(0xFFD83A2E), 'Very murky'),
         ];
