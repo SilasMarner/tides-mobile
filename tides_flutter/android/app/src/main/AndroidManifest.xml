@@ -13,10 +13,11 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <!-- SCHEDULE_EXACT_ALARM requires runtime user grant — keep removed -->
+    <!-- Exact alarm permissions: removed to avoid Play Store declaration requirements.
+         canScheduleExactNotifications() returns true on API<31 automatically;
+         on API 31+ exact alarms become available if the user grants Alarms & Reminders. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" tools:node="remove"/>
-    <!-- USE_EXACT_ALARM (API 32+): no user grant needed; needed for exactAllowWhileIdle scheduling -->
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" tools:node="remove"/>
 
     <application
         android:label="OpenTides"
