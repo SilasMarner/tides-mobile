@@ -4,7 +4,7 @@ A free, open-source Flutter app for Android that shows real-time NOAA tide data,
 
 ## Download
 
-**Latest release: [v3.4.0 — Android Auto (with tide chart), night mode, smoother maps](https://github.com/SilasMarner/tides-mobile/releases/tag/v3.4.0)** ([always-latest link](https://github.com/SilasMarner/tides-mobile/releases/latest)) — download `tides-3.4.0.apk` and tap to install.
+**Latest release: [v3.4.1 — Water Temp map, turbidity & upwelling alerts](https://github.com/SilasMarner/tides-mobile/releases/tag/v3.4.1)** ([always-latest link](https://github.com/SilasMarner/tides-mobile/releases/latest)) — download `tides-3.4.1.apk` and tap to install.
 
 To sideload: enable *Install unknown apps* for your file manager in Android Settings → Apps, download the APK, and tap to install.
 
