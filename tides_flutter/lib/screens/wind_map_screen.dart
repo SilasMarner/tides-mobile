@@ -13,27 +13,49 @@ import '../providers/units_provider.dart';
 import '../theme.dart';
 
 // ── Color ramps (opacity baked in) ───────────────────────────────────────────
+// Piecewise-linear ramps: values lerp between stops, so the wash renders as one
+// continuous Windy-style gradient instead of hard posterised bands. Stops sit
+// at the midpoints of the old bands, so the legend chips stay truthful.
 
-Color _windColor(double mph) {
-  final c = mph < 2  ? const Color(0xFFFFFFFF)
-          : mph < 5  ? const Color(0xFF98ECFF)
-          : mph < 10 ? const Color(0xFF4BCFFA)
-          : mph < 15 ? const Color(0xFF56E39F)
-          : mph < 20 ? const Color(0xFFF9CA24)
-          : mph < 25 ? const Color(0xFFF0932B)
-          : mph < 35 ? const Color(0xFFEB4D4B)
-          :             const Color(0xFF6C5CE7);
-  return c.withValues(alpha: 0.45);
+Color _ramp(double v, List<(double, Color)> stops) {
+  if (v.isNaN) return Colors.transparent;
+  if (v <= stops.first.$1) return stops.first.$2;
+  for (var k = 1; k < stops.length; k++) {
+    if (v <= stops[k].$1) {
+      final (v0, c0) = stops[k - 1];
+      final (v1, c1) = stops[k];
+      return Color.lerp(c0, c1, (v - v0) / (v1 - v0))!;
+    }
+  }
+  return stops.last.$2;
 }
 
+// Soft low-end cutoff: alpha 0 below [lo], full above [hi] — washes fade in
+// instead of snapping from transparent to full colour at a hard threshold.
+double _fadeIn(double v, double lo, double hi) =>
+    ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
+
+Color _windColor(double mph) => _ramp(mph, const [
+      (0.0,  Color(0xFFFFFFFF)),
+      (3.5,  Color(0xFF98ECFF)),
+      (7.5,  Color(0xFF4BCFFA)),
+      (12.5, Color(0xFF56E39F)),
+      (17.5, Color(0xFFF9CA24)),
+      (22.5, Color(0xFFF0932B)),
+      (30.0, Color(0xFFEB4D4B)),
+      (42.0, Color(0xFF6C5CE7)),
+    ]).withValues(alpha: 0.45);
+
 Color _waveColor(double m) {
-  if (m < 0.1) return Colors.transparent;
-  final c = m < 0.5 ? const Color(0xFF7FB3D3)
-          : m < 1.0 ? const Color(0xFF2980B9)
-          : m < 2.0 ? const Color(0xFF1A5276)
-          : m < 4.0 ? const Color(0xFF0D2137)
-          :             const Color(0xFF07111E);
-  return c.withValues(alpha: 0.50);
+  final f = _fadeIn(m, 0.05, 0.3);
+  if (f == 0) return Colors.transparent;
+  return _ramp(m, const [
+    (0.25, Color(0xFF7FB3D3)),
+    (0.75, Color(0xFF2980B9)),
+    (1.50, Color(0xFF1A5276)),
+    (3.00, Color(0xFF0D2137)),
+    (5.00, Color(0xFF07111E)),
+  ]).withValues(alpha: 0.50 * f);
 }
 
 // Seas (NOAA WaveWatch III significant wave height, metres). A vivid
@@ -41,64 +63,69 @@ Color _waveColor(double m) {
 // so offshore sea state reads clearly over the light basemap, where the Waves
 // layer's subtle all-blue wash would wash out. Transparent over land/no-data.
 Color _seasColor(double m) {
-  if (!m.isFinite || m < 0.1) return Colors.transparent;
-  final c = m < 0.5 ? const Color(0xFF3A7BD5)   // calm — blue
-          : m < 1.0 ? const Color(0xFF00B4D8)   // light chop — cyan
-          : m < 1.5 ? const Color(0xFF2ECC71)   // building — green
-          : m < 2.0 ? const Color(0xFFF1C40F)   // moderate — yellow
-          : m < 3.0 ? const Color(0xFFF39C12)   // rough — orange
-          : m < 4.0 ? const Color(0xFFE74C3C)   // high — red
-          :             const Color(0xFF8E44AD); // very high — purple
-  return c.withValues(alpha: 0.60);
+  if (!m.isFinite) return Colors.transparent;
+  final f = _fadeIn(m, 0.05, 0.3);
+  if (f == 0) return Colors.transparent;
+  return _ramp(m, const [
+    (0.30, Color(0xFF3A7BD5)), // calm — blue
+    (0.75, Color(0xFF00B4D8)), // light chop — cyan
+    (1.25, Color(0xFF2ECC71)), // building — green
+    (1.75, Color(0xFFF1C40F)), // moderate — yellow
+    (2.50, Color(0xFFF39C12)), // rough — orange
+    (3.50, Color(0xFFE74C3C)), // high — red
+    (5.00, Color(0xFF8E44AD)), // very high — purple
+  ]).withValues(alpha: 0.60 * f);
 }
 
+// Cyan → indigo → purple → magenta: distinct hues that read clearly both
+// on the map and as legend dots, and stand apart from the blue wave layer.
 Color _swellColor(double m) {
-  if (m < 0.1) return Colors.transparent;
-  // Cyan → indigo → purple → magenta: distinct hues that read clearly both
-  // on the map and as legend dots, and stand apart from the blue wave layer.
-  final c = m < 0.5 ? const Color(0xFF4DD0E1)
-          : m < 1.0 ? const Color(0xFF5C6BC0)
-          : m < 2.0 ? const Color(0xFF7E57C2)
-          : m < 4.0 ? const Color(0xFFAB47BC)
-          :             const Color(0xFFEC407A);
-  return c.withValues(alpha: 0.55);
+  final f = _fadeIn(m, 0.05, 0.3);
+  if (f == 0) return Colors.transparent;
+  return _ramp(m, const [
+    (0.25, Color(0xFF4DD0E1)),
+    (0.75, Color(0xFF5C6BC0)),
+    (1.50, Color(0xFF7E57C2)),
+    (3.00, Color(0xFFAB47BC)),
+    (5.00, Color(0xFFEC407A)),
+  ]).withValues(alpha: 0.55 * f);
 }
 
 Color _rainColor(double mm) {
-  if (mm < 0.1) return Colors.transparent;
-  final c = mm < 1.0 ? const Color(0xFFAED6F1)
-          : mm < 2.0 ? const Color(0xFF5DADE2)
-          : mm < 5.0 ? const Color(0xFF2E86C1)
-          : mm < 10  ? const Color(0xFF1A5276)
-          :              const Color(0xFF4A235A);
-  return c.withValues(alpha: 0.55);
+  final f = _fadeIn(mm, 0.05, 0.5);
+  if (f == 0) return Colors.transparent;
+  return _ramp(mm, const [
+    (0.5,  Color(0xFFAED6F1)),
+    (1.5,  Color(0xFF5DADE2)),
+    (3.5,  Color(0xFF2E86C1)),
+    (7.5,  Color(0xFF1A5276)),
+    (15.0, Color(0xFF4A235A)),
+  ]).withValues(alpha: 0.55 * f);
 }
 
-Color _tempColor(double degC) {
-  final c = degC < -5  ? const Color(0xFF4A235A)
-          : degC < 0   ? const Color(0xFF1A5276)
-          : degC < 5   ? const Color(0xFF2E86C1)
-          : degC < 10  ? const Color(0xFFAED6F1)
-          : degC < 15  ? const Color(0xFFA9DFBF)
-          : degC < 20  ? const Color(0xFFF9E79F)
-          : degC < 25  ? const Color(0xFFF9CA24)
-          : degC < 30  ? const Color(0xFFF0932B)
-          : degC < 35  ? const Color(0xFFEB4D4B)
-          :               const Color(0xFF922B21);
-  return c.withValues(alpha: 0.50);
-}
+Color _tempColor(double degC) => _ramp(degC, const [
+      (-7.5, Color(0xFF4A235A)),
+      (-2.5, Color(0xFF1A5276)),
+      (2.5,  Color(0xFF2E86C1)),
+      (7.5,  Color(0xFFAED6F1)),
+      (12.5, Color(0xFFA9DFBF)),
+      (17.5, Color(0xFFF9E79F)),
+      (22.5, Color(0xFFF9CA24)),
+      (27.5, Color(0xFFF0932B)),
+      (32.5, Color(0xFFEB4D4B)),
+      (40.0, Color(0xFF922B21)),
+    ]).withValues(alpha: 0.50);
 
-Color _pressureColor(double hpa) {
-  final c = hpa < 990  ? const Color(0xFF6C5CE7)
-          : hpa < 1000 ? const Color(0xFF4BCFFA)
-          : hpa < 1008 ? const Color(0xFF56E39F)
-          : hpa < 1013 ? const Color(0xFFFFFFFF)
-          : hpa < 1018 ? const Color(0xFFF9CA24)
-          : hpa < 1023 ? const Color(0xFFF0932B)
-          :               const Color(0xFFEB4D4B);
-  // Keep the wash subtle — the isobar lines carry the detail.
-  return c.withValues(alpha: 0.28);
-}
+// Keep the wash subtle — the isobar lines carry the detail.
+Color _pressureColor(double hpa) => _ramp(hpa, const [
+      (985.0,  Color(0xFF6C5CE7)),
+      (995.0,  Color(0xFF4BCFFA)),
+      (1004.0, Color(0xFF56E39F)),
+      (1010.5, Color(0xFFFFFFFF)),
+      (1015.5, Color(0xFFF9CA24)),
+      (1020.5, Color(0xFFF0932B)),
+      (1028.0, Color(0xFFEB4D4B)),
+    ]).withValues(alpha: 0.28);
 
 Color _cloudColor(double pct) {
   final t = (pct / 100.0).clamp(0.0, 1.0);
@@ -235,12 +262,16 @@ class _DataGrid {
 
 // Renders a [field] to a smooth gradient image by sampling its bilinear
 // interpolation at every pixel. Top-level so the prefetch path can reuse it.
-// When [masked] (Seas), the per-point water coverage feathers the edge: fully
-// transparent below ~0.4 coverage, ramping to full over 0.4–0.7 — a soft
-// coastline with no colour bleeding onto land.
+// When [masked] (Seas/Waves/Swell), the per-point water coverage feathers the
+// edge: fully transparent below ~0.4 coverage, ramping to full over 0.4–0.7 —
+// a soft coastline with no colour bleeding onto land.
+// [covWeighted] is for grids that store 0 at land points (the Open-Meteo
+// marine layers): dividing the bilinear value by coverage undoes the dilution
+// from those zero corners, so wave heights hold up right to the coast. The
+// Seas grid already stores coverage-weighted values, so it leaves this off.
 Future<ui.Image> _buildGradientImage(
     _DataGrid field, Color Function(double) colorFn,
-    {int imgN = 128, bool masked = false}) async {
+    {int imgN = 128, bool masked = false, bool covWeighted = false}) async {
   final recorder = ui.PictureRecorder();
   final c = Canvas(recorder);
   final latSpan = field.latMax - field.latMin;
@@ -249,13 +280,16 @@ Future<ui.Image> _buildGradientImage(
     for (var col = 0; col < imgN; col++) {
       final lat = field.latMax - (row / (imgN - 1)) * latSpan;
       final lon = field.lonMin + (col / (imgN - 1)) * lonSpan;
-      var color = colorFn(field.primaryAt(lat, lon));
+      var value = field.primaryAt(lat, lon);
+      double feather = 1.0;
       if (masked) {
         final cov = field.coverageAt(lat, lon);
         if (cov < 0.4) continue; // land — leave transparent
-        final f = ((cov - 0.4) / 0.3).clamp(0.0, 1.0); // soft coastline feather
-        if (f < 1.0) color = color.withValues(alpha: color.a * f);
+        feather = ((cov - 0.4) / 0.3).clamp(0.0, 1.0); // soft coastline edge
+        if (covWeighted) value /= cov;
       }
+      var color = colorFn(value);
+      if (feather < 1.0) color = color.withValues(alpha: color.a * feather);
       c.drawRect(
         Rect.fromLTWH(col.toDouble(), row.toDouble(), 1, 1),
         Paint()..color = color,
@@ -1119,6 +1153,9 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
 
   static const _n = 9;
   static const _seasN = 24; // upsample WW3 0.5° onto a finer grid for smoothness
+  // Grid span = view span × this margin. Wide enough that ordinary pans stay
+  // inside the fetched grid (no refetch), without costing much resolution.
+  static const _kGridMargin = 1.45;
 
   static final _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 15),
@@ -1148,7 +1185,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     if (!hasGesture) return;
     final cur = _kLayers[_currentLayer]!;
     _moveDebounce?.cancel();
-    _moveDebounce = Timer(const Duration(milliseconds: 450), () {
+    _moveDebounce = Timer(const Duration(milliseconds: 350), () {
       if (!mounted) return;
       // Radar and clouds use pre-fetched overlay images, so rebuild them for
       // the new view (data follows the map, like the grid layers).
@@ -1157,6 +1194,19 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
       } else if (cur.isSatellite) {
         _fetchSatellite();
       } else {
+        // Small pans/zooms reuse the in-hand grid: skip the refetch while the
+        // view is still inside the grid AND a fresh grid wouldn't be ~2× finer
+        // — no flicker, no API chatter while exploring nearby water.
+        final f = _field;
+        if (f != null) {
+          final vb = _mapController.camera.visibleBounds;
+          final viewSpan = math.max(vb.north - vb.south, vb.east - vb.west);
+          final covered = vb.north <= f.latMax && vb.south >= f.latMin &&
+              vb.east <= f.lonMax && vb.west >= f.lonMin;
+          final fineEnough = viewSpan * _kGridMargin >
+              (f.latMax - f.latMin) * 0.55;
+          if (covered && fineEnough) return;
+        }
         _fetchGrid(silent: true);
       }
     });
@@ -1235,7 +1285,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     // Size a square grid to cover the current view (wider dimension) + margin.
     final cam = _mapController.camera;
     final b = cam.visibleBounds;
-    final span = math.max(b.north - b.south, b.east - b.west) * 1.3;
+    final span = math.max(b.north - b.south, b.east - b.west) * _kGridMargin;
     final step = span / (_n - 1);
     final latMin = cam.center.latitude - span / 2;
     final lonMin = cam.center.longitude - span / 2;
@@ -1280,15 +1330,22 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
 
       final pts = items.map<_DataPoint>((item) {
         final c = item['current'] as Map? ?? {};
-        final v = (c[def.valueVar]  as num?)?.toDouble() ?? 0.0;
+        final raw = c[def.valueVar] as num?;
         final d = def.directionVar != null
             ? (c[def.directionVar!] as num?)?.toDouble()
             : null;
-        return _DataPoint(v, d);
+        // Marine variables come back null over land — record that as zero
+        // water coverage so the render can mask the wash to the sea.
+        return _DataPoint(raw?.toDouble() ?? 0.0, d,
+            (def.isMarine && raw == null) ? 0.0 : 1.0);
       }).toList();
 
       final field = _DataGrid(pts, latMin, lonMin, step, _n);
-      final img = await _buildGradientImage(field, def.colorFn);
+      // Marine washes are land-masked (192px for a crisper coastline edge).
+      final img = def.isMarine
+          ? await _buildGradientImage(field, def.colorFn,
+              imgN: 192, masked: true, covWeighted: true)
+          : await _buildGradientImage(field, def.colorFn);
 
       if (mounted) {
         final entry = (field: field, image: img, fetchedAt: DateTime.now());
@@ -1536,7 +1593,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     _seasAnim?.cancel();
     final cam = _mapController.camera;
     final b = cam.visibleBounds;
-    final span = math.max(b.north - b.south, b.east - b.west) * 1.3;
+    final span = math.max(b.north - b.south, b.east - b.west) * _kGridMargin;
     final step = span / (_seasN - 1);
     final latMin = cam.center.latitude - span / 2;
     final lonMin = cam.center.longitude - span / 2; // −180..180 (map coords)
@@ -1899,6 +1956,9 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                 subdomains: const ['a', 'b', 'c', 'd'],
                 userAgentPackageName: 'com.mattbettinger.tides',
                 retinaMode: true,
+                // Prefetch a ring of tiles beyond the view edge so pans reveal
+                // loaded map instead of grey squares.
+                panBuffer: 2,
               ),
               // NOAA radar layer — only when the current frame is observed radar.
               // WMS layer; the time dimension is swapped per frame (ValueKey
@@ -2455,8 +2515,14 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
       case _Layer.waves:
       case _Layer.swell:
       case _Layer.seas:
-        if (v < 0.05) return 'No waves here';
-        final h = metric ? v : v * 3.28084; // grid values are metres
+        final cov =
+            _field!.coverageAt(_probe!.latitude, _probe!.longitude);
+        if (cov < 0.4) return 'Land — no wave data';
+        // Open-Meteo marine grids store 0 at land points; un-dilute the
+        // near-coast bilinear the same way the wash render does.
+        final mtrs = _currentLayer == _Layer.seas ? v : v / cov;
+        if (mtrs < 0.05) return 'No waves here';
+        final h = metric ? mtrs : mtrs * 3.28084; // grid values are metres
         return '${h.toStringAsFixed(1)} ${metric ? 'm' : 'ft'}$dirStr';
       case _Layer.rain:
         return v < 0.05 ? 'No rain' : '${v.toStringAsFixed(1)} mm';
