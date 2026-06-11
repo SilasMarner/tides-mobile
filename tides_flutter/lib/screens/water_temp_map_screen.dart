@@ -78,6 +78,47 @@ const _kLayers = {
   ),
 };
 
+// ── Prefetch ──────────────────────────────────────────────────────────────────
+// Warms the default SST overlay before the screen opens (called on map-icon
+// tap in detail_screen, same pattern as prefetchWindMap). Stores the result
+// in _prefetchCache so initState can paint it immediately, skipping the
+// loading spinner on first open.
+
+(double, double) _sstRangeFor(double lat) {
+  final a = lat.abs();
+  if (a > 45) return (4, 20);
+  if (a > 35) return (10, 26);
+  return (15, 33);
+}
+
+final _prefetchCache = <String, (String, LatLngBounds)>{};
+
+void prefetchWaterTempMap(double lat, double lon, BuildContext context) {
+  final key = '${lat.toStringAsFixed(1)}_${lon.toStringAsFixed(1)}';
+  if (_prefetchCache.containsKey(key)) return;
+  // Approximate zoom-7 view (~6° lat × 8° lon), same 0.5° rounding as
+  // _requestBounds — URL may hit Flutter's image cache exactly on open.
+  double down(double v) => (v * 2).floorToDouble() / 2;
+  double up(double v) => (v * 2).ceilToDouble() / 2;
+  final s = down(lat - 3.0).clamp(-89.5, 89.5);
+  final n = up(lat + 3.0).clamp(-89.5, 89.5);
+  final w = down(lon - 4.0);
+  final e = up(lon + 4.0);
+  final (lo, hi) = _sstRangeFor(lat);
+  final h = ((n - s) / (e - w) * 512).round().clamp(64, 768);
+  final url = 'https://coastwatch.pfeg.noaa.gov/erddap/griddap/'
+      'jplMURSST41.transparentPng'
+      '?analysed_sst%5B(last)%5D%5B($s):($n)%5D%5B($w):($e)%5D'
+      '&.draw=surface'
+      '&.vars=longitude%7Clatitude%7Canalysed_sst'
+      '&.colorBar=Rainbow2%7C%7C%7C$lo%7C$hi%7C'
+      '&.size=512%7C$h';
+  final bounds = LatLngBounds(LatLng(s, w), LatLng(n, e));
+  precacheImage(NetworkImage(url), context)
+      .then((_) => _prefetchCache[key] = (url, bounds))
+      .catchError((_) {});
+}
+
 class WaterTempMapScreen extends ConsumerStatefulWidget {
   final double lat;
   final double lon;
@@ -105,6 +146,13 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
   bool _refreshing = false; // pan/zoom refetch with old overlay still up
   String? _error;
 
+  // Per-session overlay cache: switching back to a visited layer is instant.
+  final _layerCache = <_Layer, (String, LatLngBounds)>{};
+
+  // Blur filter is stateless; creating it once avoids per-rebuild allocation.
+  static final _kBlurFilter =
+      ui.ImageFilter.blur(sigmaX: 3, sigmaY: 3, tileMode: ui.TileMode.decal);
+
   // ── Tap probe ──
   // The overlay is a server-rendered PNG (no client-side grid), so a tap
   // reads the value by asking ERDDAP for that single grid cell as JSON.
@@ -124,9 +172,24 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
   @override
   void initState() {
     super.initState();
-    // Fetch once the map has laid out, so visibleBounds is real.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _fetchOverlay();
+      if (!mounted) return;
+      // If prefetchWaterTempMap warmed the SST overlay before this screen
+      // opened, paint it immediately — no loading spinner on first open.
+      final key =
+          '${widget.lat.toStringAsFixed(1)}_${widget.lon.toStringAsFixed(1)}';
+      final pre = _prefetchCache.remove(key);
+      if (pre != null) {
+        _layerCache[_Layer.sst] = pre;
+        setState(() {
+          _overlayUrl = pre.$1;
+          _overlayBounds = pre.$2;
+          _loading = false;
+        });
+      }
+      // Either confirms the prefetched URL (early-return) or silently updates
+      // to the exact screen bounds in the background (_refreshing path).
+      _fetchOverlay();
     });
   }
 
@@ -136,14 +199,8 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
     super.dispose();
   }
 
-  // SST color range tuned to the station's latitude band — a fixed Gulf range
-  // (15–33 °C) washes out to one color off New England or the PNW.
-  (double, double) _sstRange() {
-    final a = widget.lat.abs();
-    if (a > 45) return (4, 20);
-    if (a > 35) return (10, 26);
-    return (15, 33);
-  }
+  // SST color range tuned to the station's latitude band.
+  (double, double) _sstRange() => _sstRangeFor(widget.lat);
 
   (double, double) _rangeFor(_Layer l) => switch (l) {
         _Layer.sst => _sstRange(),
@@ -154,13 +211,22 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
         _Layer.turbidity => (-0.5, 2),
       };
 
-  // Re-fetch when the user pans/zooms so the overlay follows the map. The
-  // bounds are rounded to 0.5°, so small moves rebuild the same URL and skip.
+  // Re-fetch when the user pans/zooms so the overlay follows the map.
   void _onPositionChanged(MapCamera camera, bool hasGesture) {
     if (!hasGesture) return;
     _moveDebounce?.cancel();
     _moveDebounce = Timer(const Duration(milliseconds: 350), () {
-      if (mounted) _fetchOverlay();
+      if (!mounted) return;
+      // Skip if the current overlay already covers the new request area —
+      // no API chatter for small pans within the already-loaded region.
+      if (_overlayBounds != null) {
+        final nb = _requestBounds();
+        if (_overlayBounds!.north >= nb.north &&
+            _overlayBounds!.south <= nb.south &&
+            _overlayBounds!.east >= nb.east &&
+            _overlayBounds!.west <= nb.west) return;
+      }
+      _fetchOverlay();
     });
   }
 
@@ -252,6 +318,7 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
         _kd490LatAscending = ascending;
       }
       if (!mounted) return;
+      _layerCache[l] = (url, bounds);
       setState(() {
         _overlayUrl = url;
         _overlayBounds = bounds;
@@ -274,12 +341,18 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
 
   void _setLayer(_Layer l) {
     if (l == _currentLayer) return;
+    final cached = _layerCache[l];
     setState(() {
       _currentLayer = l;
-      // Different layer = different colors; don't leave the old wash up.
-      _overlayUrl = null;
-      _overlayBounds = null;
-      // A reading from the old layer would mislabel the new colors.
+      if (cached != null) {
+        // Instant repaint from session cache; _fetchOverlay will confirm or
+        // silently update if the view has moved since we last visited.
+        _overlayUrl = cached.$1;
+        _overlayBounds = cached.$2;
+      } else {
+        _overlayUrl = null;
+        _overlayBounds = null;
+      }
       _clearProbe();
     });
     _fetchOverlay(layer: l);
@@ -481,11 +554,12 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
                     point: _probePoint!,
                     width: 22,
                     height: 22,
-                    child: const Icon(
-                      Icons.my_location,
-                      size: 22,
-                      color: Colors.white,
-                      shadows: [Shadow(color: Colors.black, blurRadius: 5)],
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: kCyan.withValues(alpha: 0.4),
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
                     ),
                   ),
               ]),
@@ -529,6 +603,26 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
                               color: Colors.white70, fontSize: 11)),
                     ],
                   ),
+                ),
+              ),
+            ),
+          // Tap hint — visible until the user taps for the first time.
+          if (_probePoint == null && _overlayUrl != null &&
+              !_loading && _error == null)
+            Positioned(
+              top: 46,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Text('Tap the map to read a value',
+                      style: TextStyle(color: Colors.white70, fontSize: 11)),
                 ),
               ),
             ),
@@ -626,11 +720,7 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
   // decal tile mode keeps the blur from smearing past transparent edges.
   Widget _smoothed(_LayerDef def, Widget child) => def.smoothCellDeg == null
       ? child
-      : ImageFiltered(
-          imageFilter: ui.ImageFilter.blur(
-              sigmaX: 3, sigmaY: 3, tileMode: ui.TileMode.decal),
-          child: child,
-        );
+      : ImageFiltered(imageFilter: _kBlurFilter, child: child);
 
   // ── Legend ──────────────────────────────────────────────────────────────────
   //

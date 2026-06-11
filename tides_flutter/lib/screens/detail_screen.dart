@@ -124,6 +124,7 @@ class DetailScreen extends ConsumerWidget {
                       lon: station.lon,
                       stationName: station.name);
                 case 'watertemp':
+                  prefetchWaterTempMap(station.lat, station.lon, context);
                   screen = WaterTempMapScreen(
                       lat: station.lat,
                       lon: station.lon,
