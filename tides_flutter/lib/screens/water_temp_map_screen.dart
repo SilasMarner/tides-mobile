@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -103,6 +104,18 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
   bool _loading = true; // nothing on screen yet for this layer
   bool _refreshing = false; // pan/zoom refetch with old overlay still up
   String? _error;
+
+  // ── Tap probe ──
+  // The overlay is a server-rendered PNG (no client-side grid), so a tap
+  // reads the value by asking ERDDAP for that single grid cell as JSON.
+  static final _probeDio = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 15),
+  ));
+  LatLng? _probePoint;
+  bool _probeLoading = false;
+  String? _probeText;
+  int _probeSeq = 0; // ignore stale responses after a newer tap
 
   // erdMH1 latitude storage order isn't documented like MUR's (ascending,
   // verified); learned empirically — flipped once if the first request 500s.
@@ -266,8 +279,99 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
       // Different layer = different colors; don't leave the old wash up.
       _overlayUrl = null;
       _overlayBounds = null;
+      // A reading from the old layer would mislabel the new colors.
+      _clearProbe();
     });
     _fetchOverlay(layer: l);
+  }
+
+  // ── Tap probe ────────────────────────────────────────────────────────────
+
+  void _clearProbe() {
+    _probeSeq++;
+    _probePoint = null;
+    _probeLoading = false;
+    _probeText = null;
+  }
+
+  Future<void> _probe(LatLng p) async {
+    final l = _currentLayer;
+    final def = _kLayers[l]!;
+    final seq = ++_probeSeq;
+    setState(() {
+      _probePoint = p;
+      _probeLoading = true;
+      _probeText = null;
+    });
+
+    final lat = p.latitude.toStringAsFixed(3);
+    final lon = p.longitude.toStringAsFixed(3);
+    // Same single-cell request for both lat/lon ends: ERDDAP snaps "(value)"
+    // to the nearest grid index, so this returns exactly one row.
+    final url = 'https://coastwatch.pfeg.noaa.gov/erddap/griddap/'
+        '${def.dataset}.json'
+        '?${def.variable}%5B(last)%5D%5B($lat):($lat)%5D%5B($lon):($lon)%5D';
+
+    String text;
+    try {
+      final resp = await _probeDio.get(url);
+      final data = resp.data is String
+          ? null // ERDDAP errors come back as HTML strings
+          : resp.data as Map<String, dynamic>;
+      final rows = (data?['table']?['rows'] as List?) ?? const [];
+      final v = rows.isEmpty ? null : (rows.first as List).last as num?;
+      text = v == null
+          ? 'No data at this spot — land, or a cloud gap'
+          : _formatProbe(l, v.toDouble());
+    } catch (_) {
+      text = 'Couldn’t read this point — NOAA may be busy, try again';
+    }
+    if (!mounted || seq != _probeSeq) return; // superseded by a newer tap
+    setState(() {
+      _probeLoading = false;
+      _probeText = text;
+    });
+  }
+
+  String _formatProbe(_Layer l, double v) {
+    final metric = ref.read(unitsProvider);
+    final unit = metric ? '°C' : '°F';
+    // Absolute temperature: °F needs the +32 offset.
+    String temp(double c) =>
+        '${(metric ? c : c * 9 / 5 + 32).toStringAsFixed(1)}$unit';
+    // Temperature *difference* (anomaly): scale only, no offset.
+    String delta(double c) {
+      final val = metric ? c : c * 9 / 5;
+      return '${val > 0 ? '+' : ''}${val.toStringAsFixed(1)}$unit';
+    }
+
+    switch (l) {
+      case _Layer.sst:
+        // analysed_sst is °C; for anglers this *is* the water temperature.
+        return 'Water temp ${temp(v)}';
+      case _Layer.anomaly:
+        final note = v <= -1.5
+            ? '  ·  upwelling signal'
+            : v >= 1.5
+                ? '  ·  warmer than normal'
+                : '  ·  near normal';
+        return '${delta(v)} vs normal$note';
+      case _Layer.turbidity:
+        // Kd490 (m⁻¹) = how fast blue-green light dims with depth.
+        // 1/Kd490 ≈ the depth sunlight effectively reaches.
+        final desc = v < 0.15
+            ? 'clear'
+            : v < 0.4
+                ? 'slightly stained'
+                : v < 1.0
+                    ? 'murky'
+                    : 'very murky';
+        final depthM = 1 / v.clamp(0.02, 10);
+        final depth = metric
+            ? '${depthM.toStringAsFixed(depthM >= 10 ? 0 : 1)} m'
+            : '${(depthM * 3.281).toStringAsFixed(0)} ft';
+        return 'Clarity: $desc  ·  sunlight to ~$depth  ·  Kd490 ${v.toStringAsFixed(2)}';
+    }
   }
 
   void _showLayerPicker() {
@@ -331,6 +435,7 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
                     InteractiveFlag.doubleTapZoom,
               ),
               onPositionChanged: _onPositionChanged,
+              onTap: (_, p) => _probe(p),
             ),
             children: [
               TileLayer(
@@ -371,6 +476,18 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
                     ],
                   ),
                 ),
+                if (_probePoint != null)
+                  Marker(
+                    point: _probePoint!,
+                    width: 22,
+                    height: 22,
+                    child: const Icon(
+                      Icons.my_location,
+                      size: 22,
+                      color: Colors.white,
+                      shadows: [Shadow(color: Colors.black, blurRadius: 5)],
+                    ),
+                  ),
               ]),
               const RichAttributionWidget(
                 attributions: [
@@ -411,6 +528,53 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
                           style: const TextStyle(
                               color: Colors.white70, fontSize: 11)),
                     ],
+                  ),
+                ),
+              ),
+            ),
+          // Probe reading — tap anywhere on the water to populate.
+          if (_probePoint != null && !_loading && _error == null)
+            Positioned(
+              top: 46,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: GestureDetector(
+                  onTap: () => setState(_clearProbe),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.75),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: kCyan, width: 1),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_probeLoading) ...[
+                          const SizedBox(
+                            width: 10,
+                            height: 10,
+                            child: CircularProgressIndicator(
+                                color: kCyan, strokeWidth: 2),
+                          ),
+                          const SizedBox(width: 6),
+                          const Text('Reading…',
+                              style: TextStyle(
+                                  color: Colors.white70, fontSize: 12)),
+                        ] else ...[
+                          Flexible(
+                            child: Text(_probeText ?? '',
+                                style: const TextStyle(
+                                    color: Colors.white, fontSize: 12)),
+                          ),
+                          const SizedBox(width: 6),
+                          const Icon(Icons.close,
+                              color: Colors.white38, size: 13),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -489,17 +653,26 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
       case _Layer.anomaly:
         final d = metric ? '5°C' : '9°F';
         return [
-          (const Color(0xFF2D5FD0), '−$d colder (upwelling)'),
-          (Colors.white, 'normal'),
-          (const Color(0xFFD0402D), '+$d warmer'),
+          (const Color(0xFF2D5FD0), '$d colder — upwelling'),
+          (Colors.white, 'normal for this date'),
+          (const Color(0xFFD0402D), '$d warmer than normal'),
         ];
       case _Layer.turbidity:
-        return [
-          (const Color(0xFF2D6FE0), 'Clear'),
-          (const Color(0xFF35C6DC), 'Slight'),
-          (const Color(0xFFE8C233), 'Murky'),
-          (const Color(0xFFD83A2E), 'Very murky'),
-        ];
+        // Labels carry the approximate depth sunlight reaches (≈1/Kd490) at
+        // that band, so the colors translate to something castable.
+        return metric
+            ? [
+                (const Color(0xFF2D6FE0), 'Clear · sun 10+ m'),
+                (const Color(0xFF35C6DC), 'Stained · ~2 m'),
+                (const Color(0xFFE8C233), 'Murky · ~1 m'),
+                (const Color(0xFFD83A2E), 'Very murky · <½ m'),
+              ]
+            : [
+                (const Color(0xFF2D6FE0), 'Clear · sun 30+ ft'),
+                (const Color(0xFF35C6DC), 'Stained · ~7 ft'),
+                (const Color(0xFFE8C233), 'Murky · ~3 ft'),
+                (const Color(0xFFD83A2E), 'Very murky · <2 ft'),
+              ];
     }
   }
 
@@ -535,8 +708,12 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
                   ],
                 ),
                 const SizedBox(height: 6),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
+                // Wrap, not Row: the descriptive labels overflow a Row on
+                // narrow phones; wrapping to a second line is fine.
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  runSpacing: 4,
                   children: _legendItems(metric)
                       .expand((item) => [
                             Padding(
