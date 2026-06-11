@@ -101,7 +101,7 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
-### v3.4.2 (build 59) — **Tap-to-read on the Water Temp map + clearer legends**
+### v3.4.1 (build 59) — **Tap-to-read on the Water Temp map + clearer legends**
 - **Tap anywhere** on the Water Temp, Upwelling, or Turbidity layer to read the exact value at that spot — water temperature, °F/°C above/below normal (with an *upwelling signal* note when it qualifies), or water clarity with the approximate depth sunlight reaches. The reading is pulled live from the same NOAA grid cell the map color came from; tap the chip to dismiss.
 - **Descriptive legends** — the Turbidity legend now shows the approximate sunlight-penetration depth per band (e.g. *Clear · sun 30+ ft* … *Very murky · <2 ft*, metric-aware), and the Upwelling legend reads plainly (*9°F colder — upwelling / normal for this date / 9°F warmer than normal*).
 - **In-app docs** — the User Guide's "Water temp, upwelling & turbidity" section now explains how each layer is computed (JPL MUR blended satellite+buoy SST; anomaly = today minus the long-term normal for that spot and day of year; Kd490 light attenuation with sunlight depth ≈ 1 ÷ Kd490) and covers the new tap-to-read probe.
