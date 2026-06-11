@@ -101,6 +101,13 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 59) — **Water Temp map speed + polish**
+- **Instant open** — tapping the Water Temp map icon now pre-warms the SST overlay in the background, so the map opens with data already painted (no loading spinner on first open).
+- **Instant layer switching** — visited layers (Water Temp / Upwelling / Turbidity) are cached for the session; switching back is immediate instead of waiting for a fresh ERDDAP render.
+- **Smarter panning** — small pans within the already-loaded region skip the ERDDAP refetch entirely; only moves that leave the loaded area trigger a new request.
+- **"Tap the map to read a value"** hint chip appears once the overlay loads, matching the Wind map's discoverability cue.
+- **Probe marker** — the tap-point indicator is now a small cyan circle (matching the Wind map), replacing the plain white icon that looked like a stray artifact.
+
 ### v3.4.1 (build 59) — **Tap-to-read on the Water Temp map + clearer legends**
 - **Tap anywhere** on the Water Temp, Upwelling, or Turbidity layer to read the exact value at that spot — water temperature, °F/°C above/below normal (with an *upwelling signal* note when it qualifies), or water clarity with the approximate depth sunlight reaches. The reading is pulled live from the same NOAA grid cell the map color came from; tap the chip to dismiss.
 - **Descriptive legends** — the Turbidity legend now shows the approximate sunlight-penetration depth per band (e.g. *Clear · sun 30+ ft* … *Very murky · <2 ft*, metric-aware), and the Upwelling legend reads plainly (*9°F colder — upwelling / normal for this date / 9°F warmer than normal*).
