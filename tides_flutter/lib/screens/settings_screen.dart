@@ -6,11 +6,43 @@ import '../providers/units_provider.dart';
 import '../services/notification_service.dart';
 import '../theme.dart';
 
-class SettingsScreen extends ConsumerWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen>
+    with WidgetsBindingObserver {
+  // Optimistic true avoids a flash of the warning on devices that have it.
+  bool _canExact = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refreshExact();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshExact();
+  }
+
+  Future<void> _refreshExact() async {
+    final can = await NotificationService.checkCanExact();
+    if (mounted) setState(() => _canExact = can);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final prefs = ref.watch(notificationPrefsProvider);
     final notifier = ref.read(notificationPrefsProvider.notifier);
     final favorites = ref.watch(favoritesProvider);
@@ -105,6 +137,30 @@ class SettingsScreen extends ConsumerWidget {
               },
             ),
           ),
+
+          if (prefs.enabled && !_canExact) ...[
+            const SizedBox(height: 12),
+            Card(
+              color: const Color(0xFF3A2800),
+              child: ListTile(
+                leading: const Icon(Icons.alarm_off, color: Colors.amber),
+                title: const Text(
+                  'Alerts may be delayed',
+                  style: TextStyle(
+                      color: Colors.amber, fontWeight: FontWeight.w600),
+                ),
+                subtitle: const Text(
+                  'Allow "Alarms & Reminders" so tide alerts fire on time.',
+                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                ),
+                trailing: TextButton(
+                  onPressed: NotificationService.openExactAlarmSettings,
+                  child: const Text('Fix',
+                      style: TextStyle(color: Colors.amber)),
+                ),
+              ),
+            ),
+          ],
 
           if (prefs.enabled) ...[
             const SizedBox(height: 16),

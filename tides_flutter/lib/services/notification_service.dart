@@ -34,6 +34,23 @@ class NotificationService {
     _initialized = true;
   }
 
+  /// Re-checks exact-alarm availability (call after returning from system settings).
+  static Future<bool> checkCanExact() async {
+    if (!_initialized) await init();
+    final androidImpl = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    _canExact = await androidImpl?.canScheduleExactNotifications() ?? false;
+    return _canExact;
+  }
+
+  /// Opens the system Alarms & Reminders page for this app (API 31+).
+  static Future<void> openExactAlarmSettings() async {
+    if (!_initialized) await init();
+    final androidImpl = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    await androidImpl?.requestExactAlarmsPermission();
+  }
+
   static Future<bool> requestPermission() async {
     final android = _plugin
         .resolvePlatformSpecificImplementation<
@@ -77,6 +94,7 @@ class NotificationService {
             body:
                 '$stationName · ${_fmt(p.time)} · ${fmtTideHeight(p.height, metric)}',
             at: notifyAt,
+            payload: stationId,
           );
         }
       }
@@ -93,6 +111,7 @@ class NotificationService {
             title: '🎣 Solunar Major in ${prefs.leadMinutes} min',
             body: '$stationName · ${_fmt(eventTime)} · Peak feeding window',
             at: notifyAt,
+            payload: stationId,
           );
         }
       }
@@ -114,6 +133,7 @@ class NotificationService {
           title: '🐟 Great Fishing Day — $stationName',
           body: '$stars  ${data.fishing.label}',
           at: morningAlert,
+          payload: stationId,
         );
       }
     }
@@ -210,6 +230,7 @@ class NotificationService {
     required String title,
     required String body,
     required DateTime at,
+    required String payload,
   }) async {
     final tzAt = tz.TZDateTime.from(at, tz.local);
     await _plugin.zonedSchedule(
@@ -233,6 +254,7 @@ class NotificationService {
           : AndroidScheduleMode.inexactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
+      payload: payload,
     );
   }
 
