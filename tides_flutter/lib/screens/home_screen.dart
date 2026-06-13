@@ -12,6 +12,7 @@ import '../providers/theme_provider.dart';
 import '../widgets/wave_header.dart';
 import '../widgets/station_tile.dart';
 import '../theme.dart';
+import '../services/notification_service.dart';
 import 'about_screen.dart';
 import 'detail_screen.dart';
 import 'settings_screen.dart';
@@ -36,6 +37,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkForUpdate();
+      // Reschedule 7-day tide alerts for all stations. Run after first frame so
+      // the Flutter engine and notification plugin are fully initialized.
+      NotificationService.rescheduleAllStations().ignore();
       // Warm the cache for favorites as soon as they load from disk.
       ref.listenManual(favoritesProvider, (_, favorites) {
         if (favorites.isNotEmpty) schedulePrefetch(favorites);

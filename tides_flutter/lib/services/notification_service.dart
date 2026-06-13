@@ -138,10 +138,11 @@ class NotificationService {
   }
 
   /// Re-schedules 7-day HiLo tide alerts for all notification-enabled stations.
-  /// Called from the detail screen; also available to trigger manually.
+  /// Call after Flutter is fully running (e.g. from a post-frame callback).
   static Future<void> rescheduleAllStations() async {
     try {
       await init();
+      await _plugin.cancelAll();
       final sp = await SharedPreferences.getInstance();
 
       final prefsStr = sp.getString('notification_prefs');
