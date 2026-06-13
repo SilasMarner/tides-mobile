@@ -9,12 +9,7 @@ import 'services/noaa_api.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService.init();
-  // Cancel ALL pending alarms before runApp so pendingNotificationRequests()
-  // is always fast when Settings opens — stale entries from before build 61
-  // accumulated into hundreds and caused the count to hang indefinitely.
-  await NotificationService.cancelAll();
   await hydrateCacheFromDisk();
-  // Reschedule fresh 7-day tide alarms for all enabled stations in the background.
   NotificationService.rescheduleAllStations().ignore();
   runApp(const ProviderScope(child: TidesApp()));
 }

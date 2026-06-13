@@ -17,7 +17,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     with WidgetsBindingObserver {
   bool _canExact = true;
   bool _notifEnabled = true;
-  int _pendingCount = -1; // -1 = not yet loaded
 
   @override
   void initState() {
@@ -41,12 +40,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     final results = await Future.wait([
       NotificationService.checkCanExact(),
       NotificationService.checkNotificationsEnabled(),
-      NotificationService.pendingCount(),
     ]);
     if (mounted) setState(() {
       _canExact = results[0] as bool;
       _notifEnabled = results[1] as bool;
-      _pendingCount = results[2] as int;
     });
   }
 
@@ -369,76 +366,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                       _canExact,
                       _canExact ? 'Active' : 'Inactive — alerts may be delayed',
                     ),
-                    const SizedBox(height: 6),
-                    _statusRow(
-                      'Pending scheduled alerts',
-                      _pendingCount > 0,
-                      _pendingCount < 0
-                          ? 'Loading…'
-                          : _pendingCount == 0
-                              ? '0 — open a station or tap Reschedule'
-                              : '$_pendingCount queued',
-                    ),
                     const Divider(color: Colors.white10, height: 20),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: kCyan,
-                              side: const BorderSide(color: kCyan, width: 0.5),
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                            ),
-                            onPressed: () async {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Rescheduling all stations…'),
-                                    duration: Duration(seconds: 1),
-                                  ),
-                                );
-                              }
-                              await NotificationService.rescheduleAllStations();
-                              await _refresh();
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                        '$_pendingCount alert(s) now scheduled'),
-                                    duration: const Duration(seconds: 3),
-                                  ),
-                                );
-                              }
-                            },
-                            child: const Text('Reschedule', style: TextStyle(fontSize: 13)),
+                    OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white54,
+                        side: const BorderSide(color: Colors.white24, width: 0.5),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                      onPressed: () async {
+                        await NotificationService.scheduleTestIn2Min();
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                                'Scheduled — you should get an alert in ~2 min'),
+                            duration: Duration(seconds: 4),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: OutlinedButton(
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.white54,
-                              side: const BorderSide(
-                                  color: Colors.white24, width: 0.5),
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                            ),
-                            onPressed: () async {
-                              await NotificationService.scheduleTestIn2Min();
-                              await _refresh();
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                      'Scheduled — you should get an alert in ~2 min'),
-                                  duration: Duration(seconds: 4),
-                                ),
-                              );
-                            },
-                            child: const Text('Test in 2 min',
-                                style: TextStyle(fontSize: 13)),
-                          ),
-                        ),
-                      ],
+                        );
+                      },
+                      child: const Text('Test scheduled alert (2 min)',
+                          style: TextStyle(fontSize: 13)),
                     ),
                     const SizedBox(height: 4),
                     Center(
