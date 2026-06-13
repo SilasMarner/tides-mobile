@@ -15,14 +15,15 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen>
     with WidgetsBindingObserver {
-  // Optimistic true avoids a flash of the warning on devices that have it.
+  // Optimistic true avoids a flash of warnings on devices that have everything set up.
   bool _canExact = true;
+  bool _notifEnabled = true;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _refreshExact();
+    _refresh();
   }
 
   @override
@@ -33,12 +34,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _refreshExact();
+    if (state == AppLifecycleState.resumed) _refresh();
   }
 
-  Future<void> _refreshExact() async {
-    final can = await NotificationService.checkCanExact();
-    if (mounted) setState(() => _canExact = can);
+  Future<void> _refresh() async {
+    final exact = await NotificationService.checkCanExact();
+    final notif = await NotificationService.checkNotificationsEnabled();
+    if (mounted) setState(() { _canExact = exact; _notifEnabled = notif; });
   }
 
   @override
@@ -138,7 +140,42 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             ),
           ),
 
-          if (prefs.enabled && !_canExact) ...[
+          if (prefs.enabled && !_notifEnabled) ...[
+            const SizedBox(height: 12),
+            Card(
+              color: const Color(0xFF3A0000),
+              child: ListTile(
+                leading: const Icon(Icons.notifications_off, color: Colors.redAccent),
+                title: const Text(
+                  'Notifications are blocked',
+                  style: TextStyle(
+                      color: Colors.redAccent, fontWeight: FontWeight.w600),
+                ),
+                subtitle: const Text(
+                  'Tap Allow, or go to Settings → Apps → OpenTides → Notifications.',
+                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                ),
+                trailing: TextButton(
+                  onPressed: () async {
+                    final granted = await NotificationService.requestPermission();
+                    if (granted) {
+                      _refresh();
+                    } else if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text(
+                            'Go to Settings → Apps → OpenTides → Notifications'),
+                        duration: Duration(seconds: 4),
+                      ));
+                    }
+                  },
+                  child: const Text('Allow',
+                      style: TextStyle(color: Colors.redAccent)),
+                ),
+              ),
+            ),
+          ],
+
+          if (prefs.enabled && _notifEnabled && !_canExact) ...[
             const SizedBox(height: 12),
             Card(
               color: const Color(0xFF3A2800),
@@ -305,6 +342,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               ),
 
             const SizedBox(height: 24),
+            Center(
+              child: TextButton.icon(
+                icon: const Icon(Icons.notification_add_outlined,
+                    size: 16, color: Colors.white38),
+                label: const Text('Send test notification',
+                    style: TextStyle(color: Colors.white38, fontSize: 12)),
+                onPressed: () async {
+                  final ok = await NotificationService.sendTestNotification();
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(ok
+                        ? 'Test notification sent — check your shade'
+                        : 'Blocked — tap "Allow" above first'),
+                    duration: const Duration(seconds: 3),
+                  ));
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
             const Text(
               'Notifications are scheduled each time you open a station. '
               'Keep the app installed to receive alerts.',

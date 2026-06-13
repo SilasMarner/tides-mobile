@@ -25,10 +25,20 @@ class NotificationService {
       const InitializationSettings(android: android, iOS: ios),
     );
 
-    // API 31+: exact alarms need SCHEDULE_EXACT_ALARM or USE_EXACT_ALARM.
-    // Cache once so every _schedule() call doesn't do a platform roundtrip.
     final androidImpl = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
+
+    // Ensure the channel exists with high importance before any notification fires.
+    await androidImpl?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        'tides_alerts',
+        'Tide Alerts',
+        description: 'Tide, solunar, and fishing notifications',
+        importance: Importance.high,
+      ),
+    );
+
+    // API 31+: exact alarms need SCHEDULE_EXACT_ALARM or USE_EXACT_ALARM.
     _canExact = await androidImpl?.canScheduleExactNotifications() ?? false;
 
     _initialized = true;
@@ -41,6 +51,37 @@ class NotificationService {
         AndroidFlutterLocalNotificationsPlugin>();
     _canExact = await androidImpl?.canScheduleExactNotifications() ?? false;
     return _canExact;
+  }
+
+  /// Whether POST_NOTIFICATIONS permission is granted (Android 13+).
+  static Future<bool> checkNotificationsEnabled() async {
+    if (!_initialized) await init();
+    final androidImpl = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    return await androidImpl?.areNotificationsEnabled() ?? true;
+  }
+
+  /// Fire an immediate test notification. Returns false if the permission is denied.
+  static Future<bool> sendTestNotification() async {
+    await init();
+    final enabled = await checkNotificationsEnabled();
+    if (!enabled) return false;
+    await _plugin.show(
+      0x7FFFFF00, // reserved test ID
+      '🌊 OpenTides — Notifications work!',
+      'If you see this, alerts are set up correctly.',
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'tides_alerts',
+          'Tide Alerts',
+          channelDescription: 'Tide, solunar, and fishing notifications',
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+        ),
+      ),
+    );
+    return true;
   }
 
   /// Opens the system Alarms & Reminders page for this app (API 31+).
