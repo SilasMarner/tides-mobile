@@ -3,14 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'theme.dart';
 import 'providers/theme_provider.dart';
 import 'screens/home_screen.dart';
-import 'services/notification_service.dart';
 import 'services/noaa_api.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await NotificationService.init();
   await hydrateCacheFromDisk();
-  NotificationService.rescheduleAllStations().ignore();
   runApp(const ProviderScope(child: TidesApp()));
 }
 

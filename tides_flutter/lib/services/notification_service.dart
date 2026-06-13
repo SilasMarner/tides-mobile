@@ -137,17 +137,11 @@ class NotificationService {
     return false;
   }
 
-  /// Called at every app start. Re-schedules 7-day HiLo tide alerts for all
-  /// notification-enabled stations so alarms survive reboots and app updates
-  /// without the user having to open each station individually.
+  /// Re-schedules 7-day HiLo tide alerts for all notification-enabled stations.
+  /// Called from the detail screen; also available to trigger manually.
   static Future<void> rescheduleAllStations() async {
     try {
       await init();
-      // Wipe ALL pending notifications first. Before build 61, cancelForStation
-      // had no payloads to match so stale alarms accumulated across every launch.
-      // Hundreds of stale entries exhaust AlarmManager slots and make
-      // pendingNotificationRequests() hang. Start clean every time.
-      await _plugin.cancelAll();
       final sp = await SharedPreferences.getInstance();
 
       final prefsStr = sp.getString('notification_prefs');
