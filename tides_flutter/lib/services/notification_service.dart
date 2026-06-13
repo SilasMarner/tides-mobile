@@ -64,6 +64,13 @@ class NotificationService {
     return await androidImpl?.areNotificationsEnabled() ?? true;
   }
 
+  /// Cancel every pending scheduled notification. Call before rescheduleAllStations()
+  /// so pendingNotificationRequests() is always fast.
+  static Future<void> cancelAll() async {
+    if (!_initialized) await init();
+    await _plugin.cancelAll();
+  }
+
   /// Number of pending (not yet fired) scheduled notifications.
   static Future<int> pendingCount() async {
     if (!_initialized) await init();
