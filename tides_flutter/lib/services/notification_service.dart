@@ -136,6 +136,11 @@ class NotificationService {
   static Future<void> rescheduleAllStations() async {
     try {
       await init();
+      // Wipe ALL pending notifications first. Before build 61, cancelForStation
+      // had no payloads to match so stale alarms accumulated across every launch.
+      // Hundreds of stale entries exhaust AlarmManager slots and make
+      // pendingNotificationRequests() hang. Start clean every time.
+      await _plugin.cancelAll();
       final sp = await SharedPreferences.getInstance();
 
       final prefsStr = sp.getString('notification_prefs');

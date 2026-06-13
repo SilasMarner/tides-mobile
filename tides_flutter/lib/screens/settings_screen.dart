@@ -38,13 +38,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   }
 
   Future<void> _refresh() async {
-    final exact = await NotificationService.checkCanExact();
-    final notif = await NotificationService.checkNotificationsEnabled();
-    final count = await NotificationService.pendingCount();
+    final results = await Future.wait([
+      NotificationService.checkCanExact(),
+      NotificationService.checkNotificationsEnabled(),
+      NotificationService.pendingCount(),
+    ]);
     if (mounted) setState(() {
-      _canExact = exact;
-      _notifEnabled = notif;
-      _pendingCount = count;
+      _canExact = results[0] as bool;
+      _notifEnabled = results[1] as bool;
+      _pendingCount = results[2] as int;
     });
   }
 
