@@ -64,6 +64,25 @@ class NotificationService {
     return await androidImpl?.areNotificationsEnabled() ?? true;
   }
 
+  /// Number of pending (not yet fired) scheduled notifications.
+  static Future<int> pendingCount() async {
+    if (!_initialized) await init();
+    return (await _plugin.pendingNotificationRequests()).length;
+  }
+
+  /// Schedule a test notification 2 minutes from now using the exact same
+  /// code path as real tide alerts. If this fires, AlarmManager is working.
+  static Future<void> scheduleTestIn2Min() async {
+    await init();
+    await _schedule(
+      id: 0x7FFFFE00,
+      title: '🌊 OpenTides — Scheduled test',
+      body: 'If you see this, tide alert scheduling works correctly.',
+      at: DateTime.now().add(const Duration(minutes: 2)),
+      payload: 'test',
+    );
+  }
+
   /// Fire an immediate test notification. Returns false if the permission is denied.
   static Future<bool> sendTestNotification() async {
     await init();

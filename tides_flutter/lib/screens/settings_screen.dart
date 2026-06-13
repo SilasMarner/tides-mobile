@@ -15,9 +15,9 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen>
     with WidgetsBindingObserver {
-  // Optimistic true avoids a flash of warnings on devices that have everything set up.
   bool _canExact = true;
   bool _notifEnabled = true;
+  int _pendingCount = -1; // -1 = not yet loaded
 
   @override
   void initState() {
@@ -40,7 +40,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   Future<void> _refresh() async {
     final exact = await NotificationService.checkCanExact();
     final notif = await NotificationService.checkNotificationsEnabled();
-    if (mounted) setState(() { _canExact = exact; _notifEnabled = notif; });
+    final count = await NotificationService.pendingCount();
+    if (mounted) setState(() {
+      _canExact = exact;
+      _notifEnabled = notif;
+      _pendingCount = count;
+    });
   }
 
   @override
@@ -341,29 +346,126 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 ),
               ),
 
-            const SizedBox(height: 24),
-            Center(
-              child: TextButton.icon(
-                icon: const Icon(Icons.notification_add_outlined,
-                    size: 16, color: Colors.white38),
-                label: const Text('Send test notification',
-                    style: TextStyle(color: Colors.white38, fontSize: 12)),
-                onPressed: () async {
-                  final ok = await NotificationService.sendTestNotification();
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text(ok
-                        ? 'Test notification sent — check your shade'
-                        : 'Blocked — tap "Allow" above first'),
-                    duration: const Duration(seconds: 3),
-                  ));
-                },
+            const SizedBox(height: 16),
+            _sectionLabel('ALERT STATUS'),
+            const SizedBox(height: 8),
+            Card(
+              color: kCardBg,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _statusRow(
+                      'Notification permission',
+                      _notifEnabled,
+                      _notifEnabled ? 'Allowed' : 'Blocked',
+                    ),
+                    const SizedBox(height: 6),
+                    _statusRow(
+                      'Exact alarm timing',
+                      _canExact,
+                      _canExact ? 'Active' : 'Inactive — alerts may be delayed',
+                    ),
+                    const SizedBox(height: 6),
+                    _statusRow(
+                      'Pending scheduled alerts',
+                      _pendingCount > 0,
+                      _pendingCount < 0
+                          ? 'Loading…'
+                          : _pendingCount == 0
+                              ? '0 — open a station or tap Reschedule'
+                              : '$_pendingCount queued',
+                    ),
+                    const Divider(color: Colors.white10, height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: kCyan,
+                              side: const BorderSide(color: kCyan, width: 0.5),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                            onPressed: () async {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Rescheduling all stations…'),
+                                    duration: Duration(seconds: 1),
+                                  ),
+                                );
+                              }
+                              await NotificationService.rescheduleAllStations();
+                              await _refresh();
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                        '$_pendingCount alert(s) now scheduled'),
+                                    duration: const Duration(seconds: 3),
+                                  ),
+                                );
+                              }
+                            },
+                            child: const Text('Reschedule', style: TextStyle(fontSize: 13)),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white54,
+                              side: const BorderSide(
+                                  color: Colors.white24, width: 0.5),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                            onPressed: () async {
+                              await NotificationService.scheduleTestIn2Min();
+                              await _refresh();
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                      'Scheduled — you should get an alert in ~2 min'),
+                                  duration: Duration(seconds: 4),
+                                ),
+                              );
+                            },
+                            child: const Text('Test in 2 min',
+                                style: TextStyle(fontSize: 13)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Center(
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.notification_add_outlined,
+                            size: 14, color: Colors.white38),
+                        label: const Text('Send instant test',
+                            style: TextStyle(
+                                color: Colors.white38, fontSize: 11)),
+                        onPressed: () async {
+                          final ok =
+                              await NotificationService.sendTestNotification();
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text(ok
+                                ? 'Instant test sent — check your shade'
+                                : 'Blocked — tap Allow above first'),
+                            duration: const Duration(seconds: 3),
+                          ));
+                        },
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 16),
             const Text(
-              'Notifications are scheduled each time you open a station. '
-              'Keep the app installed to receive alerts.',
+              'Alerts are rescheduled automatically each time you open the app.',
               style: TextStyle(color: Colors.white24, fontSize: 11, height: 1.5),
               textAlign: TextAlign.center,
             ),
@@ -372,6 +474,31 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       ),
     );
   }
+
+  Widget _statusRow(String label, bool ok, String value) => Row(
+        children: [
+          Icon(ok ? Icons.check_circle_outline : Icons.cancel_outlined,
+              size: 14,
+              color: ok ? Colors.greenAccent : Colors.redAccent),
+          const SizedBox(width: 6),
+          Expanded(
+            child: RichText(
+              text: TextSpan(
+                style: const TextStyle(fontSize: 12),
+                children: [
+                  TextSpan(
+                      text: '$label: ',
+                      style: const TextStyle(color: Colors.white54)),
+                  TextSpan(
+                      text: value,
+                      style: TextStyle(
+                          color: ok ? Colors.white70 : Colors.redAccent)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
 
   Widget _sectionLabel(String text) => Text(
         text,
