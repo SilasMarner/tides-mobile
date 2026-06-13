@@ -147,14 +147,21 @@ class NotificationService {
 
       final prefsStr = sp.getString('notification_prefs');
       if (prefsStr == null) return;
-      final prefs = NotificationPrefs.fromJsonString(prefsStr);
-      if (!prefs.enabled || prefs.stations.isEmpty || !prefs.notifyTides) return;
+      var prefs = NotificationPrefs.fromJsonString(prefsStr);
+      if (!prefs.enabled || !prefs.notifyTides) return;
 
       final favsStr = sp.getString('favorites');
       if (favsStr == null) return;
       final favorites = (jsonDecode(favsStr) as List)
           .map((j) => Station.fromJson(j as Map<String, dynamic>))
           .toList();
+
+      // If no stations are individually toggled on, auto-enroll all favorites
+      // so the user doesn't have to manually enable each one.
+      if (prefs.stations.isEmpty && favorites.isNotEmpty) {
+        prefs = prefs.copyWith(stations: favorites.map((s) => s.id).toSet());
+        await sp.setString('notification_prefs', prefs.toJsonString());
+      }
 
       final metric = sp.getBool('use_metric') ?? false;
       final now = DateTime.now();

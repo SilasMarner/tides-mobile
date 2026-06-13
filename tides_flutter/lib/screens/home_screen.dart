@@ -12,6 +12,7 @@ import '../providers/theme_provider.dart';
 import '../widgets/wave_header.dart';
 import '../widgets/station_tile.dart';
 import '../theme.dart';
+import '../providers/notification_provider.dart';
 import '../services/notification_service.dart';
 import 'about_screen.dart';
 import 'detail_screen.dart';
@@ -139,6 +140,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ));
     } else {
       ref.read(favoritesProvider.notifier).add(s);
+      // Auto-enroll in notifications when notifications are already enabled.
+      final notifPrefs = ref.read(notificationPrefsProvider);
+      if (notifPrefs.enabled) {
+        ref.read(notificationPrefsProvider.notifier).addStation(s.id);
+      }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('${s.name} added to favorites'),
         duration: const Duration(seconds: 2),

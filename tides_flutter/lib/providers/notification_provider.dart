@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/notification_prefs.dart';
@@ -30,7 +31,27 @@ class NotificationPrefsNotifier extends StateNotifier<NotificationPrefs> {
   }
 
   Future<void> setEnabled(bool v) async {
-    state = state.copyWith(enabled: v);
+    if (v && state.stations.isEmpty) {
+      // Auto-add all current favorites so the user doesn't have to manually
+      // toggle each station after enabling notifications.
+      final sp = await SharedPreferences.getInstance();
+      final favsStr = sp.getString('favorites');
+      Set<String> autoStations = {};
+      if (favsStr != null) {
+        autoStations = (jsonDecode(favsStr) as List)
+            .map((j) => (j as Map<String, dynamic>)['id'] as String)
+            .toSet();
+      }
+      state = state.copyWith(enabled: true, stations: autoStations);
+    } else {
+      state = state.copyWith(enabled: v);
+    }
+    await _save();
+  }
+
+  Future<void> addStation(String stationId) async {
+    if (state.stations.contains(stationId)) return;
+    state = state.copyWith(stations: {...state.stations, stationId});
     await _save();
   }
 

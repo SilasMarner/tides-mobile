@@ -376,15 +376,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
                         onPressed: () async {
-                          await NotificationService.scheduleTestIn2Min();
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                  'Scheduled — you should get an alert in ~2 min'),
-                              duration: Duration(seconds: 4),
-                            ),
-                          );
+                          try {
+                            await NotificationService.scheduleTestIn2Min();
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    'Scheduled — you should get an alert in ~2 min'),
+                                duration: Duration(seconds: 4),
+                              ),
+                            );
+                          } catch (e) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text('Could not schedule: $e'),
+                              backgroundColor: Colors.red,
+                              duration: const Duration(seconds: 6),
+                            ));
+                          }
                         },
                         child: const Text('Test scheduled alert (2 min)',
                             style: TextStyle(fontSize: 13)),
