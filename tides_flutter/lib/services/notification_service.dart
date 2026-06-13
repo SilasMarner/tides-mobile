@@ -1,10 +1,13 @@
+import 'dart:convert';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
+import '../models/station.dart';
 import '../models/tide_data.dart';
 import '../models/notification_prefs.dart';
 import '../utils/unit_format.dart';
+import 'noaa_api.dart' show fetchWeekHilo;
 
 class NotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
@@ -106,6 +109,62 @@ class NotificationService {
       return await ios.requestPermissions(alert: true, sound: true) ?? false;
     }
     return false;
+  }
+
+  /// Called at every app start. Re-schedules 7-day HiLo tide alerts for all
+  /// notification-enabled stations so alarms survive reboots and app updates
+  /// without the user having to open each station individually.
+  static Future<void> rescheduleAllStations() async {
+    try {
+      await init();
+      final sp = await SharedPreferences.getInstance();
+
+      final prefsStr = sp.getString('notification_prefs');
+      if (prefsStr == null) return;
+      final prefs = NotificationPrefs.fromJsonString(prefsStr);
+      if (!prefs.enabled || prefs.stations.isEmpty || !prefs.notifyTides) return;
+
+      final favsStr = sp.getString('favorites');
+      if (favsStr == null) return;
+      final favorites = (jsonDecode(favsStr) as List)
+          .map((j) => Station.fromJson(j as Map<String, dynamic>))
+          .toList();
+
+      final metric = sp.getBool('use_metric') ?? false;
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final end = today.add(const Duration(days: 6));
+
+      for (final station in favorites) {
+        if (!prefs.stations.contains(station.id)) continue;
+        try {
+          final weekHilo = await fetchWeekHilo(station.id, today, end);
+          if (weekHilo.isEmpty) continue;
+          await cancelForStation(station.id);
+          final lead = Duration(minutes: prefs.leadMinutes);
+          for (final p in weekHilo) {
+            if (p.type == null) continue;
+            final notifyAt = p.time.subtract(lead);
+            if (!notifyAt.isAfter(now)) continue;
+            final isHigh = p.type == 'H';
+            await _schedule(
+              id: _id(station.id, 'tide', p.time),
+              title: isHigh
+                  ? '🌊 High Tide in ${prefs.leadMinutes} min'
+                  : '🏖️ Low Tide in ${prefs.leadMinutes} min',
+              body:
+                  '${station.name} · ${_fmt(p.time)} · ${fmtTideHeight(p.height, metric)}',
+              at: notifyAt,
+              payload: station.id,
+            );
+          }
+        } catch (_) {
+          // Skip on network error — retries on next launch.
+        }
+      }
+    } catch (_) {
+      // Never crash main() on notification failure.
+    }
   }
 
   static Future<void> scheduleForStation(

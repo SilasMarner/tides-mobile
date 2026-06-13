@@ -12,6 +12,9 @@ void main() async {
   // Rehydrate the on-disk tide cache so reopening after Android evicted the
   // process serves previously-viewed days instantly, without refetching.
   await hydrateCacheFromDisk();
+  // Re-schedule tide alerts for all enabled stations on every launch so alarms
+  // survive reboots and app updates without requiring the user to open each station.
+  NotificationService.rescheduleAllStations().ignore();
   runApp(const ProviderScope(child: TidesApp()));
 }
 
