@@ -367,34 +367,36 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                       _canExact ? 'Active' : 'Inactive — alerts may be delayed',
                     ),
                     const Divider(color: Colors.white10, height: 20),
-                    OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white54,
-                        side: const BorderSide(color: Colors.white24, width: 0.5),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: kCyan,
+                          side: const BorderSide(color: kCyan),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onPressed: () async {
+                          await NotificationService.scheduleTestIn2Min();
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                  'Scheduled — you should get an alert in ~2 min'),
+                              duration: Duration(seconds: 4),
+                            ),
+                          );
+                        },
+                        child: const Text('Test scheduled alert (2 min)',
+                            style: TextStyle(fontSize: 13)),
                       ),
-                      onPressed: () async {
-                        await NotificationService.scheduleTestIn2Min();
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                                'Scheduled — you should get an alert in ~2 min'),
-                            duration: Duration(seconds: 4),
-                          ),
-                        );
-                      },
-                      child: const Text('Test scheduled alert (2 min)',
-                          style: TextStyle(fontSize: 13)),
                     ),
                     const SizedBox(height: 4),
                     Center(
                       child: TextButton.icon(
                         icon: const Icon(Icons.notification_add_outlined,
-                            size: 14, color: Colors.white38),
+                            size: 14, color: kCyan),
                         label: const Text('Send instant test',
-                            style: TextStyle(
-                                color: Colors.white38, fontSize: 11)),
+                            style: TextStyle(color: kCyan, fontSize: 11)),
                         onPressed: () async {
                           final ok =
                               await NotificationService.sendTestNotification();
