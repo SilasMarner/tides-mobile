@@ -38,13 +38,36 @@ class DetailScreen extends ConsumerWidget {
     final notifEnabled = notifPrefs.enabled &&
         notifPrefs.stations.contains(station.id);
 
-    // Schedule notifications whenever today's data loads for this station
+    // Schedule notifications whenever today's data loads.
+    // Pass week hilo if already available so tide alerts cover 7 days, not just
+    // today's remaining events (which are often all past by afternoon).
     ref.listen(tideDataProvider, (_, next) {
       next.whenData((data) {
         if (data != null && data.isToday && notifEnabled) {
+          final weekHilo = ref.read(weekDataProvider).valueOrNull
+              ?.where((p) => p.type != null)
+              .toList();
           NotificationService.scheduleForStation(
               station.id, station.name, data, notifPrefs,
-              metric: ref.read(unitsProvider));
+              metric: ref.read(unitsProvider),
+              weekHilo: weekHilo?.isNotEmpty == true ? weekHilo : null);
+        }
+      });
+    });
+
+    // Also re-schedule when week data arrives (may finish after tideDataProvider).
+    ref.listen(weekDataProvider, (_, next) {
+      next.whenData((week) {
+        if (week.isNotEmpty && notifEnabled) {
+          final data = ref.read(tideDataProvider).valueOrNull;
+          if (data != null && data.isToday) {
+            final weekHilo =
+                week.where((p) => p.type != null).toList();
+            NotificationService.scheduleForStation(
+                station.id, station.name, data, notifPrefs,
+                metric: ref.read(unitsProvider),
+                weekHilo: weekHilo);
+          }
         }
       });
     });

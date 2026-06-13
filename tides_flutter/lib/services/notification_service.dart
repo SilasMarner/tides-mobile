@@ -114,6 +114,9 @@ class NotificationService {
     TideData data,
     NotificationPrefs prefs, {
     bool metric = false,
+    // When provided, tide notifications cover the full list (7-day window)
+    // rather than just today's remaining events.
+    List<TidePrediction>? weekHilo,
   }) async {
     await init();
     await cancelForStation(stationId);
@@ -121,9 +124,10 @@ class NotificationService {
     final now = DateTime.now();
     final lead = Duration(minutes: prefs.leadMinutes);
 
-    // Hi/Lo tide events
+    // Hi/Lo tide events — prefer week range so alerts survive past today's last tide.
     if (prefs.notifyTides) {
-      for (final p in data.hilo) {
+      for (final p in (weekHilo ?? data.hilo)) {
+        if (p.type == null) continue; // skip hourly points if mixed in
         final notifyAt = p.time.subtract(lead);
         if (notifyAt.isAfter(now)) {
           final isHigh = p.type == 'H';
