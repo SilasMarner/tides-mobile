@@ -27,7 +27,7 @@ class NotificationService {
       await _setupChannel.invokeMethod<void>('clearFLNCache');
     } catch (_) {}
 
-    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const android = AndroidInitializationSettings('ic_notification');
     const ios = DarwinInitializationSettings(
       requestAlertPermission: false,
       requestBadgePermission: false,
