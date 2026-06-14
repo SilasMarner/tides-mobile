@@ -101,6 +101,39 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 81) — Notification icon + settings stability
+- **Notification icon** — the wave icon now appears correctly in the Android status bar on Play Store installs. Release builds were silently stripping the icon drawable (it was referenced by string in Dart, invisible to Android's resource shrinker); a `res/raw/keep.xml` rule now preserves it. This was the root cause of blank icons and failed notification delivery on AAB installs.
+- **Settings screen** — the notification settings screen no longer gets stuck on a permanent spinner if the alert system hits an error; it falls back to safe defaults and remains usable.
+- **Alert init guard** — if the notification plugin fails to initialize (e.g. corrupted cache), the app recovers gracefully instead of throwing on every subsequent call.
+
+### v3.4.1 (build 79) — Zero enrolled stations fix
+- **Settings showed 0 alerts** even when stations were configured — `rescheduleAllStations()` wrote auto-enrolled stations directly to SharedPreferences but Riverpod never saw the write. The Settings screen now re-reads from disk after rescheduling, showing the correct enrolled count immediately.
+
+### v3.4.1 (build 78) — User Guide: notifications section updated
+- **In-app User Guide** — the Alerts & notifications section now reflects the current auto-enrollment model: all favorites enrolled automatically, per-station toggles available in Settings, 7-day scheduling window, and the Alarms & Reminders permission note for Android 12+.
+
+### v3.4.1 (build 77) — Settings: scheduled alert count + reschedule button
+- **Pending count** — Settings now shows how many alerts are currently scheduled (e.g. "42 alerts pending over the next 7 days").
+- **Reschedule now** — a manual button forces an immediate 7-day re-fetch and reschedule without restarting the app.
+- Tide alerts **confirmed working on a real Pixel phone** — Galveston high and low tide notifications arriving correctly.
+
+### v3.4.1 (build 76) — Notification wave icon
+- **Status-bar icon** — replaced the launcher icon with a white-on-transparent wave symbol (`ic_notification`). Android requires alpha-only icons for status-bar notifications; using the full-colour launcher icon produced a white box.
+
+### v3.4.1 (build 75) — Alert delivery fix for release builds
+- **Root cause fixed** — alerts were scheduling correctly in debug builds but silently failing on Play Store installs. The R8 release optimiser was stripping Gson `TypeToken` type signatures that the notification library needed to deserialise stored alerts. A ProGuard rule now preserves them across release builds.
+
+### v3.4.1 (build 74) — Stale notification cache fix
+- **FLN cache wipe on init** — older notification library versions stored scheduled-notification records without a required `"type"` field; on upgrade, every scheduling call threw "Missing type parameter". The app now wipes the stale cache at startup via a native Kotlin channel before the plugin initialises.
+
+### v3.4.1 (build 72) — Auto-enroll favorites for alerts
+- **Auto-enrollment** — enabling notifications now automatically enrolls all saved favorites — no need to toggle each station individually. Adding a new favorite while notifications are already on enrolls it immediately.
+
+### v3.4.1 (build 61) — Exact alarm permission + alert cancellation fix
+- **Exact alarm timing** — re-added `SCHEDULE_EXACT_ALARM` so alerts fire on time. Without it, Android Doze mode was deferring alerts by hours or indefinitely on real devices (the emulator grants exact alarms unconditionally, masking the issue in testing).
+- **Permission banner** — when the exact alarm permission hasn't been granted, an amber "Alerts may be delayed — Fix" banner appears in Settings with a one-tap link to the system Alarms & Reminders page. The banner auto-dismisses when you return after granting.
+- **Cancel-by-station fix** — canceling alerts for a specific station now works correctly. The station ID payload was missing from scheduled notifications, so cancel-by-station lookups always matched zero entries.
+
 ### v3.4.1 (build 59) — **Water Temp map speed + polish**
 - **Instant open** — tapping the Water Temp map icon now pre-warms the SST overlay in the background, so the map opens with data already painted (no loading spinner on first open).
 - **Instant layer switching** — visited layers (Water Temp / Upwelling / Turbidity) are cached for the session; switching back is immediate instead of waiting for a fresh ERDDAP render.
