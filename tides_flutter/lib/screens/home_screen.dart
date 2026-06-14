@@ -36,11 +36,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       _checkForUpdate();
       // Reschedule 7-day tide alerts for all stations. Run after first frame so
       // the Flutter engine and notification plugin are fully initialized.
-      NotificationService.rescheduleAllStations().ignore();
+      // Await so that any auto-enrollment written to SharedPreferences is
+      // visible before we invalidate the Riverpod provider below.
+      await NotificationService.rescheduleAllStations();
+      // Sync Riverpod state with whatever rescheduleAllStations() may have
+      // written to SharedPreferences (e.g. auto-enrolled stations).
+      if (mounted) ref.invalidate(notificationPrefsProvider);
       // Warm the cache for favorites as soon as they load from disk.
       ref.listenManual(favoritesProvider, (_, favorites) {
         if (favorites.isNotEmpty) schedulePrefetch(favorites);
