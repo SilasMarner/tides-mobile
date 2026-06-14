@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/services.dart' show MethodChannel, PlatformException;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
@@ -13,10 +14,18 @@ class NotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
   static bool _initialized = false;
   static bool _canExact = false;
+  static const _setupChannel = MethodChannel('com.mattbettinger.tides/setup');
 
   static Future<void> init() async {
     if (_initialized) return;
     tz.initializeTimeZones();
+
+    // Wipe FLN's scheduled-notification SharedPreferences cache. Stale entries
+    // saved by older FLN versions lack a required "type" field, causing every
+    // FLN operation (zonedSchedule, cancelAll) to throw "Missing type parameter".
+    try {
+      await _setupChannel.invokeMethod<void>('clearFLNCache');
+    } catch (_) {}
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const ios = DarwinInitializationSettings(
@@ -370,25 +379,41 @@ class NotificationService {
     required String payload,
   }) async {
     final tzAt = tz.TZDateTime.from(at, tz.local);
-    await _plugin.zonedSchedule(
-      id,
-      title,
-      body,
-      tzAt,
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'tides_alerts',
-          'Tide Alerts',
-          channelDescription: 'Tide, solunar, and fishing notifications',
-          importance: Importance.high,
-          priority: Priority.high,
-          icon: '@mipmap/ic_launcher',
-        ),
-        iOS: DarwinNotificationDetails(),
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'tides_alerts',
+        'Tide Alerts',
+        channelDescription: 'Tide, solunar, and fishing notifications',
+        importance: Importance.high,
+        priority: Priority.high,
       ),
-      androidScheduleMode: _canExact
-          ? AndroidScheduleMode.exactAllowWhileIdle
-          : AndroidScheduleMode.inexactAllowWhileIdle,
+      iOS: DarwinNotificationDetails(),
+    );
+
+    // Re-check exact alarm permission live — it can be revoked in Settings.
+    final androidImpl = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    _canExact = await androidImpl?.canScheduleExactNotifications() ?? false;
+
+    if (_canExact) {
+      try {
+        await _plugin.zonedSchedule(
+          id, title, body, tzAt, details,
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+          payload: payload,
+        );
+        return;
+      } on PlatformException {
+        _canExact = false;
+      }
+    }
+
+    // Fall back to inexact — will fire but may be delayed by Doze mode.
+    await _plugin.zonedSchedule(
+      id, title, body, tzAt, details,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
       payload: payload,
