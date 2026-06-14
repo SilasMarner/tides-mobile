@@ -33,9 +33,16 @@ class NotificationService {
       requestBadgePermission: false,
       requestSoundPermission: false,
     );
-    await _plugin.initialize(
-      const InitializationSettings(android: android, iOS: ios),
-    );
+    try {
+      await _plugin.initialize(
+        const InitializationSettings(android: android, iOS: ios),
+      );
+    } catch (_) {
+      // If the plugin fails to initialize (e.g. icon resource not found),
+      // mark as initialized anyway so callers don't retry on every call.
+      _initialized = true;
+      return;
+    }
 
     final androidImpl = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();

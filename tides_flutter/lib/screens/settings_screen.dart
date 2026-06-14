@@ -39,23 +39,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   }
 
   Future<void> _refresh() async {
-    final results = await Future.wait([
-      NotificationService.checkCanExact(),
-      NotificationService.checkNotificationsEnabled(),
-      NotificationService.pendingCount(),
-    ]);
-    if (mounted) setState(() {
-      _canExact = results[0] as bool;
-      _notifEnabled = results[1] as bool;
-      _pendingCount = results[2] as int;
-    });
+    try {
+      final results = await Future.wait([
+        NotificationService.checkCanExact(),
+        NotificationService.checkNotificationsEnabled(),
+        NotificationService.pendingCount(),
+      ]);
+      if (mounted) setState(() {
+        _canExact = results[0] as bool;
+        _notifEnabled = results[1] as bool;
+        _pendingCount = results[2] as int;
+      });
+    } catch (_) {
+      if (mounted) setState(() {
+        _canExact = false;
+        _notifEnabled = false;
+        _pendingCount = 0;
+      });
+    }
   }
 
   Future<void> _rescheduleNow() async {
     setState(() { _rescheduling = true; _pendingCount = null; });
-    await NotificationService.rescheduleAllStations();
-    final count = await NotificationService.pendingCount();
-    if (mounted) setState(() { _rescheduling = false; _pendingCount = count; });
+    try {
+      await NotificationService.rescheduleAllStations();
+      final count = await NotificationService.pendingCount();
+      if (mounted) setState(() { _rescheduling = false; _pendingCount = count; });
+    } catch (_) {
+      if (mounted) setState(() { _rescheduling = false; _pendingCount = 0; });
+    }
   }
 
   @override
