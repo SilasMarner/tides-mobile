@@ -141,13 +141,14 @@ class UserGuideScreen extends StatelessWidget {
       Icons.notifications_active,
       'Alerts & notifications',
       [
-        'Turn on notifications in Settings, then enable them per favorite station. Choose how far ahead to be warned (15/30/45/60 min). Available alerts:',
+        'Turn on notifications in Settings. All of your saved favorites are enrolled automatically — no need to toggle each one individually (you can still adjust per-station in Settings). Choose how far ahead to be warned (15/30/45/60 min). Available alerts:',
         '• High & Low Tide — a heads-up before each tide change.',
         '• Solunar Major Windows — before each major feeding period.',
         '• Best Fishing Days — one morning alert when today rates 4+ stars.',
         '• Pressure Drops — fires when the barometer is falling (a front approaching, often a strong pre-front bite). Sent once per day per station.',
         '• Upwelling — fires when the satellite water temperature near the station runs well below normal (1.5 °C / ~2.7 °F or more): colder, often nutrient-rich water is moving in. Sent once per day per station.',
-        'Alerts are scheduled each time you open a station, so opening the app keeps them fresh. They run locally on your phone.',
+        'Alerts are re-scheduled each time the app opens, covering the next 7 days. They run entirely on your phone — no server or account involved.',
+        'On Android 12 and later, precise alarm timing requires the "Alarms & Reminders" permission. If you see an amber banner in Settings, tap Fix to grant it — without it, alerts may arrive late.',
       ],
     ),
     _Section(
