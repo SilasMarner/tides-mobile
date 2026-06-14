@@ -17,6 +17,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     with WidgetsBindingObserver {
   bool _canExact = true;
   bool _notifEnabled = true;
+  int? _pendingCount;
+  bool _rescheduling = false;
 
   @override
   void initState() {
@@ -40,11 +42,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     final results = await Future.wait([
       NotificationService.checkCanExact(),
       NotificationService.checkNotificationsEnabled(),
+      NotificationService.pendingCount(),
     ]);
     if (mounted) setState(() {
       _canExact = results[0] as bool;
       _notifEnabled = results[1] as bool;
+      _pendingCount = results[2] as int;
     });
+  }
+
+  Future<void> _rescheduleNow() async {
+    setState(() { _rescheduling = true; _pendingCount = null; });
+    await NotificationService.rescheduleAllStations();
+    final count = await NotificationService.pendingCount();
+    if (mounted) setState(() { _rescheduling = false; _pendingCount = count; });
   }
 
   @override
@@ -366,6 +377,36 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                       _canExact,
                       _canExact ? 'Active' : 'Inactive — alerts may be delayed',
                     ),
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      Icon(
+                        _pendingCount == null
+                            ? Icons.hourglass_empty
+                            : _pendingCount! > 0
+                                ? Icons.alarm_on
+                                : Icons.alarm_off,
+                        size: 14,
+                        color: _pendingCount == null
+                            ? Colors.white38
+                            : _pendingCount! > 0
+                                ? Colors.greenAccent
+                                : Colors.amber,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _pendingCount == null
+                            ? 'Checking…'
+                            : '$_pendingCount tide alert${_pendingCount == 1 ? '' : 's'} scheduled',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _pendingCount == null
+                              ? Colors.white38
+                              : _pendingCount! > 0
+                                  ? Colors.white70
+                                  : Colors.amber,
+                        ),
+                      ),
+                    ]),
                     const Divider(color: Colors.white10, height: 20),
                     SizedBox(
                       width: double.infinity,
@@ -421,6 +462,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                     ),
                   ],
                 ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white54,
+                  side: const BorderSide(color: Colors.white24),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+                onPressed: _rescheduling ? null : _rescheduleNow,
+                child: _rescheduling
+                    ? const SizedBox(
+                        height: 14, width: 14,
+                        child: CircularProgressIndicator(
+                            color: kCyan, strokeWidth: 2))
+                    : const Text('Reschedule alerts now',
+                        style: TextStyle(fontSize: 12)),
               ),
             ),
             const SizedBox(height: 16),
