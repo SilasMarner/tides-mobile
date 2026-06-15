@@ -1,6 +1,6 @@
 # OpenTides — free · open · forever
 
-A free, open-source Flutter app for Android that shows real-time NOAA tide data, weather conditions, solunar tables, and fishing ratings. Built for fishermen and boaters who need quick, reliable tidal information on the water. No ads, no subscriptions, no data collection — free forever.
+A free, open-source Flutter app for Android that shows real-time NOAA tide data, weather conditions, solunar tables, fishing ratings, and drone airspace checks. Built for fishermen and boaters who need quick, reliable information on the water. No ads, no subscriptions, no data collection — free forever.
 
 ## Download
 
@@ -54,11 +54,24 @@ that point; the data follows the map as you pan and zoom.
 
 ### New in v3.4.1 — Before You Fly (drone airspace check)
 
-Tap the **takeoff icon** in the home screen toolbar to open the Before You Fly screen. It queries the **FAA's public airspace service** directly — no third-party apps, no account needed.
+Tap the **takeoff icon** in the home screen toolbar to open the Before You Fly screen. It queries **four official public data sources** at once — FAA airspace, active TFRs, national/state parks, and wildlife refuges — with no third-party apps, no account, and no redirects.
 
-- Colored **airspace overlays** cover the full map viewport: solid red = Prohibited, lighter red = Restricted, orange = Warning/Alert, blue = Class B/C/D controlled airspace.
-- **Tap anywhere on the map** to check airspace at that exact point — a cyan pin drops and the status card shows the result for that location. Tap **My Location** to return to your GPS status.
-- The overlay updates as you pan and zoom, so you can explore nearby airspace before heading out.
+Colored overlays cover the entire visible map and update as you pan and zoom:
+
+| Color | Meaning |
+|-------|---------|
+| Solid red | FAA **Prohibited** airspace (Class P) — no operations under any circumstances |
+| Lighter red | FAA **Restricted** airspace (Class R) — contact the controlling agency first |
+| Amber | **Active TFR** (Temporary Flight Restriction) — wildfires, presidential movement, events, emergencies. Changes daily. |
+| Orange | FAA **Warning / Alert** area — exercise caution |
+| Blue | FAA **Controlled** airspace (Class B, C, or D) — FAA authorization required |
+| Green | **National Park / National Seashore / Monument** (NPS) — drones are prohibited in all NPS units under 36 CFR 1.5 regardless of FAA airspace class. A location can be in uncontrolled (Class G) airspace and still be illegal to fly. |
+| Teal | **State Park** — most states prohibit drone use; rules vary by state. The overlay flags state parks so you can check that state's specific regulations before flying. |
+| Purple | **USFWS National Wildlife Refuge** — drones require a Special Use Permit on most refuges and are explicitly prohibited on many. Contact the refuge manager before flying. |
+
+- **Tap anywhere on the map** to check airspace at that exact point — a cyan pin drops and the status card shows the combined result across all four sources. Tap **My Location** to return to your GPS status.
+- National park and state park data comes from the **USGS Protected Areas Database (PAD-US)** — the authoritative federal inventory covering all NPS units and state parks nationwide.
+- This screen is for quick reference only — always confirm with the FAA NOTAM system and local land-manager rules before flying.
 
 | Airspace clear (GPS location) | Tap-to-check any location |
 |-------------------------------|---------------------------|
