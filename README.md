@@ -115,6 +115,13 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 90) — Before You Fly: TFR + Wildlife Refuge detection
+- **Active TFRs** — the screen now queries the FAA ATCSCC TFR service alongside the static airspace service. Temporary Flight Restrictions (wildfires, presidential movements, sporting events, disasters) are time-limited and never appear in the static Airspace MapServer. Active TFRs show as amber/yellow overlays on the map and trigger a "no drone operations" status. If the TFR service is unreachable, the card warns that TFR status could not be verified rather than silently showing clear.
+- **USFWS Wildlife Refuges** — queries the US Fish & Wildlife Service boundary service. Drones require a Special Use Permit on most national wildlife refuges, and many explicitly prohibit them. Refuges appear as purple overlays on the map; tapping one shows "Special Use Permit required" with a note to contact the refuge manager.
+- **Four concurrent data sources** are now checked on every point query: FAA airspace, FAA TFRs, NPS boundaries, USFWS refuge boundaries. All run in parallel so the added checks don't increase wait time.
+- **Updated legend** — amber (TFR) and purple (Wildlife Refuge) chips added to the status card legend row.
+- **User Guide** updated to document all four sources and color codes.
+
 ### v3.4.1 (build 89) — Before You Fly: National Park detection
 - **NPS boundary check** — the FAA airspace query now runs alongside a National Park Service boundary query. If your location (or tapped point) is inside an NPS unit (national park, seashore, monument, recreation area, etc.), the screen correctly reports drones as prohibited under **36 CFR 1.5**, even when the FAA airspace is Class G (uncontrolled). Previously, a location like Padre Island National Seashore would incorrectly show "clear to fly."
 - **Green overlay** — NPS unit boundaries now appear as a green tint on the map (underneath FAA zones), so park edges are visible as you pan and zoom.
