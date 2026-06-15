@@ -115,6 +115,13 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 89) — Before You Fly: National Park detection
+- **NPS boundary check** — the FAA airspace query now runs alongside a National Park Service boundary query. If your location (or tapped point) is inside an NPS unit (national park, seashore, monument, recreation area, etc.), the screen correctly reports drones as prohibited under **36 CFR 1.5**, even when the FAA airspace is Class G (uncontrolled). Previously, a location like Padre Island National Seashore would incorrectly show "clear to fly."
+- **Green overlay** — NPS unit boundaries now appear as a green tint on the map (underneath FAA zones), so park edges are visible as you pan and zoom.
+- **Combined status logic** — NPS + FAA results are merged: if a location is inside a national park and also in restricted/controlled airspace, both restrictions are described in the detail text.
+- **Legend updated** — green "Nat'l Park" chip added to the status card legend row.
+- **User Guide updated** to explain the NPS rule and the green overlay.
+
 ### v3.4.1 (build 88) — User Guide: Before You Fly section updated
 - **In-app User Guide** updated to document the viewport overlay (colored zone tints across the full map), the tap-to-check feature (cyan pin + per-point FAA query), color legend (prohibited / restricted / warning / controlled), and the My Location reset button. Tips bullet updated to match.
 

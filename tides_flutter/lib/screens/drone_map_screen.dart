@@ -8,9 +8,12 @@ import '../theme.dart';
 
 enum _AirspaceStatus { loading, clear, controlled, restricted, error }
 
+// Zone type prefix conventions used throughout:
+//   FAA:  P* = prohibited, R* = restricted, W*/A* = warning/alert, B/C/D = class
+//   NPS:  'NPS' prefix  → national park / seashore / monument etc.
 class _AirspaceZone {
   final String name;
-  final String type;
+  final String type; // raw TYPE_CODE / LOCAL_TYPE, or 'NPS'
   final List<LatLng> ring;
   const _AirspaceZone(this.name, this.type, this.ring);
 }
@@ -27,13 +30,13 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
   bool _mapReady = false;
   Timer? _viewportDebounce;
 
-  // GPS-based status (preserved so we can reset to it)
+  // GPS status (preserved for reset)
   _AirspaceStatus _gpsStatus = _AirspaceStatus.loading;
   String _gpsHeadline = 'Getting your location…';
   String? _gpsDetail;
   double? _lat, _lon;
 
-  // Tapped-point state — null means showing GPS status
+  // Tapped-point state
   LatLng? _tappedPoint;
   _AirspaceStatus _tapStatus = _AirspaceStatus.loading;
   String _tapHeadline = '';
@@ -44,7 +47,6 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
   List<_AirspaceZone> _zones = [];
   bool _zonesLoading = false;
 
-  // What the status card currently shows
   _AirspaceStatus get _displayStatus =>
       _tappedPoint != null ? _tapStatus : _gpsStatus;
   String get _displayHeadline =>
@@ -69,7 +71,7 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
     super.dispose();
   }
 
-  // ── Initial GPS load ───────────────────────────────────────────────────────
+  // ── GPS load ───────────────────────────────────────────────────────────────
 
   Future<void> _load() async {
     setState(() {
@@ -97,7 +99,7 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
     setState(() {
       _lat = lat;
       _lon = lon;
-      _gpsHeadline = 'Checking FAA airspace…';
+      _gpsHeadline = 'Checking airspace…';
     });
     if (_mapReady) _mapController.move(LatLng(lat, lon), 11.0);
 
@@ -107,7 +109,7 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
     ]);
   }
 
-  // ── Tap handler ───────────────────────────────────────────────────────────
+  // ── Map tap ────────────────────────────────────────────────────────────────
 
   Future<void> _onMapTap(TapPosition _, LatLng point) async {
     setState(() {
@@ -123,109 +125,215 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
 
   void _clearTap() => setState(() => _tappedPoint = null);
 
-  // ── FAA point query ────────────────────────────────────────────────────────
+  // ── Combined FAA + NPS point query ─────────────────────────────────────────
 
   Future<void> _queryPoint(double lat, double lon,
       {required bool forGps}) async {
     try {
-      bool hasProhibited = false;
-      bool hasRestricted = false;
-      bool hasControlled = false;
-      final names = <String>[];
-
-      for (final layerId in [0, 1]) {
-        try {
-          final resp = await _dio.get(
-            'https://geoservices.faa.gov/arcgis/rest/services/'
-            'Aeronautical/Airspace/MapServer/$layerId/query',
-            queryParameters: {
-              'geometry': '$lon,$lat',
-              'geometryType': 'esriGeometryPoint',
-              'inSR': '4326',
-              'spatialRel': 'esriSpatialRelIntersects',
-              'outFields': 'TYPE_CODE,LOCAL_TYPE,NAME',
-              'returnGeometry': 'false',
-              'outSR': '4326',
-              'f': 'json',
-            },
-          );
-          final features =
-              ((resp.data as Map<String, dynamic>)['features'] as List?) ?? [];
-          for (final f in features) {
-            final attrs = (f['attributes'] as Map<String, dynamic>?) ?? {};
-            final type =
-                (attrs['TYPE_CODE'] ?? attrs['LOCAL_TYPE'] ?? '').toString();
-            final name = (attrs['NAME'] ?? '').toString();
-            if (type.startsWith('P')) {
-              hasProhibited = true;
-            } else if (type.startsWith('R') || type.startsWith('W')) {
-              hasRestricted = true;
-            } else {
-              hasControlled = true;
-            }
-            if (name.isNotEmpty) names.add(name);
-          }
-        } catch (_) {}
-      }
+      // Run FAA and NPS queries concurrently
+      final results = await Future.wait([
+        _queryFAA(lat, lon),
+        _queryNPS(lat, lon),
+      ]);
 
       if (!mounted) return;
 
-      final nameStr = names.toSet().take(3).join(', ');
-      _AirspaceStatus st;
-      String headline;
-      String? detail;
+      final faa = results[0] as _FAA;
+      final nps = results[1] as _NPS;
 
-      if (hasProhibited) {
-        st = _AirspaceStatus.restricted;
-        headline = 'Prohibited airspace — no drone operations allowed';
-        detail = nameStr.isNotEmpty ? nameStr : null;
-      } else if (hasRestricted) {
-        st = _AirspaceStatus.restricted;
-        headline = 'Restricted airspace — contact the controlling agency';
-        detail = nameStr.isNotEmpty ? nameStr : null;
-      } else if (hasControlled) {
-        st = _AirspaceStatus.controlled;
-        headline = 'Controlled airspace — FAA authorization required';
-        detail = nameStr.isNotEmpty
-            ? '$nameStr\nDrones require FAA authorization before flying here.'
-            : 'Drones require FAA authorization before flying here.';
-      } else {
-        st = _AirspaceStatus.clear;
-        headline = 'Class G — uncontrolled airspace';
-        detail = 'No controlled or restricted airspace at this point. '
-            'Fly under 400 ft AGL, keep the drone in sight, and stay clear '
-            'of people, vehicles, and emergency scenes.';
-      }
+      final st = _combineStatus(faa, nps);
 
       setState(() {
         if (forGps) {
-          _gpsStatus = st;
-          _gpsHeadline = headline;
-          _gpsDetail = detail;
+          _gpsStatus = st.status;
+          _gpsHeadline = st.headline;
+          _gpsDetail = st.detail;
         } else {
-          _tapStatus = st;
-          _tapHeadline = headline;
-          _tapDetail = detail;
+          _tapStatus = st.status;
+          _tapHeadline = st.headline;
+          _tapDetail = st.detail;
         }
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        final st = _AirspaceStatus.error;
+        const status = _AirspaceStatus.error;
         const headline = 'Airspace data unavailable';
         const detail =
-            'Could not reach the FAA airspace service. Check your connection.';
+            'Could not reach the airspace service. Check your connection.';
         if (forGps) {
-          _gpsStatus = st;
+          _gpsStatus = status;
           _gpsHeadline = headline;
           _gpsDetail = detail;
         } else {
-          _tapStatus = st;
+          _tapStatus = status;
           _tapHeadline = headline;
           _tapDetail = detail;
         }
       });
     }
+  }
+
+  // ── FAA point query ────────────────────────────────────────────────────────
+
+  Future<_FAA> _queryFAA(double lat, double lon) async {
+    bool hasProhibited = false;
+    bool hasRestricted = false;
+    bool hasControlled = false;
+    final names = <String>[];
+
+    for (final layerId in [0, 1]) {
+      try {
+        final resp = await _dio.get(
+          'https://geoservices.faa.gov/arcgis/rest/services/'
+          'Aeronautical/Airspace/MapServer/$layerId/query',
+          queryParameters: {
+            'geometry': '$lon,$lat',
+            'geometryType': 'esriGeometryPoint',
+            'inSR': '4326',
+            'spatialRel': 'esriSpatialRelIntersects',
+            'outFields': 'TYPE_CODE,LOCAL_TYPE,NAME',
+            'returnGeometry': 'false',
+            'outSR': '4326',
+            'f': 'json',
+          },
+        );
+        final features =
+            ((resp.data as Map<String, dynamic>)['features'] as List?) ?? [];
+        for (final f in features) {
+          final attrs = (f['attributes'] as Map<String, dynamic>?) ?? {};
+          final type =
+              (attrs['TYPE_CODE'] ?? attrs['LOCAL_TYPE'] ?? '').toString();
+          final name = (attrs['NAME'] ?? '').toString();
+          if (type.startsWith('P')) {
+            hasProhibited = true;
+          } else if (type.startsWith('R') || type.startsWith('W')) {
+            hasRestricted = true;
+          } else {
+            hasControlled = true;
+          }
+          if (name.isNotEmpty) names.add(name);
+        }
+      } catch (_) {}
+    }
+
+    return _FAA(
+      hasProhibited: hasProhibited,
+      hasRestricted: hasRestricted,
+      hasControlled: hasControlled,
+      names: names.toSet().take(3).toList(),
+    );
+  }
+
+  // ── NPS boundary point query ───────────────────────────────────────────────
+  // Uses the NPS Land Resources Division boundary service (public, no API key).
+  // National parks prohibit drones under NPS regulation 36 CFR 1.5, regardless
+  // of FAA airspace class — this is a land-management rule, not an airspace one,
+  // so it never appears in the FAA ArcGIS service.
+
+  Future<_NPS> _queryNPS(double lat, double lon) async {
+    try {
+      final resp = await _dio.get(
+        'https://services1.arcgis.com/fBc8EJBxQRMcHlei/arcgis/rest/services/'
+        'NPS_Land_Resources_Division_Boundary_and_Tract_Data_Service/'
+        'FeatureServer/2/query',
+        queryParameters: {
+          'geometry': '$lon,$lat',
+          'geometryType': 'esriGeometryPoint',
+          'inSR': '4326',
+          'spatialRel': 'esriSpatialRelIntersects',
+          'outFields': 'UNIT_NAME,UNIT_TYPE',
+          'returnGeometry': 'false',
+          'f': 'json',
+        },
+      );
+      final features =
+          ((resp.data as Map<String, dynamic>)['features'] as List?) ?? [];
+      if (features.isEmpty) return _NPS(inside: false);
+
+      final attrs =
+          (features.first['attributes'] as Map<String, dynamic>?) ?? {};
+      final unitName = (attrs['UNIT_NAME'] ?? '').toString();
+      final unitType = (attrs['UNIT_TYPE'] ?? 'NPS Unit').toString();
+      return _NPS(
+        inside: true,
+        name: unitName.isNotEmpty ? unitName : unitType,
+        unitType: unitType,
+      );
+    } catch (_) {
+      return _NPS(inside: false); // NPS query failure is non-fatal
+    }
+  }
+
+  // ── Status combiner ────────────────────────────────────────────────────────
+
+  _StatusResult _combineStatus(_FAA faa, _NPS nps) {
+    final faaNames = faa.names.join(', ');
+
+    if (nps.inside) {
+      final parkLabel = nps.name ?? 'National Park';
+      if (faa.hasProhibited || faa.hasRestricted) {
+        return _StatusResult(
+          status: _AirspaceStatus.restricted,
+          headline: '$parkLabel — no drone operations',
+          detail: 'Drones are prohibited in all NPS units (36 CFR 1.5). '
+              'This location is also inside FAA '
+              '${faa.hasProhibited ? 'prohibited' : 'restricted'} airspace'
+              '${faaNames.isNotEmpty ? ' ($faaNames)' : ''}.',
+        );
+      }
+      if (faa.hasControlled) {
+        return _StatusResult(
+          status: _AirspaceStatus.restricted,
+          headline: '$parkLabel — no drone operations',
+          detail: 'Drones are prohibited in all NPS units (36 CFR 1.5). '
+              'This location is also in controlled airspace '
+              '${faaNames.isNotEmpty ? '($faaNames) ' : ''}'
+              'requiring FAA authorization.',
+        );
+      }
+      // Class G airspace, but inside NPS — FAA says "clear" but NPS says no
+      return _StatusResult(
+        status: _AirspaceStatus.restricted,
+        headline: '$parkLabel — drones prohibited',
+        detail: 'Drones are prohibited in all National Park Service units '
+            'under 36 CFR 1.5, regardless of FAA airspace class. '
+            'The airspace here is Class G (uncontrolled), but the NPS '
+            'land-management rule still applies.',
+      );
+    }
+
+    // No NPS — pure FAA result
+    if (faa.hasProhibited) {
+      return _StatusResult(
+        status: _AirspaceStatus.restricted,
+        headline: 'Prohibited airspace — no drone operations allowed',
+        detail: faaNames.isNotEmpty ? faaNames : null,
+      );
+    }
+    if (faa.hasRestricted) {
+      return _StatusResult(
+        status: _AirspaceStatus.restricted,
+        headline: 'Restricted airspace — contact the controlling agency',
+        detail: faaNames.isNotEmpty ? faaNames : null,
+      );
+    }
+    if (faa.hasControlled) {
+      return _StatusResult(
+        status: _AirspaceStatus.controlled,
+        headline: 'Controlled airspace — FAA authorization required',
+        detail: faaNames.isNotEmpty
+            ? '$faaNames\nDrones require FAA authorization before flying here.'
+            : 'Drones require FAA authorization before flying here.',
+      );
+    }
+    return _StatusResult(
+      status: _AirspaceStatus.clear,
+      headline: 'Class G — uncontrolled airspace',
+      detail: 'No controlled, restricted, or NPS-protected area detected. '
+          'Fly under 400 ft AGL, keep the drone in sight, and stay clear of '
+          'people, vehicles, and emergency scenes.',
+    );
   }
 
   // ── Viewport bbox query (polygon overlay) ─────────────────────────────────
@@ -237,19 +345,22 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
     if (!mounted) return;
     setState(() => _zonesLoading = true);
 
-    final zones = <_AirspaceZone>[];
     final minLon = bounds.west;
     final minLat = bounds.south;
     final maxLon = bounds.east;
     final maxLat = bounds.north;
+    final bboxParam = '$minLon,$minLat,$maxLon,$maxLat';
 
+    final zones = <_AirspaceZone>[];
+
+    // FAA layers
     for (final layerId in [0, 1]) {
       try {
         final resp = await _dio.get(
           'https://geoservices.faa.gov/arcgis/rest/services/'
           'Aeronautical/Airspace/MapServer/$layerId/query',
           queryParameters: {
-            'geometry': '$minLon,$minLat,$maxLon,$maxLat',
+            'geometry': bboxParam,
             'geometryType': 'esriGeometryEnvelope',
             'inSR': '4326',
             'spatialRel': 'esriSpatialRelIntersects',
@@ -260,34 +371,69 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
             'f': 'json',
           },
         );
-        final features =
-            ((resp.data as Map<String, dynamic>)['features'] as List?) ?? [];
-        for (final f in features) {
-          final attrs = (f['attributes'] as Map<String, dynamic>?) ?? {};
-          final geom = f['geometry'] as Map<String, dynamic>?;
-          final type =
-              (attrs['TYPE_CODE'] ?? attrs['LOCAL_TYPE'] ?? '').toString();
-          final name = (attrs['NAME'] ?? type).toString();
-          for (final ring in ((geom?['rings'] as List?) ?? []).take(4)) {
-            final pts = <LatLng>[];
-            for (final raw in (ring as List).take(500)) {
-              final c = raw as List;
-              if (c.length >= 2) {
-                pts.add(LatLng(
-                    (c[1] as num).toDouble(), (c[0] as num).toDouble()));
-              }
-            }
-            if (pts.length >= 3) zones.add(_AirspaceZone(name, type, pts));
-          }
-        }
+        _extractZones(resp.data, zones, typeKey: 'FAA');
       } catch (_) {}
     }
+
+    // NPS boundaries
+    try {
+      final resp = await _dio.get(
+        'https://services1.arcgis.com/fBc8EJBxQRMcHlei/arcgis/rest/services/'
+        'NPS_Land_Resources_Division_Boundary_and_Tract_Data_Service/'
+        'FeatureServer/2/query',
+        queryParameters: {
+          'geometry': bboxParam,
+          'geometryType': 'esriGeometryEnvelope',
+          'inSR': '4326',
+          'spatialRel': 'esriSpatialRelIntersects',
+          'outFields': 'UNIT_NAME,UNIT_TYPE',
+          'returnGeometry': 'true',
+          'outSR': '4326',
+          'simplifyTolerance': '0.003',
+          'f': 'json',
+        },
+      );
+      _extractZones(resp.data, zones, typeKey: 'NPS');
+    } catch (_) {}
 
     if (!mounted) return;
     setState(() {
       _zones = zones;
       _zonesLoading = false;
     });
+  }
+
+  void _extractZones(
+      dynamic data, List<_AirspaceZone> out, {required String typeKey}) {
+    final features =
+        ((data as Map<String, dynamic>)['features'] as List?) ?? [];
+    for (final f in features) {
+      final attrs = (f['attributes'] as Map<String, dynamic>?) ?? {};
+      final geom = f['geometry'] as Map<String, dynamic>?;
+
+      final String type;
+      final String name;
+      if (typeKey == 'NPS') {
+        type = 'NPS';
+        name = (attrs['UNIT_NAME'] ?? attrs['UNIT_TYPE'] ?? 'NPS Unit')
+            .toString();
+      } else {
+        type = (attrs['TYPE_CODE'] ?? attrs['LOCAL_TYPE'] ?? '').toString();
+        name = (attrs['NAME'] ?? type).toString();
+      }
+
+      for (final ring in ((geom?['rings'] as List?) ?? []).take(4)) {
+        final pts = <LatLng>[];
+        for (final raw in (ring as List).take(500)) {
+          final c = raw as List;
+          if (c.length >= 2) {
+            pts.add(
+                LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()));
+          }
+        }
+        if (pts.length >= 3) out.add(_AirspaceZone(name, type, pts));
+      }
+    }
   }
 
   void _onPositionChanged(MapCamera camera, bool hasGesture) {
@@ -301,6 +447,7 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
   // ── Colors ────────────────────────────────────────────────────────────────
 
   Color _zoneFill(String type) {
+    if (type == 'NPS') return const Color(0x2D1B7F00);
     if (type.startsWith('P')) return const Color(0x55DD0000);
     if (type.startsWith('R')) return const Color(0x3DDD0000);
     if (type.startsWith('W') || type.startsWith('A')) return Colors.orange.withValues(alpha: 0.22);
@@ -311,6 +458,7 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
   }
 
   Color _zoneBorder(String type) {
+    if (type == 'NPS') return const Color(0xFF1B7F00);
     if (type.startsWith('P') || type.startsWith('R')) return const Color(0xFFCC2200);
     if (type.startsWith('W') || type.startsWith('A')) return Colors.orange;
     if (type.contains('B')) return const Color(0xFF0070C0);
@@ -318,6 +466,14 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
     if (type.contains('D')) return const Color(0xFF0070C0);
     return Colors.orange;
   }
+
+  double _zoneBorderWidth(String type) => type == 'NPS' ? 1.5 : 2.0;
+
+  // NPS polygons drawn first so FAA zones render on top
+  List<_AirspaceZone> get _npsZones =>
+      _zones.where((z) => z.type == 'NPS' && z.ring.length >= 3).toList();
+  List<_AirspaceZone> get _faaZones =>
+      _zones.where((z) => z.type != 'NPS' && z.ring.length >= 3).toList();
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
@@ -375,19 +531,33 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
                 retinaMode: true,
                 panBuffer: 2,
               ),
-              if (_zones.isNotEmpty)
+              // NPS first (underneath FAA zones)
+              if (_npsZones.isNotEmpty)
                 PolygonLayer(
                   polygons: [
-                    for (final z in _zones.where((z) => z.ring.length >= 3))
+                    for (final z in _npsZones)
                       Polygon(
                         points: z.ring,
                         color: _zoneFill(z.type),
                         borderColor: _zoneBorder(z.type),
-                        borderStrokeWidth: 2.0,
+                        borderStrokeWidth: _zoneBorderWidth(z.type),
                       ),
                   ],
                 ),
-              // GPS location dot
+              // FAA zones on top
+              if (_faaZones.isNotEmpty)
+                PolygonLayer(
+                  polygons: [
+                    for (final z in _faaZones)
+                      Polygon(
+                        points: z.ring,
+                        color: _zoneFill(z.type),
+                        borderColor: _zoneBorder(z.type),
+                        borderStrokeWidth: _zoneBorderWidth(z.type),
+                      ),
+                  ],
+                ),
+              // GPS dot
               if (_lat != null) ...[
                 CircleLayer(circles: [
                   CircleMarker(
@@ -427,19 +597,24 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
                     width: 32,
                     height: 40,
                     alignment: Alignment.topCenter,
-                    child: const _PinIcon(),
+                    child: const Icon(Icons.location_on,
+                        color: kCyan,
+                        size: 36,
+                        shadows: [
+                          Shadow(color: Colors.black54, blurRadius: 6)
+                        ]),
                   ),
                 ]),
               const RichAttributionWidget(
                 attributions: [
                   TextSourceAttribution('© CARTO'),
                   TextSourceAttribution('© OpenStreetMap contributors'),
-                  TextSourceAttribution('Airspace data: FAA'),
+                  TextSourceAttribution('Airspace: FAA · NPS'),
                 ],
               ),
             ],
           ),
-          // Tap-to-check hint (shown before user has tapped)
+          // Hint banner
           if (_tappedPoint == null && _gpsStatus != _AirspaceStatus.loading)
             Positioned(
               top: 12,
@@ -477,19 +652,34 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
   }
 }
 
-// ── Pin icon for tapped location ──────────────────────────────────────────────
+// ── Data classes ──────────────────────────────────────────────────────────────
 
-class _PinIcon extends StatelessWidget {
-  const _PinIcon();
+class _FAA {
+  final bool hasProhibited;
+  final bool hasRestricted;
+  final bool hasControlled;
+  final List<String> names;
+  const _FAA({
+    required this.hasProhibited,
+    required this.hasRestricted,
+    required this.hasControlled,
+    required this.names,
+  });
+}
 
-  @override
-  Widget build(BuildContext context) => Stack(
-        alignment: Alignment.topCenter,
-        children: const [
-          Icon(Icons.location_on, color: kCyan, size: 36,
-              shadows: [Shadow(color: Colors.black54, blurRadius: 6)]),
-        ],
-      );
+class _NPS {
+  final bool inside;
+  final String? name;
+  final String? unitType;
+  const _NPS({required this.inside, this.name, this.unitType});
+}
+
+class _StatusResult {
+  final _AirspaceStatus status;
+  final String headline;
+  final String? detail;
+  const _StatusResult(
+      {required this.status, required this.headline, this.detail});
 }
 
 // ── Status card ───────────────────────────────────────────────────────────────
@@ -545,14 +735,16 @@ class _StatusCard extends StatelessWidget {
                   SizedBox(width: 6),
                   _LegendChip(color: Color(0x3DDD0000), border: Color(0xFFCC2200), label: 'Restricted'),
                   SizedBox(width: 6),
-                  _LegendChip(color: Color(0x44FF8C00), border: Colors.orange, label: 'Warning/Alert'),
+                  _LegendChip(color: Color(0x44FF8C00), border: Colors.orange, label: 'Warning'),
                   SizedBox(width: 6),
                   _LegendChip(color: Color(0x330070C0), border: Color(0xFF0070C0), label: 'Class B/C/D'),
+                  SizedBox(width: 6),
+                  _LegendChip(color: Color(0x2D1B7F00), border: Color(0xFF1B7F00), label: 'Nat\'l Park'),
                 ],
               ),
             ),
             const SizedBox(height: 10),
-            // Location source label
+            // Source label
             Row(
               children: [
                 Icon(
@@ -612,7 +804,6 @@ class _StatusCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 12),
-            // Action buttons
             if (isTappedLocation)
               Row(
                 children: [
@@ -657,9 +848,8 @@ class _StatusCard extends StatelessWidget {
               ),
             const SizedBox(height: 6),
             const Text(
-              'Airspace data: FAA public service. For reference only — '
-              'regulations change and TFRs are not always captured here. '
-              'Always confirm before flying.',
+              'Airspace data: FAA public service · NPS boundary data. '
+              'For reference only — always confirm with FAA NOTAM system before flying.',
               style: TextStyle(color: Colors.white30, fontSize: 10, height: 1.4),
             ),
           ],
