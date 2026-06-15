@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../services/location_service.dart';
@@ -46,6 +49,11 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
 
   List<_AirspaceZone> _zones = [];
   bool _zonesLoading = false;
+  bool _cardVisible = true;
+
+  // NPS boundaries loaded from bundled asset (nps_parks.json.gz).
+  // These never change between pans — no API call needed for NPS overlay.
+  List<_AirspaceZone> _staticNpsZones = [];
 
   _AirspaceStatus get _displayStatus =>
       _tappedPoint != null ? _tapStatus : _gpsStatus;
@@ -62,7 +70,31 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
   @override
   void initState() {
     super.initState();
+    _loadStaticNps();
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _loadStaticNps() async {
+    try {
+      final bytes = await rootBundle.load('assets/nps_parks.json.gz');
+      final raw = bytes.buffer.asUint8List();
+      final decoded = utf8.decode(GZipCodec().decode(raw));
+      final data = json.decode(decoded) as Map<String, dynamic>;
+      final zones = <_AirspaceZone>[];
+      for (final park in (data['parks'] as List)) {
+        final name = (park['n'] as String?) ?? 'NPS Unit';
+        for (final ring in (park['r'] as List)) {
+          final pts = (ring as List)
+              .map<LatLng>((p) => LatLng(
+                  (p[1] as num).toDouble(), (p[0] as num).toDouble()))
+              .toList();
+          if (pts.length >= 3) zones.add(_AirspaceZone(name, 'NPS', pts));
+        }
+      }
+      if (mounted) setState(() => _staticNpsZones = zones);
+    } catch (e) {
+      debugPrint('NPS asset load failed: $e');
+    }
   }
 
   @override
@@ -213,30 +245,25 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
     );
   }
 
-  // ── USGS PAD-US: national parks + state parks ──────────────────────────────
-  // PAD-US (Protected Areas Database of the United States) is the authoritative
-  // federal inventory of all protected lands. One query, two results:
-  //   Mang_Name = 'NPS'  → NPS unit → drones prohibited (36 CFR 1.5)
-  //   Des_Tp    = 'SP'   → state park → check state regulations (most prohibit)
-  //
-  // This replaces the separate NPS endpoint (services1.arcgis.com) which had
-  // incomplete nationwide coverage and no state park data.
+  // ── USGS National Map — NPS unit boundaries (layer 29) ───────────────────
+  // carto.nationalmap.gov/govunits/MapServer/29 covers all NPS-managed units:
+  // national parks, seashores, monuments, recreation areas, historic trails, etc.
+  // Drones are prohibited in all NPS units under 36 CFR 1.5.
 
   Future<_ProtectedLand> _queryProtectedLands(double lat, double lon) async {
-    bool insideNPS = false, insideStatePark = false;
-    String? npsName, stateParkName;
+    bool insideNPS = false;
+    String? npsName;
 
     try {
       final resp = await _dio.get(
-        'https://gis.usgs.gov/arcgis/rest/services/'
-        'padus/USPADPublicAccess/MapServer/0/query',
+        'https://carto.nationalmap.gov/arcgis/rest/services/'
+        'govunits/MapServer/29/query',
         queryParameters: {
           'geometry': '$lon,$lat',
           'geometryType': 'esriGeometryPoint',
           'inSR': '4326',
           'spatialRel': 'esriSpatialRelIntersects',
-          'where': "Mang_Name='NPS' OR Des_Tp='SP'",
-          'outFields': 'Unit_Nm,Mang_Name,Des_Tp,State_Nm',
+          'outFields': 'name',
           'returnGeometry': 'false',
           'f': 'json',
         },
@@ -244,31 +271,18 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
 
       for (final f in _features(resp.data)) {
         final a = _attrs(f);
-        final mangName = _str(a, ['Mang_Name']);
-        final desTp    = _str(a, ['Des_Tp']);
-        final unitNm   = _str(a, ['Unit_Nm']);
-        final stateNm  = _str(a, ['State_Nm']);
-
-        if (mangName == 'NPS') {
-          insideNPS = true;
-          npsName = unitNm.isNotEmpty ? unitNm : 'National Park Unit';
-        } else if (desTp == 'SP') {
-          insideStatePark = true;
-          stateParkName = [unitNm, if (stateNm.isNotEmpty) stateNm]
-              .where((s) => s.isNotEmpty)
-              .join(', ')
-              .let((s) => s.isNotEmpty ? s : 'State Park');
-        }
+        final unitNm = _str(a, ['name']);
+        insideNPS = true;
+        npsName = unitNm.isNotEmpty ? unitNm : 'NPS Unit';
+        break;
       }
-    } catch (_) {
-      // PAD-US query failure is non-fatal
-    }
+    } catch (_) {}
 
     return _ProtectedLand(
       insideNPS: insideNPS,
       npsName: npsName,
-      insideStatePark: insideStatePark,
-      stateParkName: stateParkName,
+      insideStatePark: false,
+      stateParkName: null,
     );
   }
 
@@ -302,26 +316,26 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
     }
   }
 
-  // ── USFWS wildlife refuges ─────────────────────────────────────────────────
+  // ── USFWS wildlife refuges (USGS National Map govunits layer 35) ──────────
 
   Future<_USFWS> _queryUSFWS(double lat, double lon) async {
     try {
       final resp = await _dio.get(
-        'https://gis.fws.gov/arcgis/rest/services/'
-        'FWS_Boundaries/FeatureServer/0/query',
+        'https://carto.nationalmap.gov/arcgis/rest/services/'
+        'govunits/MapServer/35/query',
         queryParameters: {
           'geometry': '$lon,$lat',
           'geometryType': 'esriGeometryPoint',
           'inSR': '4326',
           'spatialRel': 'esriSpatialRelIntersects',
-          'outFields': 'ORGNAME,STA_NM,AREANAME',
+          'outFields': 'name',
           'returnGeometry': 'false',
           'f': 'json',
         },
       );
       final features = _features(resp.data);
       if (features.isEmpty) return const _USFWS(inside: false);
-      final name = _str(_attrs(features.first), ['ORGNAME', 'STA_NM', 'AREANAME']);
+      final name = _str(_attrs(features.first), ['name']);
       return _USFWS(
           inside: true,
           name: name.isNotEmpty ? name : 'National Wildlife Refuge');
@@ -454,14 +468,10 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
       _bboxQuery(url: 'https://geoservices.faa.gov/arcgis/rest/services/Aeronautical/Airspace/MapServer/0/query', bbox: bbox, zoneType: 'FAA', typeFields: ['TYPE_CODE', 'LOCAL_TYPE'], nameFields: ['NAME'], out: zones),
       // FAA Special Use
       _bboxQuery(url: 'https://geoservices.faa.gov/arcgis/rest/services/Aeronautical/Airspace/MapServer/1/query', bbox: bbox, zoneType: 'FAA', typeFields: ['TYPE_CODE', 'LOCAL_TYPE'], nameFields: ['NAME'], out: zones),
-      // PAD-US: NPS national parks
-      _bboxQuery(url: 'https://gis.usgs.gov/arcgis/rest/services/padus/USPADPublicAccess/MapServer/0/query', bbox: bbox, zoneType: 'NPS', typeFields: [], nameFields: ['Unit_Nm', 'Des_Tp'], out: zones, where: "Mang_Name='NPS'"),
-      // PAD-US: state parks
-      _bboxQuery(url: 'https://gis.usgs.gov/arcgis/rest/services/padus/USPADPublicAccess/MapServer/0/query', bbox: bbox, zoneType: 'STATE_PARK', typeFields: [], nameFields: ['Unit_Nm', 'State_Nm'], out: zones, where: "Des_Tp='SP'"),
       // Active TFRs
       _bboxQuery(url: 'https://geoservices.faa.gov/arcgis/rest/services/ATCSCC/TFRS/MapServer/0/query', bbox: bbox, zoneType: 'TFR', typeFields: [], nameFields: ['CALLSIGN', 'REASON'], out: zones),
-      // USFWS refuges
-      _bboxQuery(url: 'https://gis.fws.gov/arcgis/rest/services/FWS_Boundaries/FeatureServer/0/query', bbox: bbox, zoneType: 'USFWS', typeFields: [], nameFields: ['ORGNAME', 'STA_NM'], out: zones),
+      // USFWS refuges (USGS National Map govunits layer 35)
+      _bboxQuery(url: 'https://carto.nationalmap.gov/arcgis/rest/services/govunits/MapServer/35/query', bbox: bbox, zoneType: 'USFWS', typeFields: [], nameFields: ['name'], out: zones),
     ]);
 
     if (!mounted) return;
@@ -523,9 +533,13 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
 
   void _onPositionChanged(MapCamera camera, bool hasGesture) {
     if (!hasGesture) return;
+    if (_cardVisible) setState(() => _cardVisible = false);
     _viewportDebounce?.cancel();
     _viewportDebounce = Timer(const Duration(milliseconds: 700), () {
-      if (mounted) _fetchViewportZones(camera.visibleBounds);
+      if (mounted) {
+        setState(() => _cardVisible = true);
+        _fetchViewportZones(camera.visibleBounds);
+      }
     });
   }
 
@@ -595,9 +609,10 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
     final lat = _lat ?? 29.5;
     final lon = _lon ?? -90.0;
 
-    final spZ    = _zonesOfType('STATE_PARK');
     final usfwsZ = _zonesOfType('USFWS');
-    final npsZ   = _zonesOfType('NPS');
+    // NPS overlay uses pre-loaded static asset — visible regardless of pan/zoom,
+    // no API call needed, works instantly and offline.
+    final npsZ   = _staticNpsZones.where((z) => z.ring.length >= 3).toList();
     final faaZ   = _faaZones();
     final tfrZ   = _zonesOfType('TFR');
 
@@ -646,7 +661,7 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
                 retinaMode: true,
                 panBuffer: 2,
               ),
-              for (final group in [spZ, usfwsZ, npsZ, faaZ, tfrZ])
+              for (final group in [usfwsZ, npsZ, faaZ, tfrZ])
                 if (group.isNotEmpty)
                   PolygonLayer(
                     polygons: [
@@ -701,7 +716,7 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
                 attributions: [
                   TextSourceAttribution('© CARTO'),
                   TextSourceAttribution('© OpenStreetMap contributors'),
-                  TextSourceAttribution('FAA · USGS PAD-US · USFWS'),
+                  TextSourceAttribution('FAA · USGS National Map · USFWS'),
                 ],
               ),
             ],
@@ -727,15 +742,39 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
             ),
           Positioned(
             left: 0, right: 0, bottom: 0,
-            child: _StatusCard(
-              status: _displayStatus,
-              headline: _displayHeadline,
-              detail: _displayDetail,
-              isTappedLocation: _tappedPoint != null,
-              onRetry: _load,
-              onClearTap: _clearTap,
+            child: AnimatedSlide(
+              offset: _cardVisible ? Offset.zero : const Offset(0, 1),
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeInOut,
+              child: _StatusCard(
+                status: _displayStatus,
+                headline: _displayHeadline,
+                detail: _displayDetail,
+                isTappedLocation: _tappedPoint != null,
+                onRetry: _load,
+                onClearTap: _clearTap,
+              ),
             ),
           ),
+          if (!_cardVisible)
+            Positioned(
+              left: 0, right: 0, bottom: 0,
+              child: GestureDetector(
+                onTap: () => setState(() => _cardVisible = true),
+                child: Container(
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(vertical: 7),
+                  decoration: BoxDecoration(
+                    color: kNavy.withValues(alpha: 0.80),
+                    borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(14)),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: const Icon(Icons.expand_less,
+                      color: Colors.white38, size: 22),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -945,7 +984,7 @@ class _StatusCard extends StatelessWidget {
               ),
             const SizedBox(height: 6),
             const Text(
-              'Data: FAA airspace · FAA TFRs · USGS PAD-US (national & state parks) · USFWS refuges. '
+              'Data: FAA airspace · FAA TFRs · USGS National Map (NPS units) · USFWS refuges. '
               'For reference only — always confirm before flying.',
               style: TextStyle(color: Colors.white30, fontSize: 10, height: 1.4),
             ),
