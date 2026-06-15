@@ -9,10 +9,11 @@ import '../theme.dart';
 enum _AirspaceStatus { loading, clear, controlled, restricted, error }
 
 // Zone type conventions:
-//   FAA:   P* prohibited · R* restricted · W*/A* warning/alert · B/C/D class
-//   NPS:   'NPS'   → national park / seashore / monument / etc.
-//   TFR:   'TFR'   → active FAA Temporary Flight Restriction
-//   USFWS: 'USFWS' → national wildlife refuge (permit required)
+//   FAA:        P* prohibited · R* restricted · W*/A* warning/alert · B/C/D class
+//   NPS:        'NPS'        → national park / seashore / monument (drones prohibited)
+//   STATE_PARK: 'STATE_PARK' → state park (check state regulations)
+//   TFR:        'TFR'        → active FAA Temporary Flight Restriction
+//   USFWS:      'USFWS'      → national wildlife refuge (permit required)
 class _AirspaceZone {
   final String name;
   final String type;
@@ -54,8 +55,8 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
       _tappedPoint != null ? _tapDetail : _gpsDetail;
 
   static final _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 10),
-    receiveTimeout: const Duration(seconds: 15),
+    connectTimeout: const Duration(seconds: 12),
+    receiveTimeout: const Duration(seconds: 18),
   ));
 
   @override
@@ -124,14 +125,14 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
 
   void _clearTap() => setState(() => _tappedPoint = null);
 
-  // ── Combined point query: FAA + NPS + TFR + USFWS ─────────────────────────
+  // ── Combined point query ───────────────────────────────────────────────────
 
   Future<void> _queryPoint(double lat, double lon,
       {required bool forGps}) async {
     try {
       final results = await Future.wait([
         _queryFAA(lat, lon),
-        _queryNPS(lat, lon),
+        _queryProtectedLands(lat, lon),
         _queryTFR(lat, lon),
         _queryUSFWS(lat, lon),
       ]);
@@ -140,7 +141,7 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
 
       final st = _combineStatus(
         results[0] as _FAA,
-        results[1] as _NPS,
+        results[1] as _ProtectedLand,
         results[2] as _TFR,
         results[3] as _USFWS,
       );
@@ -163,19 +164,15 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
         const h = 'Airspace data unavailable';
         const d = 'Could not reach the airspace service. Check your connection.';
         if (forGps) {
-          _gpsStatus = s;
-          _gpsHeadline = h;
-          _gpsDetail = d;
+          _gpsStatus = s; _gpsHeadline = h; _gpsDetail = d;
         } else {
-          _tapStatus = s;
-          _tapHeadline = h;
-          _tapDetail = d;
+          _tapStatus = s; _tapHeadline = h; _tapDetail = d;
         }
       });
     }
   }
 
-  // ── FAA airspace point query ───────────────────────────────────────────────
+  // ── FAA airspace (layers 0 + 1) ────────────────────────────────────────────
 
   Future<_FAA> _queryFAA(double lat, double lon) async {
     bool hasProhibited = false, hasRestricted = false, hasControlled = false;
@@ -197,9 +194,9 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
           },
         );
         for (final f in _features(resp.data)) {
-          final attrs = _attrs(f);
-          final type = _str(attrs, ['TYPE_CODE', 'LOCAL_TYPE']);
-          final name = _str(attrs, ['NAME']);
+          final a = _attrs(f);
+          final type = _str(a, ['TYPE_CODE', 'LOCAL_TYPE']);
+          final name = _str(a, ['NAME']);
           if (type.startsWith('P')) hasProhibited = true;
           else if (type.startsWith('R') || type.startsWith('W')) hasRestricted = true;
           else hasControlled = true;
@@ -216,42 +213,66 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
     );
   }
 
-  // ── NPS boundary point query ───────────────────────────────────────────────
-  // Drones prohibited under 36 CFR 1.5 in all NPS units regardless of
-  // FAA airspace class — NPS is a land-management rule, not an airspace rule.
+  // ── USGS PAD-US: national parks + state parks ──────────────────────────────
+  // PAD-US (Protected Areas Database of the United States) is the authoritative
+  // federal inventory of all protected lands. One query, two results:
+  //   Mang_Name = 'NPS'  → NPS unit → drones prohibited (36 CFR 1.5)
+  //   Des_Tp    = 'SP'   → state park → check state regulations (most prohibit)
+  //
+  // This replaces the separate NPS endpoint (services1.arcgis.com) which had
+  // incomplete nationwide coverage and no state park data.
 
-  Future<_NPS> _queryNPS(double lat, double lon) async {
+  Future<_ProtectedLand> _queryProtectedLands(double lat, double lon) async {
+    bool insideNPS = false, insideStatePark = false;
+    String? npsName, stateParkName;
+
     try {
       final resp = await _dio.get(
-        'https://services1.arcgis.com/fBc8EJBxQRMcHlei/arcgis/rest/services/'
-        'NPS_Land_Resources_Division_Boundary_and_Tract_Data_Service/'
-        'FeatureServer/2/query',
+        'https://gis.usgs.gov/arcgis/rest/services/'
+        'padus/USPADPublicAccess/MapServer/0/query',
         queryParameters: {
           'geometry': '$lon,$lat',
           'geometryType': 'esriGeometryPoint',
           'inSR': '4326',
           'spatialRel': 'esriSpatialRelIntersects',
-          'outFields': 'UNIT_NAME,UNIT_TYPE',
+          'where': "Mang_Name='NPS' OR Des_Tp='SP'",
+          'outFields': 'Unit_Nm,Mang_Name,Des_Tp,State_Nm',
           'returnGeometry': 'false',
           'f': 'json',
         },
       );
-      final features = _features(resp.data);
-      if (features.isEmpty) return const _NPS(inside: false);
-      final attrs = _attrs(features.first);
-      final name = _str(attrs, ['UNIT_NAME', 'UNIT_TYPE']);
-      return _NPS(inside: true, name: name.isNotEmpty ? name : 'National Park Unit');
+
+      for (final f in _features(resp.data)) {
+        final a = _attrs(f);
+        final mangName = _str(a, ['Mang_Name']);
+        final desTp    = _str(a, ['Des_Tp']);
+        final unitNm   = _str(a, ['Unit_Nm']);
+        final stateNm  = _str(a, ['State_Nm']);
+
+        if (mangName == 'NPS') {
+          insideNPS = true;
+          npsName = unitNm.isNotEmpty ? unitNm : 'National Park Unit';
+        } else if (desTp == 'SP') {
+          insideStatePark = true;
+          stateParkName = [unitNm, if (stateNm.isNotEmpty) stateNm]
+              .where((s) => s.isNotEmpty)
+              .join(', ')
+              .let((s) => s.isNotEmpty ? s : 'State Park');
+        }
+      }
     } catch (_) {
-      return const _NPS(inside: false);
+      // PAD-US query failure is non-fatal
     }
+
+    return _ProtectedLand(
+      insideNPS: insideNPS,
+      npsName: npsName,
+      insideStatePark: insideStatePark,
+      stateParkName: stateParkName,
+    );
   }
 
-  // ── TFR point query ────────────────────────────────────────────────────────
-  // Active Temporary Flight Restrictions from the FAA ATCSCC service.
-  // TFRs are time-limited and not in the static Airspace MapServer — they
-  // cover wildfires, presidential movements, sporting events, disasters, etc.
-  // checkFailed=true means the service was unreachable; we surface a warning
-  // rather than silently showing "clear."
+  // ── FAA active TFRs ────────────────────────────────────────────────────────
 
   Future<_TFR> _queryTFR(double lat, double lon) async {
     try {
@@ -270,21 +291,18 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
       );
       final features = _features(resp.data);
       if (features.isEmpty) return const _TFR(inside: false);
-      final attrs = _attrs(features.first);
-      final name = _str(attrs, ['CALLSIGN', 'REASON', 'TYPE_CODE']);
+      final name = _str(_attrs(features.first), ['CALLSIGN', 'REASON', 'TYPE_CODE']);
       return _TFR(inside: true, name: name.isNotEmpty ? name : 'Active TFR');
     } on DioException catch (e) {
-      // 4xx/5xx or service down → flag as unchecked so the UI warns the user
-      final isServiceError = e.response?.statusCode != null;
-      return _TFR(inside: false, checkFailed: isServiceError || e.type == DioExceptionType.connectionTimeout);
+      final isFail = e.response?.statusCode != null ||
+          e.type == DioExceptionType.connectionTimeout;
+      return _TFR(inside: false, checkFailed: isFail);
     } catch (_) {
       return const _TFR(inside: false, checkFailed: true);
     }
   }
 
-  // ── USFWS National Wildlife Refuge point query ─────────────────────────────
-  // Drones require a Special Use Permit on most refuges; many explicitly
-  // prohibit them. Highly relevant for fishing drones near coastal wetlands.
+  // ── USFWS wildlife refuges ─────────────────────────────────────────────────
 
   Future<_USFWS> _queryUSFWS(double lat, double lon) async {
     try {
@@ -303,9 +321,10 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
       );
       final features = _features(resp.data);
       if (features.isEmpty) return const _USFWS(inside: false);
-      final attrs = _attrs(features.first);
-      final name = _str(attrs, ['ORGNAME', 'STA_NM', 'AREANAME']);
-      return _USFWS(inside: true, name: name.isNotEmpty ? name : 'National Wildlife Refuge');
+      final name = _str(_attrs(features.first), ['ORGNAME', 'STA_NM', 'AREANAME']);
+      return _USFWS(
+          inside: true,
+          name: name.isNotEmpty ? name : 'National Wildlife Refuge');
     } catch (_) {
       return const _USFWS(inside: false);
     }
@@ -313,113 +332,111 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
 
   // ── Status combiner ────────────────────────────────────────────────────────
   // Priority: FAA prohibited → active TFR → NPS → FAA restricted →
-  //           USFWS refuge → FAA controlled → clear
+  //           USFWS refuge → state park → FAA controlled → clear
 
-  _StatusResult _combineStatus(_FAA faa, _NPS nps, _TFR tfr, _USFWS usfws) {
-    final extras = <String>[];
-    if (nps.inside) extras.add('NPS: ${nps.name ?? 'National Park Unit'} (36 CFR 1.5)');
-    if (usfws.inside) extras.add('USFWS: ${usfws.name ?? 'Wildlife Refuge'} (permit required)');
-    if (faa.names.isNotEmpty) extras.add('FAA: ${faa.names.join(', ')}');
-
+  _StatusResult _combineStatus(
+      _FAA faa, _ProtectedLand land, _TFR tfr, _USFWS usfws) {
     final tfrNote = tfr.checkFailed
         ? '\n⚠ TFR status could not be verified — check FAA NOTAM system before flying.'
         : '';
 
-    // FAA Prohibited — always no-fly
     if (faa.hasProhibited) {
       return _StatusResult(
         status: _AirspaceStatus.restricted,
         headline: 'Prohibited airspace — no drone operations allowed',
-        detail: '${extras.join('\n')}$tfrNote'.trim().nullIfEmpty,
+        detail: _join([if (faa.names.isNotEmpty) faa.names.join(', '), tfrNote.trim()]),
       );
     }
 
-    // Active TFR — temporary no-fly
     if (tfr.inside) {
-      final tfrName = tfr.name ?? 'Active TFR';
-      final otherExtras = [
-        if (nps.inside) 'Also inside NPS unit: ${nps.name ?? ''} (36 CFR 1.5)',
-        if (usfws.inside) 'Also in Wildlife Refuge: ${usfws.name ?? ''} (permit required)',
-        if (faa.hasRestricted || faa.hasControlled)
-          'FAA airspace: ${faa.names.join(', ')}',
-      ];
       return _StatusResult(
         status: _AirspaceStatus.restricted,
         headline: 'Active TFR — no drone operations',
-        detail: [tfrName, ...otherExtras].join('\n').nullIfEmpty,
+        detail: _join([
+          tfr.name ?? 'Active TFR',
+          if (land.insideNPS) 'Also inside NPS unit: ${land.npsName} (36 CFR 1.5)',
+          if (land.insideStatePark) 'Also inside state park: ${land.stateParkName}',
+          if (usfws.inside) 'Also in Wildlife Refuge: ${usfws.name} (permit required)',
+        ]),
       );
     }
 
-    // NPS — prohibited by land-management rule
-    if (nps.inside) {
-      final park = nps.name ?? 'National Park Unit';
-      final extra = [
-        if (faa.hasRestricted)
-          'Also in FAA restricted airspace: ${faa.names.join(', ')}',
-        if (faa.hasControlled)
-          'Also in controlled airspace: ${faa.names.join(', ')} (FAA auth required)',
-        if (usfws.inside)
-          'Also in Wildlife Refuge: ${usfws.name ?? ''} (permit required)',
-      ];
+    if (land.insideNPS) {
       return _StatusResult(
         status: _AirspaceStatus.restricted,
-        headline: '$park — drones prohibited',
-        detail: ['Prohibited under NPS regulation 36 CFR 1.5, regardless of FAA airspace class.', ...extra, tfrNote.trim()].where((s) => s.isNotEmpty).join('\n').nullIfEmpty,
+        headline: '${land.npsName} — drones prohibited',
+        detail: _join([
+          'Prohibited under NPS regulation 36 CFR 1.5, regardless of FAA airspace class.',
+          if (faa.hasRestricted) 'Also in FAA restricted airspace: ${faa.names.join(', ')}',
+          if (faa.hasControlled) 'Also in controlled airspace: ${faa.names.join(', ')}',
+          if (usfws.inside) 'Also in Wildlife Refuge: ${usfws.name} (permit required)',
+          tfrNote.trim(),
+        ]),
       );
     }
 
-    // FAA Restricted
     if (faa.hasRestricted) {
-      final extra = [
-        if (usfws.inside) 'Also in Wildlife Refuge: ${usfws.name ?? ''} (permit required)',
-        tfrNote.trim(),
-      ].where((s) => s.isNotEmpty).join('\n');
       return _StatusResult(
         status: _AirspaceStatus.restricted,
         headline: 'Restricted airspace — contact the controlling agency',
-        detail: [if (faa.names.isNotEmpty) faa.names.join(', '), extra].where((s) => s.isNotEmpty).join('\n').nullIfEmpty,
+        detail: _join([
+          if (faa.names.isNotEmpty) faa.names.join(', '),
+          if (usfws.inside) 'Also in Wildlife Refuge: ${usfws.name} (permit required)',
+          if (land.insideStatePark) 'Also inside state park: ${land.stateParkName} — check state drone rules',
+          tfrNote.trim(),
+        ]),
       );
     }
 
-    // USFWS Wildlife Refuge
     if (usfws.inside) {
-      final refuge = usfws.name ?? 'National Wildlife Refuge';
-      final extra = [
-        if (faa.hasControlled) 'Also in controlled airspace: ${faa.names.join(', ')} (FAA auth required)',
-        tfrNote.trim(),
-      ].where((s) => s.isNotEmpty).join('\n');
       return _StatusResult(
         status: _AirspaceStatus.controlled,
-        headline: '$refuge — Special Use Permit required',
-        detail: ['Drones require a USFWS Special Use Permit on national wildlife refuges. Many refuges prohibit drone use entirely — contact the refuge manager before flying.', extra].where((s) => s.isNotEmpty).join('\n').nullIfEmpty,
+        headline: '${usfws.name} — Special Use Permit required',
+        detail: _join([
+          'Drones require a USFWS Special Use Permit on national wildlife refuges. Many refuges prohibit drone use entirely — contact the refuge manager before flying.',
+          if (faa.hasControlled) 'Also in controlled airspace: ${faa.names.join(', ')} (FAA auth required)',
+          if (land.insideStatePark) 'Also inside state park: ${land.stateParkName} — check state drone rules',
+          tfrNote.trim(),
+        ]),
       );
     }
 
-    // FAA Controlled (Class B/C/D)
+    if (land.insideStatePark) {
+      return _StatusResult(
+        status: _AirspaceStatus.controlled,
+        headline: '${land.stateParkName} — check state park drone rules',
+        detail: _join([
+          'Most states prohibit drones in state parks, but rules vary. Check the specific park\'s regulations before flying.',
+          if (faa.hasControlled) 'Also in controlled airspace: ${faa.names.join(', ')} (FAA auth required)',
+          tfrNote.trim(),
+        ]),
+      );
+    }
+
     if (faa.hasControlled) {
-      final detail = [
-        if (faa.names.isNotEmpty)
-          '${faa.names.join(', ')}\nDrones require FAA authorization before flying here.'
-        else
-          'Drones require FAA authorization before flying here.',
-        tfrNote.trim(),
-      ].where((s) => s.isNotEmpty).join('\n');
       return _StatusResult(
         status: _AirspaceStatus.controlled,
         headline: 'Controlled airspace — FAA authorization required',
-        detail: detail.nullIfEmpty,
+        detail: _join([
+          if (faa.names.isNotEmpty) '${faa.names.join(', ')}\nDrones require FAA authorization before flying here.'
+          else 'Drones require FAA authorization before flying here.',
+          tfrNote.trim(),
+        ]),
       );
     }
 
-    // Clear — Class G, no NPS, no TFR, no refuge
     return _StatusResult(
       status: _AirspaceStatus.clear,
       headline: 'Class G — uncontrolled airspace',
-      detail: ['No restricted airspace, national park, wildlife refuge, or active TFR detected at this location.', 'Fly under 400 ft AGL, keep the drone in sight, and stay clear of people, vehicles, and emergency scenes.', tfrNote.trim()].where((s) => s.isNotEmpty).join('\n').nullIfEmpty,
+      detail: _join([
+        'No restricted airspace, national park, state park, wildlife refuge, or active TFR detected.',
+        'Fly under 400 ft AGL, keep the drone in sight, and stay clear of people, vehicles, and emergency scenes.',
+        tfrNote.trim(),
+      ]),
     );
   }
 
-  // ── Viewport bbox query (polygon overlay) ─────────────────────────────────
+  // ── Viewport bbox query ────────────────────────────────────────────────────
 
   LatLngBounds _boundsAround(double lat, double lon, double deg) =>
       LatLngBounds(LatLng(lat - deg, lon - deg), LatLng(lat + deg, lon + deg));
@@ -428,41 +445,23 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
     if (!mounted) return;
     setState(() => _zonesLoading = true);
 
-    final minLon = bounds.west;
-    final minLat = bounds.south;
-    final maxLon = bounds.east;
-    final maxLat = bounds.north;
-    final bbox = '$minLon,$minLat,$maxLon,$maxLat';
-
+    final bbox =
+        '${bounds.west},${bounds.south},${bounds.east},${bounds.north}';
     final zones = <_AirspaceZone>[];
 
     await Future.wait([
       // FAA Class B/C/D/E
-      _bboxQuery(
-        'https://geoservices.faa.gov/arcgis/rest/services/Aeronautical/Airspace/MapServer/0/query',
-        bbox, 'FAA', ['TYPE_CODE', 'LOCAL_TYPE'], ['NAME'], zones,
-      ),
-      // FAA Special Use (Restricted/Prohibited/Warning/Alert)
-      _bboxQuery(
-        'https://geoservices.faa.gov/arcgis/rest/services/Aeronautical/Airspace/MapServer/1/query',
-        bbox, 'FAA', ['TYPE_CODE', 'LOCAL_TYPE'], ['NAME'], zones,
-      ),
-      // NPS boundaries
-      _bboxQuery(
-        'https://services1.arcgis.com/fBc8EJBxQRMcHlei/arcgis/rest/services/'
-        'NPS_Land_Resources_Division_Boundary_and_Tract_Data_Service/FeatureServer/2/query',
-        bbox, 'NPS', [], ['UNIT_NAME', 'UNIT_TYPE'], zones,
-      ),
+      _bboxQuery(url: 'https://geoservices.faa.gov/arcgis/rest/services/Aeronautical/Airspace/MapServer/0/query', bbox: bbox, zoneType: 'FAA', typeFields: ['TYPE_CODE', 'LOCAL_TYPE'], nameFields: ['NAME'], out: zones),
+      // FAA Special Use
+      _bboxQuery(url: 'https://geoservices.faa.gov/arcgis/rest/services/Aeronautical/Airspace/MapServer/1/query', bbox: bbox, zoneType: 'FAA', typeFields: ['TYPE_CODE', 'LOCAL_TYPE'], nameFields: ['NAME'], out: zones),
+      // PAD-US: NPS national parks
+      _bboxQuery(url: 'https://gis.usgs.gov/arcgis/rest/services/padus/USPADPublicAccess/MapServer/0/query', bbox: bbox, zoneType: 'NPS', typeFields: [], nameFields: ['Unit_Nm', 'Des_Tp'], out: zones, where: "Mang_Name='NPS'"),
+      // PAD-US: state parks
+      _bboxQuery(url: 'https://gis.usgs.gov/arcgis/rest/services/padus/USPADPublicAccess/MapServer/0/query', bbox: bbox, zoneType: 'STATE_PARK', typeFields: [], nameFields: ['Unit_Nm', 'State_Nm'], out: zones, where: "Des_Tp='SP'"),
       // Active TFRs
-      _bboxQuery(
-        'https://geoservices.faa.gov/arcgis/rest/services/ATCSCC/TFRS/MapServer/0/query',
-        bbox, 'TFR', [], ['CALLSIGN', 'REASON', 'TYPE_CODE'], zones,
-      ),
-      // USFWS Wildlife Refuges
-      _bboxQuery(
-        'https://gis.fws.gov/arcgis/rest/services/FWS_Boundaries/FeatureServer/0/query',
-        bbox, 'USFWS', [], ['ORGNAME', 'STA_NM', 'AREANAME'], zones,
-      ),
+      _bboxQuery(url: 'https://geoservices.faa.gov/arcgis/rest/services/ATCSCC/TFRS/MapServer/0/query', bbox: bbox, zoneType: 'TFR', typeFields: [], nameFields: ['CALLSIGN', 'REASON'], out: zones),
+      // USFWS refuges
+      _bboxQuery(url: 'https://gis.fws.gov/arcgis/rest/services/FWS_Boundaries/FeatureServer/0/query', bbox: bbox, zoneType: 'USFWS', typeFields: [], nameFields: ['ORGNAME', 'STA_NM'], out: zones),
     ]);
 
     if (!mounted) return;
@@ -472,17 +471,18 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
     });
   }
 
-  Future<void> _bboxQuery(
-    String url,
-    String bbox,
-    String zoneType,
-    List<String> typeFields,
-    List<String> nameFields,
-    List<_AirspaceZone> out,
-  ) async {
+  Future<void> _bboxQuery({
+    required String url,
+    required String bbox,
+    required String zoneType,
+    required List<String> typeFields,
+    required List<String> nameFields,
+    required List<_AirspaceZone> out,
+    String? where,
+  }) async {
     try {
       final allFields = {...typeFields, ...nameFields}.join(',');
-      final resp = await _dio.get(url, queryParameters: {
+      final params = <String, dynamic>{
         'geometry': bbox,
         'geometryType': 'esriGeometryEnvelope',
         'inSR': '4326',
@@ -491,23 +491,28 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
         'returnGeometry': 'true',
         'outSR': '4326',
         'simplifyTolerance': '0.003',
+        'resultRecordCount': '100',
         'f': 'json',
-      });
+      };
+      if (where != null) params['where'] = where;
+
+      final resp = await _dio.get(url, queryParameters: params);
 
       for (final f in _features(resp.data)) {
-        final attrs = _attrs(f);
+        final a = _attrs(f);
         final type = typeFields.isNotEmpty
-            ? _str(attrs, typeFields).let((t) => t.isNotEmpty ? t : zoneType)
+            ? _str(a, typeFields).let((t) => t.isNotEmpty ? t : zoneType)
             : zoneType;
-        final name = _str(attrs, nameFields).let((n) => n.isNotEmpty ? n : zoneType);
+        final name =
+            _str(a, nameFields).let((n) => n.isNotEmpty ? n : zoneType);
         final geom = f['geometry'] as Map<String, dynamic>?;
-
         for (final ring in ((geom?['rings'] as List?) ?? []).take(4)) {
           final pts = <LatLng>[];
           for (final raw in (ring as List).take(500)) {
             final c = raw as List;
             if (c.length >= 2) {
-              pts.add(LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()));
+              pts.add(LatLng(
+                  (c[1] as num).toDouble(), (c[0] as num).toDouble()));
             }
           }
           if (pts.length >= 3) out.add(_AirspaceZone(name, type, pts));
@@ -528,10 +533,8 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
 
   List _features(dynamic data) =>
       ((data as Map<String, dynamic>)['features'] as List?) ?? [];
-
   Map<String, dynamic> _attrs(dynamic f) =>
       (f['attributes'] as Map<String, dynamic>?) ?? {};
-
   String _str(Map<String, dynamic> attrs, List<String> keys) {
     for (final k in keys) {
       final v = attrs[k]?.toString() ?? '';
@@ -540,42 +543,50 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
     return '';
   }
 
+  String? _join(List<String> parts) {
+    final s = parts.where((p) => p.isNotEmpty).join('\n');
+    return s.isEmpty ? null : s;
+  }
+
   // ── Zone colors ───────────────────────────────────────────────────────────
+  // Draw order (bottom to top): STATE_PARK → USFWS → NPS → FAA → TFR
 
   Color _zoneFill(String type) {
-    if (type == 'TFR')   return const Color(0x44FFB800);
-    if (type == 'USFWS') return const Color(0x2D9B30FF);
-    if (type == 'NPS')   return const Color(0x2D1B7F00);
+    if (type == 'TFR')        return const Color(0x44FFB800);
+    if (type == 'USFWS')      return const Color(0x2D9B30FF);
+    if (type == 'NPS')        return const Color(0x2D1B7F00);
+    if (type == 'STATE_PARK') return const Color(0x2D009688);
     if (type.startsWith('P')) return const Color(0x55DD0000);
     if (type.startsWith('R')) return const Color(0x3DDD0000);
     if (type.startsWith('W') || type.startsWith('A')) return Colors.orange.withValues(alpha: 0.22);
-    if (type.contains('B')) return const Color(0x330070C0);
-    if (type.contains('C')) return const Color(0x33AA00FF);
-    if (type.contains('D')) return const Color(0x220070C0);
+    if (type.contains('B'))   return const Color(0x330070C0);
+    if (type.contains('C'))   return const Color(0x33AA00FF);
+    if (type.contains('D'))   return const Color(0x220070C0);
     return Colors.orange.withValues(alpha: 0.14);
   }
 
   Color _zoneBorder(String type) {
-    if (type == 'TFR')   return const Color(0xFFFFB800);
-    if (type == 'USFWS') return const Color(0xFF7B10EE);
-    if (type == 'NPS')   return const Color(0xFF1B7F00);
+    if (type == 'TFR')        return const Color(0xFFFFB800);
+    if (type == 'USFWS')      return const Color(0xFF7B10EE);
+    if (type == 'NPS')        return const Color(0xFF1B7F00);
+    if (type == 'STATE_PARK') return const Color(0xFF00695C);
     if (type.startsWith('P') || type.startsWith('R')) return const Color(0xFFCC2200);
     if (type.startsWith('W') || type.startsWith('A')) return Colors.orange;
-    if (type.contains('B')) return const Color(0xFF0070C0);
-    if (type.contains('C')) return const Color(0xFFAA00FF);
-    if (type.contains('D')) return const Color(0xFF0070C0);
+    if (type.contains('B'))   return const Color(0xFF0070C0);
+    if (type.contains('C'))   return const Color(0xFFAA00FF);
+    if (type.contains('D'))   return const Color(0xFF0070C0);
     return Colors.orange;
   }
 
   double _zoneBorderWidth(String type) =>
-      (type == 'NPS' || type == 'USFWS') ? 1.5 : 2.0;
+      const {'NPS', 'USFWS', 'STATE_PARK'}.contains(type) ? 1.5 : 2.0;
 
-  // Draw order: USFWS → NPS → FAA → TFR (most urgent on top)
+  static const _landTypes = {'NPS', 'TFR', 'USFWS', 'STATE_PARK'};
+
   List<_AirspaceZone> _zonesOfType(String type) =>
       _zones.where((z) => z.type == type && z.ring.length >= 3).toList();
-
   List<_AirspaceZone> _faaZones() =>
-      _zones.where((z) => !const {'NPS', 'TFR', 'USFWS'}.contains(z.type) && z.ring.length >= 3).toList();
+      _zones.where((z) => !_landTypes.contains(z.type) && z.ring.length >= 3).toList();
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
@@ -584,6 +595,7 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
     final lat = _lat ?? 29.5;
     final lon = _lon ?? -90.0;
 
+    final spZ    = _zonesOfType('STATE_PARK');
     final usfwsZ = _zonesOfType('USFWS');
     final npsZ   = _zonesOfType('NPS');
     final faaZ   = _faaZones();
@@ -593,10 +605,8 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
       appBar: AppBar(
         backgroundColor: kNavy,
         leading: const BackButton(color: Colors.white),
-        title: const Text(
-          'Before You Fly',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
+        title: const Text('Before You Fly',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         actions: [
           if (_zonesLoading || _tapLoading)
             const Padding(
@@ -636,7 +646,7 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
                 retinaMode: true,
                 panBuffer: 2,
               ),
-              for (final group in [usfwsZ, npsZ, faaZ, tfrZ])
+              for (final group in [spZ, usfwsZ, npsZ, faaZ, tfrZ])
                 if (group.isNotEmpty)
                   PolygonLayer(
                     polygons: [
@@ -668,7 +678,9 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
                         shape: BoxShape.circle,
                         color: Colors.blue,
                         border: Border.all(color: Colors.white, width: 2.5),
-                        boxShadow: [BoxShadow(color: Colors.blue.withValues(alpha: 0.50), blurRadius: 8)],
+                        boxShadow: [BoxShadow(
+                            color: Colors.blue.withValues(alpha: 0.50),
+                            blurRadius: 8)],
                       ),
                     ),
                   ),
@@ -680,7 +692,8 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
                     point: _tappedPoint!,
                     width: 32, height: 40,
                     alignment: Alignment.topCenter,
-                    child: const Icon(Icons.location_on, color: kCyan, size: 36,
+                    child: const Icon(Icons.location_on, color: kCyan,
+                        size: 36,
                         shadows: [Shadow(color: Colors.black54, blurRadius: 6)]),
                   ),
                 ]),
@@ -688,7 +701,7 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
                 attributions: [
                   TextSourceAttribution('© CARTO'),
                   TextSourceAttribution('© OpenStreetMap contributors'),
-                  TextSourceAttribution('FAA · NPS · USFWS'),
+                  TextSourceAttribution('FAA · USGS PAD-US · USFWS'),
                 ],
               ),
             ],
@@ -698,7 +711,8 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
               top: 12, left: 0, right: 0,
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: kNavy.withValues(alpha: 0.85),
                     borderRadius: BorderRadius.circular(20),
@@ -733,18 +747,21 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
 class _FAA {
   final bool hasProhibited, hasRestricted, hasControlled;
   final List<String> names;
-  const _FAA({
-    required this.hasProhibited,
-    required this.hasRestricted,
-    required this.hasControlled,
-    required this.names,
-  });
+  const _FAA({required this.hasProhibited, required this.hasRestricted,
+      required this.hasControlled, required this.names});
 }
 
-class _NPS {
-  final bool inside;
-  final String? name;
-  const _NPS({required this.inside, this.name});
+class _ProtectedLand {
+  final bool insideNPS;
+  final String? npsName;
+  final bool insideStatePark;
+  final String? stateParkName;
+  const _ProtectedLand({
+    required this.insideNPS,
+    this.npsName,
+    required this.insideStatePark,
+    this.stateParkName,
+  });
 }
 
 class _TFR {
@@ -770,7 +787,6 @@ class _StatusResult {
 // ── Extensions ────────────────────────────────────────────────────────────────
 
 extension _StringX on String {
-  String? get nullIfEmpty => isEmpty ? null : this;
   T let<T>(T Function(String) fn) => fn(this);
 }
 
@@ -811,7 +827,8 @@ class _StatusCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: kNavyLight,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: borderColor.withValues(alpha: 0.65), width: 1.5),
+          border: Border.all(
+              color: borderColor.withValues(alpha: 0.65), width: 1.5),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -821,27 +838,27 @@ class _StatusCard extends StatelessWidget {
               scrollDirection: Axis.horizontal,
               child: Row(children: const [
                 _LegendChip(color: Color(0x55DD0000), border: Color(0xFFCC2200), label: 'Prohibited'),
-                SizedBox(width: 6),
+                SizedBox(width: 5),
                 _LegendChip(color: Color(0x3DDD0000), border: Color(0xFFCC2200), label: 'Restricted'),
-                SizedBox(width: 6),
+                SizedBox(width: 5),
                 _LegendChip(color: Color(0x44FFB800), border: Color(0xFFFFB800), label: 'Active TFR'),
-                SizedBox(width: 6),
+                SizedBox(width: 5),
                 _LegendChip(color: Color(0x44FF8C00), border: Colors.orange,    label: 'Warning'),
-                SizedBox(width: 6),
+                SizedBox(width: 5),
                 _LegendChip(color: Color(0x330070C0), border: Color(0xFF0070C0), label: 'Class B/C/D'),
-                SizedBox(width: 6),
+                SizedBox(width: 5),
                 _LegendChip(color: Color(0x2D1B7F00), border: Color(0xFF1B7F00), label: 'Nat\'l Park'),
-                SizedBox(width: 6),
+                SizedBox(width: 5),
+                _LegendChip(color: Color(0x2D009688), border: Color(0xFF00695C), label: 'State Park'),
+                SizedBox(width: 5),
                 _LegendChip(color: Color(0x2D9B30FF), border: Color(0xFF7B10EE), label: 'Wildlife Refuge'),
               ]),
             ),
             const SizedBox(height: 10),
             Row(children: [
-              Icon(
-                isTappedLocation ? Icons.place : Icons.my_location,
-                size: 13,
-                color: isTappedLocation ? kCyan : Colors.blue,
-              ),
+              Icon(isTappedLocation ? Icons.place : Icons.my_location,
+                  size: 13,
+                  color: isTappedLocation ? kCyan : Colors.blue),
               const SizedBox(width: 4),
               Text(
                 isTappedLocation ? 'Tapped location' : 'Your GPS location',
@@ -860,18 +877,19 @@ class _StatusCard extends StatelessWidget {
                     padding: EdgeInsets.only(top: 2),
                     child: SizedBox(
                       width: 20, height: 20,
-                      child: CircularProgressIndicator(color: kCyan, strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                          color: kCyan, strokeWidth: 2),
                     ),
                   )
                 else
                   Icon(statusIcon, color: textColor, size: 22),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(
-                    headline,
-                    style: TextStyle(
-                        color: textColor, fontWeight: FontWeight.w600, fontSize: 15),
-                  ),
+                  child: Text(headline,
+                      style: TextStyle(
+                          color: textColor,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15)),
                 ),
               ],
             ),
@@ -893,7 +911,8 @@ class _StatusCard extends StatelessWidget {
                     label: const Text('My Location'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.blue[200],
-                      side: BorderSide(color: Colors.blue[300]!.withValues(alpha: 0.6)),
+                      side: BorderSide(
+                          color: Colors.blue[300]!.withValues(alpha: 0.6)),
                     ),
                     onPressed: onClearTap,
                   ),
@@ -926,8 +945,8 @@ class _StatusCard extends StatelessWidget {
               ),
             const SizedBox(height: 6),
             const Text(
-              'Data: FAA airspace · FAA TFRs · NPS boundaries · USFWS refuge boundaries. '
-              'For reference only — always confirm with FAA NOTAM system before flying.',
+              'Data: FAA airspace · FAA TFRs · USGS PAD-US (national & state parks) · USFWS refuges. '
+              'For reference only — always confirm before flying.',
               style: TextStyle(color: Colors.white30, fontSize: 10, height: 1.4),
             ),
           ],
@@ -941,7 +960,8 @@ class _LegendChip extends StatelessWidget {
   final Color color;
   final Color border;
   final String label;
-  const _LegendChip({required this.color, required this.border, required this.label});
+  const _LegendChip(
+      {required this.color, required this.border, required this.label});
 
   @override
   Widget build(BuildContext context) => Row(
@@ -956,7 +976,8 @@ class _LegendChip extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 4),
-          Text(label, style: const TextStyle(color: Colors.white60, fontSize: 11)),
+          Text(label,
+              style: const TextStyle(color: Colors.white60, fontSize: 11)),
         ],
       );
 }

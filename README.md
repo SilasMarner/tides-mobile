@@ -115,6 +115,12 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 91) — Before You Fly: state parks + complete national park coverage
+- **USGS PAD-US** replaces the previous NPS-only boundary service. PAD-US is the authoritative federal inventory of all US protected lands and covers NPS units *and* state parks nationwide in a single query, fixing incomplete national park coverage (e.g. Florida coast parks not appearing).
+- **State parks** — now detected and shown as a teal overlay. Status card shows "check state park drone rules" since regulations vary by state (most prohibit drones but rules differ). Status legend gains a teal "State Park" chip.
+- **Data sources** are now: FAA static airspace · FAA active TFRs · USGS PAD-US (national + state parks) · USFWS wildlife refuge boundaries — all queried in parallel on every point check and viewport pan.
+- **User Guide** updated with state park bullet and PAD-US attribution.
+
 ### v3.4.1 (build 90) — Before You Fly: TFR + Wildlife Refuge detection
 - **Active TFRs** — the screen now queries the FAA ATCSCC TFR service alongside the static airspace service. Temporary Flight Restrictions (wildfires, presidential movements, sporting events, disasters) are time-limited and never appear in the static Airspace MapServer. Active TFRs show as amber/yellow overlays on the map and trigger a "no drone operations" status. If the TFR service is unreachable, the card warns that TFR status could not be verified rather than silently showing clear.
 - **USFWS Wildlife Refuges** — queries the US Fish & Wildlife Service boundary service. Drones require a Special Use Permit on most national wildlife refuges, and many explicitly prohibit them. Refuges appear as purple overlays on the map; tapping one shows "Special Use Permit required" with a note to contact the refuge manager.

@@ -187,10 +187,11 @@ class UserGuideScreen extends StatelessWidget {
         '• Amber/yellow — Active TFR (Temporary Flight Restriction): a time-limited no-fly zone for wildfires, presidential movements, sporting events, emergencies, etc. Changes daily.',
         '• Orange — FAA Warning or Alert area: exercise caution.',
         '• Blue — Controlled airspace (Class B, C, or D): FAA authorization required before flying a drone.',
-        '• Green — National Park Service unit: drones are prohibited in all NPS units under 36 CFR 1.5, regardless of FAA airspace class. A location can be in Class G (uncontrolled) airspace and still be illegal to fly because of the NPS land-management rule.',
+        '• Green — National Park Service unit (national park, seashore, monument, recreation area, etc.): drones are prohibited in all NPS units under 36 CFR 1.5, regardless of FAA airspace class. A location can be in Class G (uncontrolled) airspace and still be illegal to fly because of the NPS land-management rule.',
+        '• Teal — State Park: most states prohibit drone use in state parks, but rules vary. The app flags state parks so you can check that state\'s specific regulations before flying.',
         '• Purple — USFWS National Wildlife Refuge: drones require a Special Use Permit on most refuges, and many explicitly prohibit them. Contact the refuge manager before flying.',
         'Tap anywhere on the map to check airspace at that exact point. A cyan pin drops on the tapped spot and the status card shows the combined result across all four sources. Tap "My Location" to return to your GPS status.',
-        'This screen is for quick reference only. Data comes from FAA airspace, FAA TFR, NPS, and USFWS public services. Always confirm with the FAA NOTAM system before flying.',
+        'National park and state park data comes from the USGS Protected Areas Database (PAD-US) — the authoritative federal inventory of all protected lands in the US, covering NPS units and state parks nationwide. This screen is for quick reference only — always confirm with the FAA NOTAM system and local park rules before flying.',
       ],
     ),
     _Section(
