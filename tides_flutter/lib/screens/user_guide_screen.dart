@@ -177,6 +177,19 @@ class UserGuideScreen extends StatelessWidget {
       ],
     ),
     _Section(
+      Icons.flight_takeoff,
+      'Before You Fly (drone airspace check)',
+      [
+        'Tap the takeoff icon in the home screen toolbar to open the Before You Fly screen. It gets your GPS location, queries the FAA\'s public airspace service, and tells you whether your spot is clear to fly or in controlled airspace.',
+        '• Class G — uncontrolled airspace: you can fly under 400 ft AGL without FAA authorization. Still check for TFRs (Temporary Flight Restrictions) before every flight.',
+        '• Controlled airspace (Class B, C, D, or E): FAA authorization is required before flying. Use the "Open B4UFLY" button to request LAANC authorization through the official FAA app.',
+        '• Restricted or Prohibited: no drone operations allowed, or you must contact the controlling agency.',
+        'When the FAA returns airspace polygon data, the zone boundary is drawn directly on the map so you can see exactly where the controlled airspace begins.',
+        'The "Open B4UFLY" button launches the official FAA B4UFLY app (aloft.ai) — always use it to check for active TFRs and to request LAANC authorization before flying near airports.',
+        'This screen is for quick reference only. Airspace data is provided by the FAA\'s public ArcGIS REST service. Always verify your flight with B4UFLY and follow all FAA regulations.',
+      ],
+    ),
+    _Section(
       Icons.nightlight_round,
       'Night mode',
       [
@@ -200,6 +213,7 @@ class UserGuideScreen extends StatelessWidget {
       [
         '• Switch between Standard (°F, mph, ft) and Metric in Settings.',
         '• Tap the moon icon on the home screen for a high-contrast night mode.',
+        '• Tap the takeoff icon (home screen toolbar) for a quick drone airspace check at your GPS location.',
         '• Tap the star on a station to save it as a favorite; the home screen also finds the nearest stations by GPS.',
         '• “N/A” simply means that station has no sensor for that reading — tides and forecast still work.',
       ],
