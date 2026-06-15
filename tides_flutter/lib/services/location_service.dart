@@ -12,8 +12,8 @@ Future<(double, double, String)?> getLocation() async {
     if (effective == LocationPermission.always ||
         effective == LocationPermission.whileInUse) {
       final pos = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.low,
-          timeLimit: const Duration(seconds: 10));
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 15));
       return (pos.latitude, pos.longitude, 'your location');
     }
   } catch (_) {}
