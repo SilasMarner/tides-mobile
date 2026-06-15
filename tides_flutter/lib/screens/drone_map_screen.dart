@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -24,12 +25,14 @@ class DroneMapScreen extends StatefulWidget {
 class _DroneMapScreenState extends State<DroneMapScreen> {
   final _mapController = MapController();
   bool _mapReady = false;
+  Timer? _viewportDebounce;
 
   _AirspaceStatus _status = _AirspaceStatus.loading;
   String _headline = 'Getting your location…';
   String? _detail;
   double? _lat, _lon;
   List<_AirspaceZone> _zones = [];
+  bool _zonesLoading = false;
 
   static final _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 10),
@@ -40,6 +43,12 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _viewportDebounce?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -70,16 +79,24 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
     });
     if (_mapReady) _mapController.move(LatLng(lat, lon), 11.0);
 
-    await _checkAirspace(lat, lon);
+    // Point query drives the status card; bbox query fills the map overlay.
+    // Run concurrently — both use the same FAA endpoint, different geometries.
+    await Future.wait([
+      _checkStatus(lat, lon),
+      _fetchViewportZones(_boundsAround(lat, lon, 0.55)),
+    ]);
   }
 
-  // Queries the FAA's public ArcGIS REST service (no API key, no third-party)
-  // at the given point. Layer 0 = Class B/C/D/E surface; layer 1 = Special Use
-  // (Restricted / Prohibited / Warning / Alert). Returns polygon geometry so
-  // the zones are drawn directly on the map.
-  Future<void> _checkAirspace(double lat, double lon) async {
+  LatLngBounds _boundsAround(double lat, double lon, double deg) =>
+      LatLngBounds(LatLng(lat - deg, lon - deg), LatLng(lat + deg, lon + deg));
+
+  // Point intersection → drives status card headline only (no geometry needed).
+  Future<void> _checkStatus(double lat, double lon) async {
     try {
-      final zones = <_AirspaceZone>[];
+      bool hasProhibited = false;
+      bool hasRestricted = false;
+      bool hasControlled = false;
+      final names = <String>[];
 
       for (final layerId in [0, 1]) {
         try {
@@ -91,105 +108,164 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
               'geometryType': 'esriGeometryPoint',
               'inSR': '4326',
               'spatialRel': 'esriSpatialRelIntersects',
-              'outFields': 'TYPE_CODE,LOCAL_TYPE,NAME,LOWER_VAL,UPPER_VAL,UPPER_UOM',
-              'returnGeometry': 'true',
+              'outFields': 'TYPE_CODE,LOCAL_TYPE,NAME',
+              'returnGeometry': 'false',
               'outSR': '4326',
-              'simplifyTolerance': '0.005',
               'f': 'json',
             },
           );
 
           final data = resp.data as Map<String, dynamic>;
           final features = (data['features'] as List?) ?? [];
-
           for (final f in features) {
             final attrs = (f['attributes'] as Map<String, dynamic>?) ?? {};
-            final geom = f['geometry'] as Map<String, dynamic>?;
-
-            final type = (attrs['TYPE_CODE'] ?? attrs['LOCAL_TYPE'] ?? '').toString();
-            final name = (attrs['NAME'] ?? type).toString();
-
-            final rings = geom?['rings'] as List?;
-            final pts = <LatLng>[];
-            if (rings != null && rings.isNotEmpty) {
-              for (final raw in (rings[0] as List).take(300)) {
-                final c = raw as List;
-                if (c.length >= 2) {
-                  pts.add(LatLng(
-                      (c[1] as num).toDouble(), (c[0] as num).toDouble()));
-                }
-              }
+            final type =
+                (attrs['TYPE_CODE'] ?? attrs['LOCAL_TYPE'] ?? '').toString();
+            final name = (attrs['NAME'] ?? '').toString();
+            if (type.startsWith('P')) {
+              hasProhibited = true;
+            } else if (type.startsWith('R') || type.startsWith('W')) {
+              hasRestricted = true;
+            } else {
+              hasControlled = true;
             }
-
-            zones.add(_AirspaceZone(name, type, pts));
+            if (name.isNotEmpty) names.add(name);
           }
-        } catch (_) {
-          // One layer failing doesn't stop the other
-        }
+        } catch (_) {}
       }
 
       if (!mounted) return;
+      final nameStr = names.toSet().take(3).join(', ');
 
-      if (zones.isEmpty) {
-        setState(() {
-          _zones = [];
+      setState(() {
+        if (hasProhibited) {
+          _status = _AirspaceStatus.restricted;
+          _headline = 'Prohibited airspace — no drone operations allowed';
+          _detail = nameStr.isNotEmpty ? nameStr : null;
+        } else if (hasRestricted) {
+          _status = _AirspaceStatus.restricted;
+          _headline = 'Restricted airspace — contact the controlling agency';
+          _detail = nameStr.isNotEmpty ? nameStr : null;
+        } else if (hasControlled) {
+          _status = _AirspaceStatus.controlled;
+          _headline = 'Controlled airspace — FAA authorization required';
+          _detail = nameStr.isNotEmpty
+              ? '$nameStr\nDrones require FAA authorization before flying here.'
+              : 'Drones require FAA authorization before flying here.';
+        } else {
           _status = _AirspaceStatus.clear;
           _headline = 'Class G — uncontrolled airspace';
-          _detail = 'No controlled or restricted airspace detected at this location.\n'
-              'FAA rules: fly under 400 ft AGL, keep the drone in sight, '
-              'and stay away from people, moving vehicles, and emergency scenes.';
-        });
-      } else {
-        final hasProhibited = zones.any((z) => z.type.startsWith('P'));
-        final hasRestricted = zones.any((z) => z.type.startsWith('R'));
-        final names = zones
-            .map((z) => z.name)
-            .where((n) => n.isNotEmpty)
-            .toSet()
-            .take(3)
-            .join(', ');
-
-        setState(() {
-          _zones = zones;
-          if (hasProhibited) {
-            _status = _AirspaceStatus.restricted;
-            _headline = 'Prohibited airspace — no drone operations allowed';
-            _detail = names.isNotEmpty ? names : null;
-          } else if (hasRestricted) {
-            _status = _AirspaceStatus.restricted;
-            _headline = 'Restricted airspace — contact the controlling agency';
-            _detail = names.isNotEmpty ? names : null;
-          } else {
-            _status = _AirspaceStatus.controlled;
-            _headline = 'Controlled airspace — FAA authorization required';
-            _detail = names.isNotEmpty
-                ? '$names\nDrones require FAA authorization before flying here.'
-                : 'Drones require FAA authorization before flying here.';
-          }
-        });
-      }
+          _detail = 'No controlled or restricted airspace detected at this '
+              'location. FAA rules: fly under 400 ft AGL, keep the drone in '
+              'sight, and stay away from people, vehicles, and emergency scenes.';
+        }
+      });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _status = _AirspaceStatus.error;
         _headline = 'Airspace data unavailable';
-        _detail = 'Could not reach the FAA airspace service. '
-            'Check your connection and retry.';
+        _detail =
+            'Could not reach the FAA airspace service. Check your connection and retry.';
       });
     }
   }
 
+  // Bbox query → fills the map overlay for the current viewport.
+  Future<void> _fetchViewportZones(LatLngBounds bounds) async {
+    if (!mounted) return;
+    setState(() => _zonesLoading = true);
+
+    final minLon = bounds.west;
+    final minLat = bounds.south;
+    final maxLon = bounds.east;
+    final maxLat = bounds.north;
+
+    final zones = <_AirspaceZone>[];
+
+    for (final layerId in [0, 1]) {
+      try {
+        final resp = await _dio.get(
+          'https://geoservices.faa.gov/arcgis/rest/services/'
+          'Aeronautical/Airspace/MapServer/$layerId/query',
+          queryParameters: {
+            'geometry': '$minLon,$minLat,$maxLon,$maxLat',
+            'geometryType': 'esriGeometryEnvelope',
+            'inSR': '4326',
+            'spatialRel': 'esriSpatialRelIntersects',
+            'outFields': 'TYPE_CODE,LOCAL_TYPE,NAME',
+            'returnGeometry': 'true',
+            'outSR': '4326',
+            'simplifyTolerance': '0.003',
+            'f': 'json',
+          },
+        );
+
+        final data = resp.data as Map<String, dynamic>;
+        final features = (data['features'] as List?) ?? [];
+
+        for (final f in features) {
+          final attrs = (f['attributes'] as Map<String, dynamic>?) ?? {};
+          final geom = f['geometry'] as Map<String, dynamic>?;
+          final type =
+              (attrs['TYPE_CODE'] ?? attrs['LOCAL_TYPE'] ?? '').toString();
+          final name = (attrs['NAME'] ?? type).toString();
+
+          final rings = geom?['rings'] as List?;
+          if (rings == null) continue;
+
+          for (final ring in rings.take(4)) {
+            final pts = <LatLng>[];
+            for (final raw in (ring as List).take(500)) {
+              final c = raw as List;
+              if (c.length >= 2) {
+                pts.add(LatLng(
+                    (c[1] as num).toDouble(), (c[0] as num).toDouble()));
+              }
+            }
+            if (pts.length >= 3) zones.add(_AirspaceZone(name, type, pts));
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _zones = zones;
+      _zonesLoading = false;
+    });
+  }
+
+  // Re-fetch the overlay when the user pans or zooms the map.
+  void _onPositionChanged(MapCamera camera, bool hasGesture) {
+    if (!hasGesture) return;
+    _viewportDebounce?.cancel();
+    _viewportDebounce = Timer(const Duration(milliseconds: 700), () {
+      if (mounted) _fetchViewportZones(camera.visibleBounds);
+    });
+  }
+
+  // Color coding:
+  //   Prohibited (P)          → solid red tint + red border
+  //   Restricted (R) /        → lighter red tint + red border
+  //   Warning (W) / Alert (A) → orange tint
+  //   Class B                 → blue tint
+  //   Class C                 → purple tint
+  //   Class D                 → light blue tint
+  //   MOA / other             → faint orange
   Color _zoneFill(String type) {
-    if (type.startsWith('P')) return Colors.red.withValues(alpha: 0.30);
-    if (type.startsWith('R') || type.startsWith('W')) return Colors.red.withValues(alpha: 0.18);
+    if (type.startsWith('P')) return const Color(0x55DD0000);
+    if (type.startsWith('R')) return const Color(0x3DDD0000);
+    if (type.startsWith('W') || type.startsWith('A')) return Colors.orange.withValues(alpha: 0.22);
     if (type.contains('B')) return const Color(0x330070C0);
     if (type.contains('C')) return const Color(0x33AA00FF);
     if (type.contains('D')) return const Color(0x220070C0);
-    return Colors.orange.withValues(alpha: 0.18);
+    return Colors.orange.withValues(alpha: 0.14);
   }
 
   Color _zoneBorder(String type) {
     if (type.startsWith('P') || type.startsWith('R')) return const Color(0xFFCC2200);
+    if (type.startsWith('W') || type.startsWith('A')) return Colors.orange;
     if (type.contains('B')) return const Color(0xFF0070C0);
     if (type.contains('C')) return const Color(0xFFAA00FF);
     if (type.contains('D')) return const Color(0xFF0070C0);
@@ -209,6 +285,19 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
           'Before You Fly',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
+        actions: [
+          if (_zonesLoading)
+            const Padding(
+              padding: EdgeInsets.only(right: 16),
+              child: Center(
+                child: SizedBox(
+                  width: 16, height: 16,
+                  child: CircularProgressIndicator(
+                      color: Colors.white54, strokeWidth: 2),
+                ),
+              ),
+            ),
+        ],
       ),
       body: Stack(
         children: [
@@ -225,6 +314,7 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
                   _mapController.move(LatLng(_lat!, _lon!), 11.0);
                 }
               },
+              onPositionChanged: _onPositionChanged,
             ),
             children: [
               TileLayer(
@@ -235,10 +325,11 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
                 retinaMode: true,
                 panBuffer: 2,
               ),
-              if (_zones.any((z) => z.ring.isNotEmpty))
+              // Airspace overlay — redraws as zones update from bbox queries
+              if (_zones.isNotEmpty)
                 PolygonLayer(
                   polygons: [
-                    for (final z in _zones.where((z) => z.ring.isNotEmpty))
+                    for (final z in _zones.where((z) => z.ring.length >= 3))
                       Polygon(
                         points: z.ring,
                         color: _zoneFill(z.type),
@@ -302,6 +393,8 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
   }
 }
 
+// ── Legend chip ───────────────────────────────────────────────────────────────
+
 // ── Status card ───────────────────────────────────────────────────────────────
 
 class _StatusCard extends StatelessWidget {
@@ -342,6 +435,22 @@ class _StatusCard extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Legend row
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: const [
+                  _LegendChip(color: Color(0x55DD0000), border: Color(0xFFCC2200), label: 'Prohibited'),
+                  SizedBox(width: 6),
+                  _LegendChip(color: Color(0x3DDD0000), border: Color(0xFFCC2200), label: 'Restricted'),
+                  SizedBox(width: 6),
+                  _LegendChip(color: Color(0x44FF8C00), border: Colors.orange, label: 'Warning/Alert'),
+                  SizedBox(width: 6),
+                  _LegendChip(color: Color(0x330070C0), border: Color(0xFF0070C0), label: 'Class B/C/D'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -405,4 +514,35 @@ class _StatusCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _LegendChip extends StatelessWidget {
+  final Color color;
+  final Color border;
+  final String label;
+
+  const _LegendChip({
+    required this.color,
+    required this.border,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 14,
+            height: 14,
+            decoration: BoxDecoration(
+              color: color,
+              border: Border.all(color: border, width: 1.5),
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(label,
+              style: const TextStyle(color: Colors.white60, fontSize: 11)),
+        ],
+      );
 }

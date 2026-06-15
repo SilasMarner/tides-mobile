@@ -101,6 +101,10 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 86) — Before You Fly: viewport airspace overlay
+- **Airspace map overlay** — the Before You Fly screen now queries the FAA by the current map *viewport* (bounding box) rather than just the user's GPS point, so restricted/prohibited zones are drawn as colored tints across the entire visible map area. Red tint = prohibited (no fly). Lighter red = restricted. Orange = warning/alert. Blue = controlled (Class B/C/D, FAA authorization required). A small spinner in the AppBar indicates when a new viewport query is in flight. Panning or zooming the map re-fetches the overlay after a short debounce, so the zones follow the map as you explore.
+- **Legend** — a scrollable chip row in the status card labels each color category.
+
 ### v3.4.1 (build 85) — Before You Fly: fully self-contained, no third-party links
 - **Before You Fly** — removed the "Open B4UFLY" button and all third-party references. The screen now does everything in-app: GPS location → FAA ArcGIS REST query → airspace status + polygon overlay on the map. No external apps, no Play Store links, no redirects. Clear / controlled / restricted status is displayed with the FAA zone geometry drawn directly on the map. Disclaimer updated to reference the FAA NOTAM system instead of B4UFLY.
 - **User Guide** updated to match — the Before You Fly section now describes the FAA-direct flow and lists the plain-English rules for each airspace class.
