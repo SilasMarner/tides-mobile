@@ -101,6 +101,9 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 88) — User Guide: Before You Fly section updated
+- **In-app User Guide** updated to document the viewport overlay (colored zone tints across the full map), the tap-to-check feature (cyan pin + per-point FAA query), color legend (prohibited / restricted / warning / controlled), and the My Location reset button. Tips bullet updated to match.
+
 ### v3.4.1 (build 87) — Before You Fly: tap-to-check any location
 - **Tap anywhere on the map** to query FAA airspace at that exact point. A cyan pin drops on the tapped location, the status card updates with the result (prohibited / restricted / controlled / clear), and a label distinguishes "Tapped location" from "Your GPS location." The "My Location" button resets back to the GPS status; "Check Again" re-runs the full GPS load.
 - A hint banner above the map prompts the user to tap before they've tried it.
