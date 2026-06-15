@@ -2,7 +2,6 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../services/location_service.dart';
 import '../theme.dart';
 
@@ -74,17 +73,14 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
     await _checkAirspace(lat, lon);
   }
 
-  // Queries the FAA's public ArcGIS REST service (no API key) at the given
-  // point. Returns airspace polygon geometry so we can render the zones on the
-  // map. Falls back to an informational message on any network/parse error.
+  // Queries the FAA's public ArcGIS REST service (no API key, no third-party)
+  // at the given point. Layer 0 = Class B/C/D/E surface; layer 1 = Special Use
+  // (Restricted / Prohibited / Warning / Alert). Returns polygon geometry so
+  // the zones are drawn directly on the map.
   Future<void> _checkAirspace(double lat, double lon) async {
     try {
       final zones = <_AirspaceZone>[];
 
-      // The FAA Aeronautical / Airspace MapServer has several layers.
-      // Layer 0 typically contains Class B/C/D/E; layer 1 Special Use
-      // (Restricted/Prohibited/Warning). Both are queried as a point
-      // intersection; partial failures are silently skipped.
       for (final layerId in [0, 1]) {
         try {
           final resp = await _dio.get(
@@ -95,7 +91,7 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
               'geometryType': 'esriGeometryPoint',
               'inSR': '4326',
               'spatialRel': 'esriSpatialRelIntersects',
-              'outFields': 'TYPE_CODE,LOCAL_TYPE,NAME',
+              'outFields': 'TYPE_CODE,LOCAL_TYPE,NAME,LOWER_VAL,UPPER_VAL,UPPER_UOM',
               'returnGeometry': 'true',
               'outSR': '4326',
               'simplifyTolerance': '0.005',
@@ -116,12 +112,11 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
             final rings = geom?['rings'] as List?;
             final pts = <LatLng>[];
             if (rings != null && rings.isNotEmpty) {
-              // Take the exterior ring, capped at 300 points for render perf.
               for (final raw in (rings[0] as List).take(300)) {
                 final c = raw as List;
                 if (c.length >= 2) {
-                  pts.add(LatLng((c[1] as num).toDouble(),
-                      (c[0] as num).toDouble()));
+                  pts.add(LatLng(
+                      (c[1] as num).toDouble(), (c[0] as num).toDouble()));
                 }
               }
             }
@@ -129,7 +124,7 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
             zones.add(_AirspaceZone(name, type, pts));
           }
         } catch (_) {
-          // Layer failure — continue with what we have
+          // One layer failing doesn't stop the other
         }
       }
 
@@ -140,36 +135,46 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
           _zones = [];
           _status = _AirspaceStatus.clear;
           _headline = 'Class G — uncontrolled airspace';
-          _detail = 'OK to fly under 400 ft AGL without FAA authorization.\n'
-              'Always check B4UFLY for active TFRs before flying.';
+          _detail = 'No controlled or restricted airspace detected at this location.\n'
+              'FAA rules: fly under 400 ft AGL, keep the drone in sight, '
+              'and stay away from people, moving vehicles, and emergency scenes.';
         });
       } else {
         final hasProhibited = zones.any((z) => z.type.startsWith('P'));
         final hasRestricted = zones.any((z) => z.type.startsWith('R'));
-        final names = zones.map((z) => z.name).where((n) => n.isNotEmpty)
-            .toSet().take(3).join(', ');
+        final names = zones
+            .map((z) => z.name)
+            .where((n) => n.isNotEmpty)
+            .toSet()
+            .take(3)
+            .join(', ');
 
         setState(() {
           _zones = zones;
           if (hasProhibited) {
             _status = _AirspaceStatus.restricted;
-            _headline = 'Prohibited airspace — no drone operations';
+            _headline = 'Prohibited airspace — no drone operations allowed';
+            _detail = names.isNotEmpty ? names : null;
           } else if (hasRestricted) {
             _status = _AirspaceStatus.restricted;
-            _headline = 'Restricted airspace — contact controlling agency';
+            _headline = 'Restricted airspace — contact the controlling agency';
+            _detail = names.isNotEmpty ? names : null;
           } else {
             _status = _AirspaceStatus.controlled;
             _headline = 'Controlled airspace — FAA authorization required';
+            _detail = names.isNotEmpty
+                ? '$names\nDrones require FAA authorization before flying here.'
+                : 'Drones require FAA authorization before flying here.';
           }
-          _detail = names.isNotEmpty ? names : 'Use B4UFLY to request authorization.';
         });
       }
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _status = _AirspaceStatus.error;
-        _headline = 'Airspace lookup unavailable';
-        _detail = 'Check B4UFLY for official authorization status.';
+        _headline = 'Airspace data unavailable';
+        _detail = 'Could not reach the FAA airspace service. '
+            'Check your connection and retry.';
       });
     }
   }
@@ -204,13 +209,6 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
           'Before You Fly',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
-        actions: [
-          TextButton.icon(
-            icon: const Icon(Icons.open_in_new, size: 14, color: kCyan),
-            label: const Text('B4UFLY', style: TextStyle(color: kCyan)),
-            onPressed: _openB4UFly,
-          ),
-        ],
       ),
       body: Stack(
         children: [
@@ -237,7 +235,6 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
                 retinaMode: true,
                 panBuffer: 2,
               ),
-              // FAA airspace polygons rendered when query succeeds
               if (_zones.any((z) => z.ring.isNotEmpty))
                 PolygonLayer(
                   polygons: [
@@ -250,7 +247,6 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
                       ),
                   ],
                 ),
-              // User location dot + accuracy halo
               if (_lat != null) ...[
                 CircleLayer(circles: [
                   CircleMarker(
@@ -286,18 +282,17 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
                 attributions: [
                   TextSourceAttribution('© CARTO'),
                   TextSourceAttribution('© OpenStreetMap contributors'),
+                  TextSourceAttribution('Airspace data: FAA'),
                 ],
               ),
             ],
           ),
-          // Status + action card pinned to the bottom
           Positioned(
             left: 0, right: 0, bottom: 0,
             child: _StatusCard(
               status: _status,
               headline: _headline,
               detail: _detail,
-              onB4UFly: _openB4UFly,
               onRetry: _load,
             ),
           ),
@@ -305,11 +300,6 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
       ),
     );
   }
-
-  void _openB4UFly() => launchUrl(
-        Uri.parse('https://b4ufly.aloft.ai/'),
-        mode: LaunchMode.externalApplication,
-      );
 }
 
 // ── Status card ───────────────────────────────────────────────────────────────
@@ -318,25 +308,23 @@ class _StatusCard extends StatelessWidget {
   final _AirspaceStatus status;
   final String headline;
   final String? detail;
-  final VoidCallback onB4UFly;
   final VoidCallback onRetry;
 
   const _StatusCard({
     required this.status,
     required this.headline,
     this.detail,
-    required this.onB4UFly,
     required this.onRetry,
   });
 
   @override
   Widget build(BuildContext context) {
     final (borderColor, statusIcon, textColor) = switch (status) {
-      _AirspaceStatus.loading    => (Colors.white24, Icons.hourglass_empty, Colors.white70),
-      _AirspaceStatus.clear      => (const Color(0xFF27AE60), Icons.check_circle, const Color(0xFF2ECC71)),
-      _AirspaceStatus.controlled => (const Color(0xFFE67E22), Icons.warning_amber, const Color(0xFFF39C12)),
-      _AirspaceStatus.restricted => (const Color(0xFFE74C3C), Icons.block, const Color(0xFFE74C3C)),
-      _AirspaceStatus.error      => (Colors.white24, Icons.wifi_off, Colors.white54),
+      _AirspaceStatus.loading    => (Colors.white24,          Icons.hourglass_empty, Colors.white70),
+      _AirspaceStatus.clear      => (const Color(0xFF27AE60), Icons.check_circle,    const Color(0xFF2ECC71)),
+      _AirspaceStatus.controlled => (const Color(0xFFE67E22), Icons.warning_amber,   const Color(0xFFF39C12)),
+      _AirspaceStatus.restricted => (const Color(0xFFE74C3C), Icons.block,           const Color(0xFFE74C3C)),
+      _AirspaceStatus.error      => (Colors.white24,          Icons.wifi_off,        Colors.white54),
     };
 
     return SafeArea(
@@ -387,40 +375,30 @@ class _StatusCard extends StatelessWidget {
                 padding: const EdgeInsets.only(left: 32),
                 child: Text(
                   detail!,
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                  style: const TextStyle(
+                      color: Colors.white70, fontSize: 13, height: 1.4),
                 ),
               ),
             ],
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton.icon(
-                    icon: const Icon(Icons.open_in_new, size: 15),
-                    label: const Text('Open B4UFLY'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: kCyan,
-                      foregroundColor: kNavy,
-                    ),
-                    onPressed: onB4UFly,
-                  ),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.my_location, size: 15),
+                label: const Text('Check Again'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: kCyan,
+                  side: const BorderSide(color: kCyan),
                 ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.my_location, size: 15),
-                  label: const Text('Retry'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white54,
-                    side: const BorderSide(color: Colors.white24),
-                  ),
-                  onPressed: onRetry,
-                ),
-              ],
+                onPressed: onRetry,
+              ),
             ),
             const SizedBox(height: 6),
             const Text(
-              'For reference only. Always verify with B4UFLY before flying.',
-              style: TextStyle(color: Colors.white30, fontSize: 10),
+              'Airspace data: FAA public service. For reference only — '
+              'regulations change and TFRs are not always captured here. '
+              'Always confirm before flying.',
+              style: TextStyle(color: Colors.white30, fontSize: 10, height: 1.4),
             ),
           ],
         ),
