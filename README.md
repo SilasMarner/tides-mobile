@@ -101,6 +101,9 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 84) — Before You Fly (drone airspace check)
+- **Before You Fly** — new screen accessible from the home screen toolbar (airplane-takeoff icon). Gets your GPS location, queries the FAA's public ArcGIS airspace service, and shows whether you're in Class G (clear to fly under 400 ft AGL), controlled airspace (FAA authorization required), or restricted/prohibited airspace. Renders the airspace zone polygons directly on the map when the FAA query returns geometry. Includes a one-tap "Open B4UFLY" button to the official FAA authorization app for TFRs and LAANC requests.
+
 ### v3.4.1 (build 83) — Notification toggle fix
 - **Notification toggle** — enabling Tide Notifications in Settings now works correctly. The toggle was calling `requestPermission()` which launches an Android system permission dialog and then awaits its response indefinitely, preventing `setEnabled()` from ever running. The permission request is already handled by the red "Notifications are blocked" banner's Allow button; removed the redundant call from the toggle handler.
 

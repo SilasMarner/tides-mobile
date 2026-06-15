@@ -16,6 +16,7 @@ import '../providers/notification_provider.dart';
 import '../services/notification_service.dart';
 import 'about_screen.dart';
 import 'detail_screen.dart';
+import 'drone_map_screen.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -197,6 +198,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 color: accent),
             tooltip: night ? 'Night mode: on' : 'Night mode: off',
             onPressed: () => ref.read(nightModeProvider.notifier).toggle(),
+          ),
+          IconButton(
+            icon: Icon(Icons.flight_takeoff, color: accent),
+            tooltip: 'Before You Fly',
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const DroneMapScreen())),
           ),
           IconButton(
             icon: Icon(Icons.info_outline, color: accent),
