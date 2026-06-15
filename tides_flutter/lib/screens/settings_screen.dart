@@ -161,7 +161,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 color: prefs.enabled ? kCyan : Colors.white38,
               ),
               onChanged: (v) async {
-                if (v) await NotificationService.requestPermission();
                 await notifier.setEnabled(v);
               },
             ),

@@ -101,6 +101,9 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 83) — Notification toggle fix
+- **Notification toggle** — enabling Tide Notifications in Settings now works correctly. The toggle was calling `requestPermission()` which launches an Android system permission dialog and then awaits its response indefinitely, preventing `setEnabled()` from ever running. The permission request is already handled by the red "Notifications are blocked" banner's Allow button; removed the redundant call from the toggle handler.
+
 ### v3.4.1 (build 81) — Notification icon + settings stability
 - **Notification icon** — the wave icon now appears correctly in the Android status bar on Play Store installs. Release builds were silently stripping the icon drawable (it was referenced by string in Dart, invisible to Android's resource shrinker); a `res/raw/keep.xml` rule now preserves it. This was the root cause of blank icons and failed notification delivery on AAB installs.
 - **Settings screen** — the notification settings screen no longer gets stuck on a permanent spinner if the alert system hits an error; it falls back to safe defaults and remains usable.
