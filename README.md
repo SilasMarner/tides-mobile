@@ -52,6 +52,20 @@ that point; the data follows the map as you pan and zoom.
 |----------------------------------------------------------|
 | ![Sargassum Map](screenshots/sargassum_map.png) |
 
+### New in v3.4.1 — Before You Fly (drone airspace check)
+
+Tap the **takeoff icon** in the home screen toolbar to open the Before You Fly screen. It queries the **FAA's public airspace service** directly — no third-party apps, no account needed.
+
+- Colored **airspace overlays** cover the full map viewport: solid red = Prohibited, lighter red = Restricted, orange = Warning/Alert, blue = Class B/C/D controlled airspace.
+- **Tap anywhere on the map** to check airspace at that exact point — a cyan pin drops and the status card shows the result for that location. Tap **My Location** to return to your GPS status.
+- The overlay updates as you pan and zoom, so you can explore nearby airspace before heading out.
+
+| Airspace clear (GPS location) | Tap-to-check any location |
+|-------------------------------|---------------------------|
+| ![Before You Fly](screenshots/before_you_fly.png) | ![Tapped location](screenshots/before_you_fly_tap.png) |
+
+---
+
 ### New in v3.4.1 — Water Temp map, turbidity & upwelling alerts
 
 A new **Water Temp** map renders NOAA CoastWatch data straight onto the
