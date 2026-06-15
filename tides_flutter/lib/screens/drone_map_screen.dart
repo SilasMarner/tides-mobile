@@ -27,12 +27,30 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
   bool _mapReady = false;
   Timer? _viewportDebounce;
 
-  _AirspaceStatus _status = _AirspaceStatus.loading;
-  String _headline = 'Getting your location…';
-  String? _detail;
+  // GPS-based status (preserved so we can reset to it)
+  _AirspaceStatus _gpsStatus = _AirspaceStatus.loading;
+  String _gpsHeadline = 'Getting your location…';
+  String? _gpsDetail;
   double? _lat, _lon;
+
+  // Tapped-point state — null means showing GPS status
+  LatLng? _tappedPoint;
+  _AirspaceStatus _tapStatus = _AirspaceStatus.loading;
+  String _tapHeadline = '';
+  String? _tapDetail;
+  bool _tapLoading = false;
+
+  // Viewport polygon overlay
   List<_AirspaceZone> _zones = [];
   bool _zonesLoading = false;
+
+  // What the status card currently shows
+  _AirspaceStatus get _displayStatus =>
+      _tappedPoint != null ? _tapStatus : _gpsStatus;
+  String get _displayHeadline =>
+      _tappedPoint != null ? _tapHeadline : _gpsHeadline;
+  String? get _displayDetail =>
+      _tappedPoint != null ? _tapDetail : _gpsDetail;
 
   static final _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 10),
@@ -51,11 +69,14 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
     super.dispose();
   }
 
+  // ── Initial GPS load ───────────────────────────────────────────────────────
+
   Future<void> _load() async {
     setState(() {
-      _status = _AirspaceStatus.loading;
-      _headline = 'Getting your location…';
-      _detail = null;
+      _tappedPoint = null;
+      _gpsStatus = _AirspaceStatus.loading;
+      _gpsHeadline = 'Getting your location…';
+      _gpsDetail = null;
       _zones = [];
     });
 
@@ -64,9 +85,10 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
 
     if (loc == null) {
       setState(() {
-        _status = _AirspaceStatus.error;
-        _headline = 'Could not get location';
-        _detail = 'Check that GPS or location services are enabled, then retry.';
+        _gpsStatus = _AirspaceStatus.error;
+        _gpsHeadline = 'Could not get location';
+        _gpsDetail =
+            'Check that GPS or location services are enabled, then retry.';
       });
       return;
     }
@@ -75,23 +97,36 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
     setState(() {
       _lat = lat;
       _lon = lon;
-      _headline = 'Checking FAA airspace…';
+      _gpsHeadline = 'Checking FAA airspace…';
     });
     if (_mapReady) _mapController.move(LatLng(lat, lon), 11.0);
 
-    // Point query drives the status card; bbox query fills the map overlay.
-    // Run concurrently — both use the same FAA endpoint, different geometries.
     await Future.wait([
-      _checkStatus(lat, lon),
+      _queryPoint(lat, lon, forGps: true),
       _fetchViewportZones(_boundsAround(lat, lon, 0.55)),
     ]);
   }
 
-  LatLngBounds _boundsAround(double lat, double lon, double deg) =>
-      LatLngBounds(LatLng(lat - deg, lon - deg), LatLng(lat + deg, lon + deg));
+  // ── Tap handler ───────────────────────────────────────────────────────────
 
-  // Point intersection → drives status card headline only (no geometry needed).
-  Future<void> _checkStatus(double lat, double lon) async {
+  Future<void> _onMapTap(TapPosition _, LatLng point) async {
+    setState(() {
+      _tappedPoint = point;
+      _tapLoading = true;
+      _tapStatus = _AirspaceStatus.loading;
+      _tapHeadline = 'Checking airspace…';
+      _tapDetail = null;
+    });
+    await _queryPoint(point.latitude, point.longitude, forGps: false);
+    if (mounted) setState(() => _tapLoading = false);
+  }
+
+  void _clearTap() => setState(() => _tappedPoint = null);
+
+  // ── FAA point query ────────────────────────────────────────────────────────
+
+  Future<void> _queryPoint(double lat, double lon,
+      {required bool forGps}) async {
     try {
       bool hasProhibited = false;
       bool hasRestricted = false;
@@ -114,9 +149,8 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
               'f': 'json',
             },
           );
-
-          final data = resp.data as Map<String, dynamic>;
-          final features = (data['features'] as List?) ?? [];
+          final features =
+              ((resp.data as Map<String, dynamic>)['features'] as List?) ?? [];
           for (final f in features) {
             final attrs = (f['attributes'] as Map<String, dynamic>?) ?? {};
             final type =
@@ -135,53 +169,79 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
       }
 
       if (!mounted) return;
+
       final nameStr = names.toSet().take(3).join(', ');
+      _AirspaceStatus st;
+      String headline;
+      String? detail;
+
+      if (hasProhibited) {
+        st = _AirspaceStatus.restricted;
+        headline = 'Prohibited airspace — no drone operations allowed';
+        detail = nameStr.isNotEmpty ? nameStr : null;
+      } else if (hasRestricted) {
+        st = _AirspaceStatus.restricted;
+        headline = 'Restricted airspace — contact the controlling agency';
+        detail = nameStr.isNotEmpty ? nameStr : null;
+      } else if (hasControlled) {
+        st = _AirspaceStatus.controlled;
+        headline = 'Controlled airspace — FAA authorization required';
+        detail = nameStr.isNotEmpty
+            ? '$nameStr\nDrones require FAA authorization before flying here.'
+            : 'Drones require FAA authorization before flying here.';
+      } else {
+        st = _AirspaceStatus.clear;
+        headline = 'Class G — uncontrolled airspace';
+        detail = 'No controlled or restricted airspace at this point. '
+            'Fly under 400 ft AGL, keep the drone in sight, and stay clear '
+            'of people, vehicles, and emergency scenes.';
+      }
 
       setState(() {
-        if (hasProhibited) {
-          _status = _AirspaceStatus.restricted;
-          _headline = 'Prohibited airspace — no drone operations allowed';
-          _detail = nameStr.isNotEmpty ? nameStr : null;
-        } else if (hasRestricted) {
-          _status = _AirspaceStatus.restricted;
-          _headline = 'Restricted airspace — contact the controlling agency';
-          _detail = nameStr.isNotEmpty ? nameStr : null;
-        } else if (hasControlled) {
-          _status = _AirspaceStatus.controlled;
-          _headline = 'Controlled airspace — FAA authorization required';
-          _detail = nameStr.isNotEmpty
-              ? '$nameStr\nDrones require FAA authorization before flying here.'
-              : 'Drones require FAA authorization before flying here.';
+        if (forGps) {
+          _gpsStatus = st;
+          _gpsHeadline = headline;
+          _gpsDetail = detail;
         } else {
-          _status = _AirspaceStatus.clear;
-          _headline = 'Class G — uncontrolled airspace';
-          _detail = 'No controlled or restricted airspace detected at this '
-              'location. FAA rules: fly under 400 ft AGL, keep the drone in '
-              'sight, and stay away from people, vehicles, and emergency scenes.';
+          _tapStatus = st;
+          _tapHeadline = headline;
+          _tapDetail = detail;
         }
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _status = _AirspaceStatus.error;
-        _headline = 'Airspace data unavailable';
-        _detail =
-            'Could not reach the FAA airspace service. Check your connection and retry.';
+        final st = _AirspaceStatus.error;
+        const headline = 'Airspace data unavailable';
+        const detail =
+            'Could not reach the FAA airspace service. Check your connection.';
+        if (forGps) {
+          _gpsStatus = st;
+          _gpsHeadline = headline;
+          _gpsDetail = detail;
+        } else {
+          _tapStatus = st;
+          _tapHeadline = headline;
+          _tapDetail = detail;
+        }
       });
     }
   }
 
-  // Bbox query → fills the map overlay for the current viewport.
+  // ── Viewport bbox query (polygon overlay) ─────────────────────────────────
+
+  LatLngBounds _boundsAround(double lat, double lon, double deg) =>
+      LatLngBounds(LatLng(lat - deg, lon - deg), LatLng(lat + deg, lon + deg));
+
   Future<void> _fetchViewportZones(LatLngBounds bounds) async {
     if (!mounted) return;
     setState(() => _zonesLoading = true);
 
+    final zones = <_AirspaceZone>[];
     final minLon = bounds.west;
     final minLat = bounds.south;
     final maxLon = bounds.east;
     final maxLat = bounds.north;
-
-    final zones = <_AirspaceZone>[];
 
     for (final layerId in [0, 1]) {
       try {
@@ -200,21 +260,15 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
             'f': 'json',
           },
         );
-
-        final data = resp.data as Map<String, dynamic>;
-        final features = (data['features'] as List?) ?? [];
-
+        final features =
+            ((resp.data as Map<String, dynamic>)['features'] as List?) ?? [];
         for (final f in features) {
           final attrs = (f['attributes'] as Map<String, dynamic>?) ?? {};
           final geom = f['geometry'] as Map<String, dynamic>?;
           final type =
               (attrs['TYPE_CODE'] ?? attrs['LOCAL_TYPE'] ?? '').toString();
           final name = (attrs['NAME'] ?? type).toString();
-
-          final rings = geom?['rings'] as List?;
-          if (rings == null) continue;
-
-          for (final ring in rings.take(4)) {
+          for (final ring in ((geom?['rings'] as List?) ?? []).take(4)) {
             final pts = <LatLng>[];
             for (final raw in (ring as List).take(500)) {
               final c = raw as List;
@@ -236,7 +290,6 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
     });
   }
 
-  // Re-fetch the overlay when the user pans or zooms the map.
   void _onPositionChanged(MapCamera camera, bool hasGesture) {
     if (!hasGesture) return;
     _viewportDebounce?.cancel();
@@ -245,14 +298,8 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
     });
   }
 
-  // Color coding:
-  //   Prohibited (P)          → solid red tint + red border
-  //   Restricted (R) /        → lighter red tint + red border
-  //   Warning (W) / Alert (A) → orange tint
-  //   Class B                 → blue tint
-  //   Class C                 → purple tint
-  //   Class D                 → light blue tint
-  //   MOA / other             → faint orange
+  // ── Colors ────────────────────────────────────────────────────────────────
+
   Color _zoneFill(String type) {
     if (type.startsWith('P')) return const Color(0x55DD0000);
     if (type.startsWith('R')) return const Color(0x3DDD0000);
@@ -272,6 +319,8 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
     return Colors.orange;
   }
 
+  // ── Build ─────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     final lat = _lat ?? 29.5;
@@ -286,7 +335,7 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         actions: [
-          if (_zonesLoading)
+          if (_zonesLoading || _tapLoading)
             const Padding(
               padding: EdgeInsets.only(right: 16),
               child: Center(
@@ -315,6 +364,7 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
                 }
               },
               onPositionChanged: _onPositionChanged,
+              onTap: _onMapTap,
             ),
             children: [
               TileLayer(
@@ -325,7 +375,6 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
                 retinaMode: true,
                 panBuffer: 2,
               ),
-              // Airspace overlay — redraws as zones update from bbox queries
               if (_zones.isNotEmpty)
                 PolygonLayer(
                   polygons: [
@@ -338,6 +387,7 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
                       ),
                   ],
                 ),
+              // GPS location dot
               if (_lat != null) ...[
                 CircleLayer(circles: [
                   CircleMarker(
@@ -369,6 +419,17 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
                   ),
                 ]),
               ],
+              // Tapped location pin
+              if (_tappedPoint != null)
+                MarkerLayer(markers: [
+                  Marker(
+                    point: _tappedPoint!,
+                    width: 32,
+                    height: 40,
+                    alignment: Alignment.topCenter,
+                    child: const _PinIcon(),
+                  ),
+                ]),
               const RichAttributionWidget(
                 attributions: [
                   TextSourceAttribution('© CARTO'),
@@ -378,13 +439,36 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
               ),
             ],
           ),
+          // Tap-to-check hint (shown before user has tapped)
+          if (_tappedPoint == null && _gpsStatus != _AirspaceStatus.loading)
+            Positioned(
+              top: 12,
+              left: 0, right: 0,
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: kNavy.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: const Text(
+                    'Tap anywhere on the map to check that location',
+                    style: TextStyle(color: Colors.white60, fontSize: 12),
+                  ),
+                ),
+              ),
+            ),
           Positioned(
             left: 0, right: 0, bottom: 0,
             child: _StatusCard(
-              status: _status,
-              headline: _headline,
-              detail: _detail,
+              status: _displayStatus,
+              headline: _displayHeadline,
+              detail: _displayDetail,
+              isTappedLocation: _tappedPoint != null,
               onRetry: _load,
+              onClearTap: _clearTap,
             ),
           ),
         ],
@@ -393,7 +477,20 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
   }
 }
 
-// ── Legend chip ───────────────────────────────────────────────────────────────
+// ── Pin icon for tapped location ──────────────────────────────────────────────
+
+class _PinIcon extends StatelessWidget {
+  const _PinIcon();
+
+  @override
+  Widget build(BuildContext context) => Stack(
+        alignment: Alignment.topCenter,
+        children: const [
+          Icon(Icons.location_on, color: kCyan, size: 36,
+              shadows: [Shadow(color: Colors.black54, blurRadius: 6)]),
+        ],
+      );
+}
 
 // ── Status card ───────────────────────────────────────────────────────────────
 
@@ -401,13 +498,17 @@ class _StatusCard extends StatelessWidget {
   final _AirspaceStatus status;
   final String headline;
   final String? detail;
+  final bool isTappedLocation;
   final VoidCallback onRetry;
+  final VoidCallback onClearTap;
 
   const _StatusCard({
     required this.status,
     required this.headline,
     this.detail,
+    required this.isTappedLocation,
     required this.onRetry,
+    required this.onClearTap,
   });
 
   @override
@@ -435,7 +536,7 @@ class _StatusCard extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Legend row
+            // Legend
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
@@ -451,6 +552,27 @@ class _StatusCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
+            // Location source label
+            Row(
+              children: [
+                Icon(
+                  isTappedLocation ? Icons.place : Icons.my_location,
+                  size: 13,
+                  color: isTappedLocation ? kCyan : Colors.blue,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  isTappedLocation ? 'Tapped location' : 'Your GPS location',
+                  style: TextStyle(
+                    color: isTappedLocation ? kCyan : Colors.blue[200],
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            // Status headline
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -490,18 +612,49 @@ class _StatusCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.my_location, size: 15),
-                label: const Text('Check Again'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: kCyan,
-                  side: const BorderSide(color: kCyan),
+            // Action buttons
+            if (isTappedLocation)
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.my_location, size: 15),
+                      label: const Text('My Location'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blue[200],
+                        side: BorderSide(
+                            color: Colors.blue[300]!.withValues(alpha: 0.6)),
+                      ),
+                      onPressed: onClearTap,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.refresh, size: 15),
+                      label: const Text('Check Again'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: kCyan,
+                        side: const BorderSide(color: kCyan),
+                      ),
+                      onPressed: onRetry,
+                    ),
+                  ),
+                ],
+              )
+            else
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.my_location, size: 15),
+                  label: const Text('Check Again'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: kCyan,
+                    side: const BorderSide(color: kCyan),
+                  ),
+                  onPressed: onRetry,
                 ),
-                onPressed: onRetry,
               ),
-            ),
             const SizedBox(height: 6),
             const Text(
               'Airspace data: FAA public service. For reference only — '
