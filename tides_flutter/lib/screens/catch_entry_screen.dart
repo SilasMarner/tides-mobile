@@ -7,7 +7,9 @@ import 'package:path_provider/path_provider.dart';
 import '../data/tournaments.dart';
 import '../models/catch_entry.dart';
 import '../providers/catch_log_provider.dart';
+import '../providers/last_tournament_provider.dart';
 import '../providers/theme_provider.dart';
+import '../providers/tournament_mode_provider.dart';
 import '../providers/units_provider.dart';
 import '../services/location_service.dart';
 import '../theme.dart';
@@ -28,6 +30,18 @@ const _kSpecies = [
   'Hammerhead Shark',
   'Bonnethead Shark',
   'Tiger Shark',
+  'Atlantic Sharpnose Shark',
+  'Blacknose Shark',
+  'Spinner Shark',
+  'Sandbar Shark',
+  'Lemon Shark',
+  'Nurse Shark',
+  'Finetooth Shark',
+  'Dusky Shark',
+  'Smooth Hammerhead',
+  'Great Hammerhead',
+  'Scalloped Hammerhead',
+  'Shortfin Mako',
   'Largemouth Bass',
   'Striped Bass',
   'Crappie',
@@ -50,9 +64,13 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
   final _girthCtrl = TextEditingController();
   final _weightCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
+  final _forkLengthCtrl = TextEditingController();
+  final _tagNumberCtrl = TextEditingController();
+  final _dnaSampleCtrl = TextEditingController();
+  final _recaptureTagCtrl = TextEditingController();
 
   late DateTime _caughtAt;
-  bool _released = false;
+  bool _released = true;
   bool _saveGps = true;
   double? _lat;
   double? _lon;
@@ -61,6 +79,9 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
   String? _tournamentId;
   bool _gettingLocation = false;
   bool _saving = false;
+  String _sex = 'Unknown';
+  bool _isRecapture = false;
+  DateTime? _releasedAt;
 
   bool get _isEdit => widget.existing != null;
 
@@ -84,13 +105,23 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
       _weightCtrl.text = v.toStringAsFixed(1);
     }
     _notesCtrl.text = e?.notes ?? '';
-    _released = e?.released ?? false;
+    _released = e?.released ?? true;
     _lat = e?.lat;
     _lon = e?.lon;
     _saveGps = e == null || e.lat != null;
     _locationLabel = e?.locationLabel;
     _photoPath = e?.photoPath;
-    _tournamentId = e?.tournamentId;
+    _tournamentId = e?.tournamentId ?? ref.read(lastTournamentProvider);
+    if (e?.forkLengthIn != null) {
+      final v = metric ? e!.forkLengthIn! * 2.54 : e!.forkLengthIn!;
+      _forkLengthCtrl.text = v.toStringAsFixed(1);
+    }
+    _tagNumberCtrl.text = e?.tagNumber ?? '';
+    _dnaSampleCtrl.text = e?.dnaSampleNumber ?? '';
+    _recaptureTagCtrl.text = e?.recaptureTagNumber ?? '';
+    _sex = e?.sex ?? 'Unknown';
+    _isRecapture = e?.isRecapture ?? false;
+    _releasedAt = e?.releasedAt ?? (_released ? _caughtAt : null);
   }
 
   @override
@@ -100,6 +131,10 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
     _girthCtrl.dispose();
     _weightCtrl.dispose();
     _notesCtrl.dispose();
+    _forkLengthCtrl.dispose();
+    _tagNumberCtrl.dispose();
+    _dnaSampleCtrl.dispose();
+    _recaptureTagCtrl.dispose();
     super.dispose();
   }
 
@@ -191,6 +226,26 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
     });
   }
 
+  Future<void> _pickReleaseDate() async {
+    final base = _releasedAt ?? _caughtAt;
+    final date = await showDatePicker(
+      context: context,
+      initialDate: base,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(base),
+    );
+    if (!mounted) return;
+    setState(() {
+      _releasedAt = DateTime(date.year, date.month, date.day,
+          time?.hour ?? base.hour, time?.minute ?? base.minute);
+    });
+  }
+
   Future<void> _save() async {
     final species = _speciesCtrl.text.trim();
     if (species.isEmpty) {
@@ -216,6 +271,18 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
       photoPath: _photoPath,
       tournamentId: _tournamentId,
       notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+      forkLengthIn: _parseLen(_forkLengthCtrl.text, metric),
+      tagNumber:
+          _tagNumberCtrl.text.trim().isEmpty ? null : _tagNumberCtrl.text.trim(),
+      dnaSampleNumber: _dnaSampleCtrl.text.trim().isEmpty
+          ? null
+          : _dnaSampleCtrl.text.trim(),
+      sex: _sex,
+      isRecapture: _isRecapture,
+      recaptureTagNumber: _isRecapture && _recaptureTagCtrl.text.trim().isNotEmpty
+          ? _recaptureTagCtrl.text.trim()
+          : null,
+      releasedAt: _released ? _releasedAt : null,
     );
     if (_isEdit) {
       await ref.read(catchLogProvider.notifier).update(entry);
@@ -232,7 +299,8 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
     final metric = ref.watch(unitsProvider);
     final lengthUnit = metric ? 'cm' : 'in';
     final weightUnit = metric ? 'kg' : 'lb';
-    final tournament = tournamentById(_tournamentId);
+    final tournamentMode = ref.watch(tournamentModeProvider);
+    final tournament = tournamentMode ? tournamentById(_tournamentId) : null;
 
     return Scaffold(
       backgroundColor: night ? kNightBg : kNavy,
@@ -309,7 +377,10 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
               ButtonSegment(value: true, label: Text('Released')),
             ],
             selected: {_released},
-            onSelectionChanged: (s) => setState(() => _released = s.first),
+            onSelectionChanged: (s) => setState(() {
+              _released = s.first;
+              if (_released && _releasedAt == null) _releasedAt = _caughtAt;
+            }),
           ),
           const SizedBox(height: 16),
           SwitchListTile(
@@ -373,26 +444,28 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
               icon: const Icon(Icons.add_a_photo),
               label: const Text('Add Photo'),
             ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<String?>(
-            initialValue: _tournamentId,
-            decoration: const InputDecoration(labelText: 'Tournament (optional)'),
-            dropdownColor: kCardBg,
-            style: const TextStyle(color: Colors.white),
-            items: [
-              const DropdownMenuItem(value: null, child: Text('None')),
-              ...kTournaments.map(
-                  (t) => DropdownMenuItem(value: t.id, child: Text(t.name))),
-            ],
-            onChanged: (v) => setState(() => _tournamentId = v),
-          ),
-          if (tournament != null) ...[
-            const SizedBox(height: 12),
-            TournamentChecklist(
-              info: tournament,
-              hasGps: _saveGps && _lat != null,
-              hasPhoto: _photoPath != null,
+          if (tournamentMode) ...[
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String?>(
+              initialValue: _tournamentId,
+              decoration:
+                  const InputDecoration(labelText: 'Tournament (optional)'),
+              dropdownColor: kCardBg,
+              style: const TextStyle(color: Colors.white),
+              items: [
+                const DropdownMenuItem(value: null, child: Text('None')),
+                ...kTournaments.map(
+                    (t) => DropdownMenuItem(value: t.id, child: Text(t.name))),
+              ],
+              onChanged: (v) {
+                setState(() => _tournamentId = v);
+                ref.read(lastTournamentProvider.notifier).setId(v);
+              },
             ),
+            if (tournament?.id == 'tsr') ...[
+              const SizedBox(height: 12),
+              _tsrDetailsCard(lengthUnit),
+            ],
           ],
           const SizedBox(height: 16),
           TextField(
@@ -414,8 +487,96 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
                   : Text(_isEdit ? 'Save Changes' : 'Save Catch'),
             ),
           ),
+          if (tournament != null) ...[
+            const SizedBox(height: 16),
+            TournamentChecklist(
+              info: tournament,
+              hasGps: _saveGps && _lat != null,
+              hasPhoto: _photoPath != null,
+            ),
+          ],
         ],
       ),
     );
   }
+
+  Widget _tsrDetailsCard(String lengthUnit) => Card(
+        color: kCardBg,
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Texas Shark Rodeo Details',
+                  style: TextStyle(
+                      color: kCyan, fontWeight: FontWeight.bold, fontSize: 14)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _forkLengthCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(labelText: 'Fork length ($lengthUnit)'),
+              ),
+              const SizedBox(height: 16),
+              const Text('Sex',
+                  style: TextStyle(color: Colors.white70, fontSize: 12)),
+              const SizedBox(height: 6),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'Male', label: Text('Male')),
+                  ButtonSegment(value: 'Female', label: Text('Female')),
+                  ButtonSegment(value: 'Unknown', label: Text('Unknown')),
+                ],
+                selected: {_sex},
+                onSelectionChanged: (s) => setState(() => _sex = s.first),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _tagNumberCtrl,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(labelText: 'Tag number'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _dnaSampleCtrl,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(labelText: 'DNA sample number'),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('This is a recapture',
+                    style: TextStyle(color: Colors.white)),
+                value: _isRecapture,
+                activeColor: kCyan,
+                onChanged: (v) => setState(() => _isRecapture = v),
+              ),
+              if (_isRecapture) ...[
+                TextField(
+                  controller: _recaptureTagCtrl,
+                  style: const TextStyle(color: Colors.white),
+                  decoration:
+                      const InputDecoration(labelText: 'Recapture tag number'),
+                ),
+                const SizedBox(height: 4),
+              ],
+              if (_released) ...[
+                const SizedBox(height: 8),
+                InkWell(
+                  onTap: _pickReleaseDate,
+                  child: InputDecorator(
+                    decoration: const InputDecoration(labelText: 'Time released'),
+                    child: Text(
+                      _releasedAt != null
+                          ? DateFormat('MMM d, yyyy  h:mm a').format(_releasedAt!)
+                          : 'Tap to set',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
 }

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/captain_email_provider.dart';
 import '../providers/notification_provider.dart';
 import '../providers/favorites_provider.dart';
+import '../providers/tournament_mode_provider.dart';
 import '../providers/units_provider.dart';
 import '../services/notification_service.dart';
 import '../theme.dart';
@@ -19,17 +21,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   bool _notifEnabled = true;
   int? _pendingCount;
   bool _rescheduling = false;
+  final _captainEmailCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _captainEmailCtrl.text = ref.read(captainEmailProvider);
     _refresh();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _captainEmailCtrl.dispose();
     super.dispose();
   }
 
@@ -76,6 +81,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     final notifier = ref.read(notificationPrefsProvider.notifier);
     final favorites = ref.watch(favoritesProvider);
     final metric = ref.watch(unitsProvider);
+    final tournamentMode = ref.watch(tournamentModeProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -140,6 +146,52 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                     ),
                   );
                 }).toList(),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // ── Catch Log ────────────────────────────────────────────────────
+          _sectionLabel('CATCH LOG'),
+          const SizedBox(height: 8),
+          Card(
+            color: kCardBg,
+            child: SwitchListTile(
+              value: tournamentMode,
+              activeThumbColor: kCyan,
+              title: const Text('Tournament Mode',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+              subtitle: const Text(
+                  'Show tournament tagging, requirements & info in Catch Log',
+                  style: TextStyle(color: Colors.white54, fontSize: 12)),
+              secondary: Icon(
+                Icons.emoji_events_outlined,
+                color: tournamentMode ? kCyan : Colors.white38,
+              ),
+              onChanged: (v) =>
+                  ref.read(tournamentModeProvider.notifier).setEnabled(v),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            color: kCardBg,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: TextField(
+                controller: _captainEmailCtrl,
+                keyboardType: TextInputType.emailAddress,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: "Captain's email (optional)",
+                  labelStyle: TextStyle(color: Colors.white54),
+                  helperText:
+                      'Used as the default recipient when emailing catches',
+                  helperStyle: TextStyle(color: Colors.white38, fontSize: 11),
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (v) =>
+                    ref.read(captainEmailProvider.notifier).setEmail(v.trim()),
               ),
             ),
           ),
