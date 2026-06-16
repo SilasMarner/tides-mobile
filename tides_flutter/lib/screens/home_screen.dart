@@ -15,6 +15,7 @@ import '../theme.dart';
 import '../providers/notification_provider.dart';
 import '../services/notification_service.dart';
 import 'about_screen.dart';
+import 'catch_log_screen.dart';
 import 'detail_screen.dart';
 import 'drone_map_screen.dart';
 import 'settings_screen.dart';
@@ -204,6 +205,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             tooltip: 'Before You Fly',
             onPressed: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const DroneMapScreen())),
+          ),
+          IconButton(
+            icon: Icon(Icons.phishing, color: accent),
+            tooltip: 'Catch Log',
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const CatchLogScreen())),
           ),
           IconButton(
             icon: Icon(Icons.info_outline, color: accent),

@@ -1,0 +1,421 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import '../data/tournaments.dart';
+import '../models/catch_entry.dart';
+import '../providers/catch_log_provider.dart';
+import '../providers/theme_provider.dart';
+import '../providers/units_provider.dart';
+import '../services/location_service.dart';
+import '../theme.dart';
+import '../widgets/tournament_checklist.dart';
+
+const _kSpecies = [
+  'Redfish',
+  'Speckled Trout',
+  'Flounder',
+  'Black Drum',
+  'Sheepshead',
+  'Snook',
+  'Tarpon',
+  'Spanish Mackerel',
+  'King Mackerel',
+  'Bull Shark',
+  'Blacktip Shark',
+  'Hammerhead Shark',
+  'Bonnethead Shark',
+  'Tiger Shark',
+  'Largemouth Bass',
+  'Striped Bass',
+  'Crappie',
+  'Catfish',
+  'Bluegill',
+  'Other',
+];
+
+class CatchEntryScreen extends ConsumerStatefulWidget {
+  final CatchEntry? existing;
+  const CatchEntryScreen({super.key, this.existing});
+
+  @override
+  ConsumerState<CatchEntryScreen> createState() => _CatchEntryScreenState();
+}
+
+class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
+  final _speciesCtrl = TextEditingController();
+  final _lengthCtrl = TextEditingController();
+  final _girthCtrl = TextEditingController();
+  final _weightCtrl = TextEditingController();
+  final _notesCtrl = TextEditingController();
+
+  late DateTime _caughtAt;
+  bool _released = false;
+  bool _saveGps = true;
+  double? _lat;
+  double? _lon;
+  String? _locationLabel;
+  String? _photoPath;
+  String? _tournamentId;
+  bool _gettingLocation = false;
+  bool _saving = false;
+
+  bool get _isEdit => widget.existing != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    final metric = ref.read(unitsProvider);
+    _caughtAt = e?.caughtAt ?? DateTime.now();
+    _speciesCtrl.text = e?.species ?? '';
+    if (e?.lengthIn != null) {
+      final v = metric ? e!.lengthIn! * 2.54 : e!.lengthIn!;
+      _lengthCtrl.text = v.toStringAsFixed(1);
+    }
+    if (e?.girthIn != null) {
+      final v = metric ? e!.girthIn! * 2.54 : e!.girthIn!;
+      _girthCtrl.text = v.toStringAsFixed(1);
+    }
+    if (e?.weightLb != null) {
+      final v = metric ? e!.weightLb! * 0.453592 : e!.weightLb!;
+      _weightCtrl.text = v.toStringAsFixed(1);
+    }
+    _notesCtrl.text = e?.notes ?? '';
+    _released = e?.released ?? false;
+    _lat = e?.lat;
+    _lon = e?.lon;
+    _saveGps = e == null || e.lat != null;
+    _locationLabel = e?.locationLabel;
+    _photoPath = e?.photoPath;
+    _tournamentId = e?.tournamentId;
+  }
+
+  @override
+  void dispose() {
+    _speciesCtrl.dispose();
+    _lengthCtrl.dispose();
+    _girthCtrl.dispose();
+    _weightCtrl.dispose();
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  double? _parseLen(String s, bool metric) {
+    final v = double.tryParse(s.trim());
+    if (v == null) return null;
+    return metric ? v / 2.54 : v;
+  }
+
+  double? _parseWeight(String s, bool metric) {
+    final v = double.tryParse(s.trim());
+    if (v == null) return null;
+    return metric ? v / 0.453592 : v;
+  }
+
+  Future<void> _useCurrentLocation() async {
+    setState(() => _gettingLocation = true);
+    final loc = await getLocation();
+    if (!mounted) return;
+    setState(() {
+      _gettingLocation = false;
+      if (loc != null) {
+        final (lat, lon, label) = loc;
+        _lat = lat;
+        _lon = lon;
+        _locationLabel = label;
+      }
+    });
+    if (loc == null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not get current location')),
+      );
+    }
+  }
+
+  Future<void> _pickPhoto() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: kCardBg,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera, color: kCyan),
+              title: const Text('Camera', style: TextStyle(color: Colors.white)),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: kCyan),
+              title: const Text('Gallery', style: TextStyle(color: Colors.white)),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+    final picked = await ImagePicker().pickImage(source: source, imageQuality: 85);
+    if (picked == null || !mounted) return;
+
+    final id = widget.existing?.id ??
+        DateTime.now().microsecondsSinceEpoch.toString();
+    final docsDir = await getApplicationDocumentsDirectory();
+    final photosDir = Directory('${docsDir.path}/catch_photos');
+    if (!await photosDir.exists()) await photosDir.create(recursive: true);
+    final dest = '${photosDir.path}/$id.jpg';
+    await File(picked.path).copy(dest);
+    if (!mounted) return;
+    setState(() => _photoPath = dest);
+  }
+
+  Future<void> _pickDate() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _caughtAt,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_caughtAt),
+    );
+    if (!mounted) return;
+    setState(() {
+      _caughtAt = DateTime(date.year, date.month, date.day,
+          time?.hour ?? _caughtAt.hour, time?.minute ?? _caughtAt.minute);
+    });
+  }
+
+  Future<void> _save() async {
+    final species = _speciesCtrl.text.trim();
+    if (species.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Enter a species')));
+      return;
+    }
+    setState(() => _saving = true);
+    final metric = ref.read(unitsProvider);
+    final id = widget.existing?.id ??
+        DateTime.now().microsecondsSinceEpoch.toString();
+    final entry = CatchEntry(
+      id: id,
+      species: species,
+      caughtAt: _caughtAt,
+      lengthIn: _parseLen(_lengthCtrl.text, metric),
+      girthIn: _parseLen(_girthCtrl.text, metric),
+      weightLb: _parseWeight(_weightCtrl.text, metric),
+      released: _released,
+      lat: _saveGps ? _lat : null,
+      lon: _saveGps ? _lon : null,
+      locationLabel: _saveGps ? _locationLabel : null,
+      photoPath: _photoPath,
+      tournamentId: _tournamentId,
+      notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+    );
+    if (_isEdit) {
+      await ref.read(catchLogProvider.notifier).update(entry);
+    } else {
+      await ref.read(catchLogProvider.notifier).add(entry);
+    }
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final night = ref.watch(nightModeProvider);
+    final accent = accentColor(night);
+    final metric = ref.watch(unitsProvider);
+    final lengthUnit = metric ? 'cm' : 'in';
+    final weightUnit = metric ? 'kg' : 'lb';
+    final tournament = tournamentById(_tournamentId);
+
+    return Scaffold(
+      backgroundColor: night ? kNightBg : kNavy,
+      appBar: AppBar(
+        backgroundColor: appBarColor(night),
+        title: Text(_isEdit ? 'Edit Catch' : 'Log a Catch',
+            style: TextStyle(color: accent, fontWeight: FontWeight.bold)),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Autocomplete<String>(
+            initialValue: TextEditingValue(text: _speciesCtrl.text),
+            optionsBuilder: (v) {
+              if (v.text.isEmpty) return _kSpecies;
+              return _kSpecies.where(
+                  (s) => s.toLowerCase().contains(v.text.toLowerCase()));
+            },
+            onSelected: (s) => _speciesCtrl.text = s,
+            fieldViewBuilder: (ctx, ctrl, focus, onSubmit) {
+              return TextField(
+                controller: ctrl,
+                focusNode: focus,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(labelText: 'Species *'),
+                onChanged: (v) => _speciesCtrl.text = v,
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          InkWell(
+            onTap: _pickDate,
+            child: InputDecorator(
+              decoration: const InputDecoration(labelText: 'Date & time'),
+              child: Text(DateFormat('MMM d, yyyy  h:mm a').format(_caughtAt),
+                  style: const TextStyle(color: Colors.white)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _lengthCtrl,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(labelText: 'Length ($lengthUnit)'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: _girthCtrl,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(labelText: 'Girth ($lengthUnit)'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _weightCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(labelText: 'Weight ($weightUnit)'),
+          ),
+          const SizedBox(height: 16),
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(value: false, label: Text('Kept')),
+              ButtonSegment(value: true, label: Text('Released')),
+            ],
+            selected: {_released},
+            onSelectionChanged: (s) => setState(() => _released = s.first),
+          ),
+          const SizedBox(height: 16),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Save location with this catch',
+                style: TextStyle(color: Colors.white)),
+            value: _saveGps,
+            activeColor: kCyan,
+            onChanged: (v) => setState(() => _saveGps = v),
+          ),
+          if (_saveGps) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _lat != null && _lon != null
+                        ? '${_locationLabel ?? 'Location'}: '
+                            '${_lat!.toStringAsFixed(5)}, ${_lon!.toStringAsFixed(5)}'
+                        : 'No location captured yet',
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ),
+                TextButton(
+                  onPressed: _gettingLocation ? null : _useCurrentLocation,
+                  child: _gettingLocation
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Use current location'),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 16),
+          if (_photoPath != null) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.file(File(_photoPath!),
+                  height: 160, width: double.infinity, fit: BoxFit.cover),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                TextButton.icon(
+                  onPressed: _pickPhoto,
+                  icon: const Icon(Icons.edit, size: 16),
+                  label: const Text('Change Photo'),
+                ),
+                TextButton.icon(
+                  onPressed: () => setState(() => _photoPath = null),
+                  icon: const Icon(Icons.delete_outline, size: 16, color: Colors.redAccent),
+                  label: const Text('Remove', style: TextStyle(color: Colors.redAccent)),
+                ),
+              ],
+            ),
+          ] else
+            OutlinedButton.icon(
+              onPressed: _pickPhoto,
+              icon: const Icon(Icons.add_a_photo),
+              label: const Text('Add Photo'),
+            ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String?>(
+            initialValue: _tournamentId,
+            decoration: const InputDecoration(labelText: 'Tournament (optional)'),
+            dropdownColor: kCardBg,
+            style: const TextStyle(color: Colors.white),
+            items: [
+              const DropdownMenuItem(value: null, child: Text('None')),
+              ...kTournaments.map(
+                  (t) => DropdownMenuItem(value: t.id, child: Text(t.name))),
+            ],
+            onChanged: (v) => setState(() => _tournamentId = v),
+          ),
+          if (tournament != null) ...[
+            const SizedBox(height: 12),
+            TournamentChecklist(
+              info: tournament,
+              hasGps: _saveGps && _lat != null,
+              hasPhoto: _photoPath != null,
+            ),
+          ],
+          const SizedBox(height: 16),
+          TextField(
+            controller: _notesCtrl,
+            maxLines: 3,
+            style: const TextStyle(color: Colors.white),
+            decoration: const InputDecoration(labelText: 'Notes'),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: _saving ? null : _save,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: _saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : Text(_isEdit ? 'Save Changes' : 'Save Catch'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

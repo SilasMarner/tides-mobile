@@ -38,6 +38,20 @@ String fmtTideHeight(double ft, bool metric) {
   return '${v >= 0 ? '+' : ''}${v.toStringAsFixed(2)} ${metric ? 'm' : 'ft'}';
 }
 
+/// A catch length/girth. Pass the value in inches.
+String fmtLenIn(double? inches, bool metric, {int decimals = 1, String na = 'N/A'}) {
+  if (inches == null) return na;
+  final v = metric ? inches * 2.54 : inches;
+  return '${v.toStringAsFixed(decimals)} ${metric ? 'cm' : 'in'}';
+}
+
+/// A catch weight. Pass the value in lb.
+String fmtWeight(double? lb, bool metric, {int decimals = 1, String na = 'N/A'}) {
+  if (lb == null) return na;
+  final v = metric ? lb * 0.453592 : lb;
+  return '${v.toStringAsFixed(decimals)} ${metric ? 'kg' : 'lb'}';
+}
+
 /// Wind speed. Pass the value in mph.
 String fmtSpeed(double mph, bool metric, {int decimals = 0}) {
   final v = metric ? mph * 1.60934 : mph;

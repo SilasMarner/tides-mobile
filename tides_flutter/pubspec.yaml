@@ -1,7 +1,7 @@
 name: tides
 description: Live NOAA tide conditions for Android
 publish_to: 'none'
-version: 3.4.1+95
+version: 3.4.1+96
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -21,6 +21,8 @@ dependencies:
   in_app_update: ^4.2.3
   flutter_map: ^7.0.0
   latlong2: ^0.9.1
+  image_picker: ^1.1.2
+  path_provider: ^2.1.4
 
 dev_dependencies:
   flutter_test:
