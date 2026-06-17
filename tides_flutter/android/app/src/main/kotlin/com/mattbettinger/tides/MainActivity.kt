@@ -1,10 +1,8 @@
 package com.mattbettinger.tides
 
 import android.content.ActivityNotFoundException
-import android.content.ClipData
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
@@ -64,6 +62,14 @@ class MainActivity : FlutterActivity() {
      * deliver SEND to it) failed to launch on some devices (START result -91).
      * A plain ACTION_SEND with an image MIME type is the standard share path
      * Gmail handles reliably; EXTRA_EMAIL still prefills the recipient.
+     *
+     * For multiple photos we deliberately do NOT hand-build clipData or grant
+     * URI permissions manually. Setting clipData ourselves suppresses the
+     * framework's migrateExtraStreamToClipData(), which is what moves every
+     * EXTRA_STREAM URI into clipData and grants read access to ALL of them when
+     * the chooser launches the target. Doing it by hand granted only some URIs,
+     * which is exactly why Gmail dropped photos on a multi-catch send. We just
+     * set EXTRA_STREAM + FLAG_GRANT_READ_URI_PERMISSION and let the OS migrate.
      */
     private fun sendEmail(
         subject: String?,
@@ -98,33 +104,10 @@ class MainActivity : FlutterActivity() {
                 } else {
                     intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
                 }
-                // ClipData carries the URI grants across to the resolved composer.
-                val clip = ClipData.newUri(contentResolver, "attachment", uris[0])
-                for (i in 1 until uris.size) clip.addItem(ClipData.Item(uris[i]))
-                intent.clipData = clip
             }
 
             val chooser = Intent.createChooser(intent, "Send catches")
             chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            if (uris.isNotEmpty()) {
-                chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                // The chooser's automatic grant propagation only reliably covers
-                // the first URI on some Android versions, so a multi-attachment
-                // target (e.g. Gmail) could read the first photo but silently drop
-                // the rest. Explicitly grant read access for every attachment to
-                // every app that can handle the send.
-                val resolvers = packageManager.queryIntentActivities(
-                    intent, PackageManager.MATCH_DEFAULT_ONLY
-                )
-                for (ri in resolvers) {
-                    val pkg = ri.activityInfo.packageName
-                    for (uri in uris) {
-                        grantUriPermission(
-                            pkg, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                        )
-                    }
-                }
-            }
             startActivity(chooser)
             result.success(true)
         } catch (e: ActivityNotFoundException) {

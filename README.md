@@ -128,6 +128,9 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 103) — Catch Log: multi-catch email photos, the real fix
+- **Emailing multiple catches now reliably attaches every photo in Gmail.** Build 101's attempt — hand-building the intent's `ClipData` and manually granting read permission to each resolver — actually made it worse (Gmail dropped *all* photos instead of just the extra ones). The root cause: setting `ClipData` ourselves *suppresses* Android's `migrateExtraStreamToClipData()`, the framework step that moves every `EXTRA_STREAM` URI into the clip and grants read access to all of them — which is exactly the data Gmail's composer reads. We now do the minimal, standard thing: set `EXTRA_STREAM` + `FLAG_GRANT_READ_URI_PERMISSION` and let the OS migrate and grant. Verified on-device that a multi-photo share now delivers and grants every attachment.
+
 ### v3.4.1 (build 101) — Catch Log: multi-catch email attaches every photo
 - **Emailing multiple catches now attaches all the photos**, not just the first. The catch details all arrived, but only the first photo did: when the share intent is wrapped in the system chooser, Android only reliably grants the chosen email app read access to the first attachment, so the rest were silently dropped. We now explicitly grant read permission for every attachment to every app that can handle the send, and give each staged photo a unique filename so email apps can't de-duplicate them by name.
 
