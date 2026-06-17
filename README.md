@@ -128,6 +128,16 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 98) — Catch Log: tournaments, shark rodeo & conditions snapshot
+- **Catch Log** — a private, on-device log of your catches (species, length/girth/weight, kept/released, GPS, photo) under the fish-hook icon on the home screen. Nothing leaves the phone unless you email it.
+- **Tournament Mode** (Settings ▸ Catch Log) adds optional tournament tagging, a requirement checklist on each catch, and a Tournament Info screen. Turn it off for a plain catch log.
+- **Texas Shark Rodeo** — selecting it narrows the species picker to **Texas sharks only** and adds the fields TSR needs: total length, fork length, girth, sex, tag number, DNA sample number, recapture with the original tag number, and separate catch/release times. GPS and photo required; 21-day submission.
+- **CCA Texas STAR** — built-in checklist for membership/entry, official measuring-device photo, and weigh-station deadlines.
+- **Conditions snapshot** — one tap stamps a catch's notes with the live tide movement, water level, water/air temp, barometer, wind, salinity and moon phase from the last station you opened (forecast-aware for future-dated views).
+- **Email to captain** — select one or more catches and email their photos + details in one message; set a default captain's email in Settings.
+- **Cleaner catch-entry layout** — photo on top, tournament selector before species, measurements grouped together.
+- **User Guide** gains a "Catch Log & tournaments" section documenting TSR and CCA Texas STAR.
+
 ### v3.4.1 (build 91) — Before You Fly: state parks + complete national park coverage
 - **USGS PAD-US** replaces the previous NPS-only boundary service. PAD-US is the authoritative federal inventory of all US protected lands and covers NPS units *and* state parks nationwide in a single query, fixing incomplete national park coverage (e.g. Florida coast parks not appearing).
 - **State parks** — now detected and shown as a teal overlay. Status card shows "check state park drone rules" since regulations vary by state (most prohibit drones but rules differ). Status legend gains a teal "State Park" chip.
