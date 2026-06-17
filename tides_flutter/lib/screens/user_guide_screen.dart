@@ -213,6 +213,19 @@ class UserGuideScreen extends StatelessWidget {
       ],
     ),
     _Section(
+      Icons.phishing,
+      'Catch Log & tournaments',
+      [
+        'Tap the fish-hook icon on the home screen to open the Catch Log — a private, on-device record of your catches with species, length, girth, weight, kept/released, GPS location, and a photo. Nothing leaves your phone unless you email it.',
+        'On a catch, tap “Add current conditions” to stamp the Notes with a live snapshot — tide movement, water level, water and air temperature, barometer, wind, salinity, and moon phase — taken from the last tide station you opened. Open a station first so there is data to capture.',
+        'To hand catches to a tournament captain, long-press a catch to start selecting, tick one or more, and tap the mail icon: the photos are attached and the details go in the email body. Set a default “Captain’s email” in Settings so it is pre-filled.',
+        'Tournament Mode (Settings ▸ Catch Log) adds optional tournament tagging, a requirement checklist on each catch, and the Tournament Info screen. Turn it off for a plain catch log with none of the tournament extras. Two Texas tournaments are built in:',
+        '• Texas Shark Rodeo — a catch-photo-release shark tournament in Texas state waters. Selecting it narrows the species picker to Texas sharks only and adds the fields TSR needs: total length, fork length, girth, sex, tag number, DNA sample number, recapture status with the original tag number, and separate catch and release times. A GPS location and a photo are required, and catches are submitted within 21 days. Official rules: texassharkrodeo.com.',
+        '• CCA Texas STAR — the statewide CCA tournament (redfish, trout, flounder, plus offshore and youth divisions). It requires a current CCA membership and STAR entry, a photo of the fish on the official STAR measuring device, and a weigh-in at an Official STAR Weigh Station within the deadline (24 hours inshore / tagged redfish / youth, 36 hours offshore). Official rules: startournament.org.',
+        'These checklists are guidance, not enforcement — official rules change year to year, so always confirm on each tournament’s site (linked from the Tournament Info screen). Logging or saving a catch never depends on meeting them.',
+      ],
+    ),
+    _Section(
       Icons.tune,
       'Tips',
       [

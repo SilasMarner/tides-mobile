@@ -7,12 +7,14 @@ import 'package:path_provider/path_provider.dart';
 import '../data/tournaments.dart';
 import '../models/catch_entry.dart';
 import '../providers/catch_log_provider.dart';
+import '../providers/detail_provider.dart';
 import '../providers/last_tournament_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/tournament_mode_provider.dart';
 import '../providers/units_provider.dart';
 import '../services/location_service.dart';
 import '../theme.dart';
+import '../utils/unit_format.dart';
 import '../widgets/tournament_checklist.dart';
 
 const _kSpecies = [
@@ -48,6 +50,43 @@ const _kSpecies = [
   'Catfish',
   'Bluegill',
   'Other',
+];
+
+/// Every shark species found in Texas Gulf waters. Shown as the species
+/// options when a shark tournament (e.g. Texas Shark Rodeo) is selected, so
+/// the picker stays on-target and excludes freshwater/inshore non-sharks.
+const _kSharkSpecies = [
+  'Atlantic Sharpnose Shark',
+  'Blacknose Shark',
+  'Blacktip Shark',
+  'Spinner Shark',
+  'Bull Shark',
+  'Bonnethead Shark',
+  'Scalloped Hammerhead',
+  'Great Hammerhead',
+  'Smooth Hammerhead',
+  'Sandbar Shark',
+  'Lemon Shark',
+  'Nurse Shark',
+  'Tiger Shark',
+  'Finetooth Shark',
+  'Dusky Shark',
+  'Silky Shark',
+  'Sand Tiger Shark',
+  'Shortfin Mako',
+  'Longfin Mako',
+  'Night Shark',
+  'Oceanic Whitetip Shark',
+  'Caribbean Reef Shark',
+  'Smalltail Shark',
+  'Bignose Shark',
+  'Galapagos Shark',
+  'Narrowtooth Shark',
+  'Common Thresher Shark',
+  'Bigeye Thresher Shark',
+  'Porbeagle',
+  'Atlantic Angel Shark',
+  'Other Shark',
 ];
 
 class CatchEntryScreen extends ConsumerStatefulWidget {
@@ -301,6 +340,8 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
     final weightUnit = metric ? 'kg' : 'lb';
     final tournamentMode = ref.watch(tournamentModeProvider);
     final tournament = tournamentMode ? tournamentById(_tournamentId) : null;
+    final isTsr = tournament?.id == 'tsr';
+    final speciesOptions = isTsr ? _kSharkSpecies : _kSpecies;
 
     return Scaffold(
       backgroundColor: night ? kNightBg : kNavy,
@@ -312,11 +353,75 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Photo first — set the visual identity of the catch up top.
+          if (_photoPath != null) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.file(File(_photoPath!),
+                  height: 160, width: double.infinity, fit: BoxFit.cover),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                TextButton.icon(
+                  onPressed: _pickPhoto,
+                  icon: const Icon(Icons.edit, size: 16),
+                  label: const Text('Change Photo'),
+                ),
+                TextButton.icon(
+                  onPressed: () => setState(() => _photoPath = null),
+                  icon: const Icon(Icons.delete_outline,
+                      size: 16, color: Colors.redAccent),
+                  label: const Text('Remove',
+                      style: TextStyle(color: Colors.redAccent)),
+                ),
+              ],
+            ),
+          ] else
+            OutlinedButton.icon(
+              onPressed: _pickPhoto,
+              icon: const Icon(Icons.add_a_photo),
+              label: const Text('Add Photo'),
+            ),
+          const SizedBox(height: 16),
+          // Tournament first — selecting a shark tournament narrows the species
+          // list to sharks only and drives which extra fields appear below.
+          if (tournamentMode) ...[
+            DropdownButtonFormField<String?>(
+              initialValue: _tournamentId,
+              decoration:
+                  const InputDecoration(labelText: 'Tournament (optional)'),
+              dropdownColor: kCardBg,
+              style: const TextStyle(color: Colors.white),
+              items: [
+                const DropdownMenuItem(value: null, child: Text('None')),
+                ...kTournaments.map(
+                    (t) => DropdownMenuItem(value: t.id, child: Text(t.name))),
+              ],
+              onChanged: (v) {
+                setState(() {
+                  _tournamentId = v;
+                  // Dropping a freshwater pick when switching into a shark
+                  // tournament keeps the species consistent with the list.
+                  if (tournamentById(v)?.id == 'tsr' &&
+                      !_kSharkSpecies.contains(_speciesCtrl.text)) {
+                    _speciesCtrl.clear();
+                  }
+                });
+                ref.read(lastTournamentProvider.notifier).setId(v);
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+          // What & when.
           Autocomplete<String>(
+            // Re-seed the field from _speciesCtrl when the shark/non-shark mode
+            // flips, so a cleared freshwater pick actually disappears.
+            key: ValueKey(isTsr),
             initialValue: TextEditingValue(text: _speciesCtrl.text),
             optionsBuilder: (v) {
-              if (v.text.isEmpty) return _kSpecies;
-              return _kSpecies.where(
+              if (v.text.isEmpty) return speciesOptions;
+              return speciesOptions.where(
                   (s) => s.toLowerCase().contains(v.text.toLowerCase()));
             },
             onSelected: (s) => _speciesCtrl.text = s,
@@ -340,6 +445,7 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
             ),
           ),
           const SizedBox(height: 12),
+          // Measurements grouped together — fork length sits with the rest.
           Row(
             children: [
               Expanded(
@@ -364,6 +470,16 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
             ],
           ),
           const SizedBox(height: 12),
+          if (isTsr) ...[
+            TextField(
+              controller: _forkLengthCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              style: const TextStyle(color: Colors.white),
+              decoration:
+                  InputDecoration(labelText: 'Fork length ($lengthUnit)'),
+            ),
+            const SizedBox(height: 12),
+          ],
           TextField(
             controller: _weightCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -371,6 +487,7 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
             decoration: InputDecoration(labelText: 'Weight ($weightUnit)'),
           ),
           const SizedBox(height: 16),
+          // Kept vs released — release time follows directly when relevant.
           SegmentedButton<bool>(
             segments: const [
               ButtonSegment(value: false, label: Text('Kept')),
@@ -382,7 +499,28 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
               if (_released && _releasedAt == null) _releasedAt = _caughtAt;
             }),
           ),
+          if (isTsr && _released) ...[
+            const SizedBox(height: 12),
+            InkWell(
+              onTap: _pickReleaseDate,
+              child: InputDecorator(
+                decoration: const InputDecoration(labelText: 'Time released'),
+                child: Text(
+                  _releasedAt != null
+                      ? DateFormat('MMM d, yyyy  h:mm a').format(_releasedAt!)
+                      : 'Tap to set',
+                  style: const TextStyle(color: Colors.white),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
+          // Tournament-specific tagging details.
+          if (isTsr) ...[
+            _tsrDetailsCard(),
+            const SizedBox(height: 16),
+          ],
+          // Where.
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('Save location with this catch',
@@ -417,57 +555,17 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
             ),
           ],
           const SizedBox(height: 16),
-          if (_photoPath != null) ...[
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.file(File(_photoPath!),
-                  height: 160, width: double.infinity, fit: BoxFit.cover),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _insertConditionsSnapshot,
+              icon: const Icon(Icons.cloud_outlined, size: 18, color: kCyan),
+              label: const Text('Add current conditions',
+                  style: TextStyle(color: kCyan)),
+              style: TextButton.styleFrom(padding: EdgeInsets.zero),
             ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                TextButton.icon(
-                  onPressed: _pickPhoto,
-                  icon: const Icon(Icons.edit, size: 16),
-                  label: const Text('Change Photo'),
-                ),
-                TextButton.icon(
-                  onPressed: () => setState(() => _photoPath = null),
-                  icon: const Icon(Icons.delete_outline, size: 16, color: Colors.redAccent),
-                  label: const Text('Remove', style: TextStyle(color: Colors.redAccent)),
-                ),
-              ],
-            ),
-          ] else
-            OutlinedButton.icon(
-              onPressed: _pickPhoto,
-              icon: const Icon(Icons.add_a_photo),
-              label: const Text('Add Photo'),
-            ),
-          if (tournamentMode) ...[
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String?>(
-              initialValue: _tournamentId,
-              decoration:
-                  const InputDecoration(labelText: 'Tournament (optional)'),
-              dropdownColor: kCardBg,
-              style: const TextStyle(color: Colors.white),
-              items: [
-                const DropdownMenuItem(value: null, child: Text('None')),
-                ...kTournaments.map(
-                    (t) => DropdownMenuItem(value: t.id, child: Text(t.name))),
-              ],
-              onChanged: (v) {
-                setState(() => _tournamentId = v);
-                ref.read(lastTournamentProvider.notifier).setId(v);
-              },
-            ),
-            if (tournament?.id == 'tsr') ...[
-              const SizedBox(height: 12),
-              _tsrDetailsCard(lengthUnit),
-            ],
-          ],
-          const SizedBox(height: 16),
+          ),
+          const SizedBox(height: 4),
           TextField(
             controller: _notesCtrl,
             maxLines: 3,
@@ -500,7 +598,67 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
     );
   }
 
-  Widget _tsrDetailsCard(String lengthUnit) => Card(
+  /// Appends a snapshot of the most recently loaded tide/weather conditions
+  /// (from the station the user last opened) to the Notes field, so the catch
+  /// carries the tide stage, water/air temp, barometer, wind, etc. from when it
+  /// was logged. No-op with a hint if no station has been viewed this session.
+  void _insertConditionsSnapshot() {
+    final metric = ref.read(unitsProvider);
+    final station = ref.read(selectedStationProvider);
+    final data = ref.read(tideDataProvider).valueOrNull;
+    if (data == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'No conditions loaded yet — open a tide station first, then come back.')));
+      return;
+    }
+    final c = data.conditions;
+    final where = station?.name ?? 'Station ${data.stationId}';
+    // Live obs only exist for today; a future-dated station view is a forecast.
+    final header = data.isToday
+        ? '— Conditions @ $where '
+            '(${DateFormat('MMM d, h:mm a').format(DateTime.now())}) —'
+        : '— Forecast @ $where '
+            '(${DateFormat('MMM d').format(data.targetDate)}, midday) —';
+    final lines = <String>[header];
+    if (data.fishing.movement != null) {
+      lines.add('Tide: ${data.fishing.movement}');
+    }
+    if (c.waterLevel != null) {
+      lines.add('Water level: ${fmtLen(c.waterLevel, metric)}');
+    }
+    if (c.waterTemp != null) {
+      lines.add('Water temp: ${fmtTemp(c.waterTemp, metric)}');
+    }
+    if (c.airTemp != null) lines.add('Air temp: ${fmtTemp(c.airTemp, metric)}');
+    if (c.pressure != null) {
+      final arrow = c.pressureTrend > 0
+          ? ' ↑'
+          : c.pressureTrend < 0
+              ? ' ↓'
+              : '';
+      lines.add('Barometer: ${c.pressure!.toStringAsFixed(1)} mb$arrow');
+    }
+    if (c.windSpeed != null) {
+      final wind = [
+        if (c.windDirStr != null) c.windDirStr!,
+        fmtSpeed(c.windSpeed!, metric),
+        if (c.windGust != null && c.windGust! > c.windSpeed! + 3)
+          'gusts ${fmtSpeed(c.windGust!, metric)}',
+      ].join(' ');
+      lines.add('Wind: $wind');
+    }
+    if (c.salinity != null) {
+      lines.add('Salinity: ${c.salinity!.toStringAsFixed(1)} ppt');
+    }
+    lines.add('Moon: ${data.moon.phase} (${data.moon.pct}%)');
+    final snapshot = lines.join('\n');
+    final existing = _notesCtrl.text.trimRight();
+    _notesCtrl.text = existing.isEmpty ? snapshot : '$existing\n\n$snapshot';
+    setState(() {});
+  }
+
+  Widget _tsrDetailsCard() => Card(
         color: kCardBg,
         margin: EdgeInsets.zero,
         child: Padding(
@@ -512,13 +670,6 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
                   style: TextStyle(
                       color: kCyan, fontWeight: FontWeight.bold, fontSize: 14)),
               const SizedBox(height: 12),
-              TextField(
-                controller: _forkLengthCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(labelText: 'Fork length ($lengthUnit)'),
-              ),
-              const SizedBox(height: 16),
               const Text('Sex',
                   style: TextStyle(color: Colors.white70, fontSize: 12)),
               const SizedBox(height: 6),
@@ -551,30 +702,15 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
                 activeColor: kCyan,
                 onChanged: (v) => setState(() => _isRecapture = v),
               ),
-              if (_isRecapture) ...[
+              if (_isRecapture)
                 TextField(
                   controller: _recaptureTagCtrl,
                   style: const TextStyle(color: Colors.white),
-                  decoration:
-                      const InputDecoration(labelText: 'Recapture tag number'),
+                  decoration: const InputDecoration(
+                      labelText: 'Original tag number',
+                      helperText: 'The tag already on the shark when recaptured',
+                      helperStyle: TextStyle(color: Colors.white38)),
                 ),
-                const SizedBox(height: 4),
-              ],
-              if (_released) ...[
-                const SizedBox(height: 8),
-                InkWell(
-                  onTap: _pickReleaseDate,
-                  child: InputDecorator(
-                    decoration: const InputDecoration(labelText: 'Time released'),
-                    child: Text(
-                      _releasedAt != null
-                          ? DateFormat('MMM d, yyyy  h:mm a').format(_releasedAt!)
-                          : 'Tap to set',
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                  ),
-                ),
-              ],
             ],
           ),
         ),
