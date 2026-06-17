@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_email_sender/flutter_email_sender.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../data/tournaments.dart';
@@ -52,10 +53,15 @@ class _CatchLogScreenState extends ConsumerState<CatchLogScreen> {
       await CatchExportService.emailCatches(selected,
           defaultRecipient: recipient, metric: metric);
       _toggleSelecting(false);
-    } catch (_) {
+    } on FlutterEmailSenderNotAvailableException {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Could not open an email app on this device.')));
+          content: Text('No email app is set up on this device.')));
+    } catch (e) {
+      debugPrint('emailCatches failed: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not send catches: $e')));
     }
   }
 

@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter_email_sender/flutter_email_sender.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import '../data/tournaments.dart';
 import '../models/catch_entry.dart';
 import '../utils/unit_format.dart';
@@ -18,10 +21,7 @@ class CatchExportService {
     final subject =
         'Catch Log — ${entries.length} catch${entries.length == 1 ? '' : 'es'}';
     final body = _buildBody(entries, metric);
-    final attachments = [
-      for (final e in entries)
-        if (e.photoPath != null) e.photoPath!,
-    ];
+    final attachments = await _stageAttachments(entries);
 
     await FlutterEmailSender.send(Email(
       subject: subject,
@@ -30,6 +30,35 @@ class CatchExportService {
       attachmentPaths: attachments,
       isHTML: false,
     ));
+  }
+
+  /// Catch photos live in the app documents dir (`app_flutter/catch_photos`),
+  /// which is NOT one of the roots flutter_email_sender's bundled FileProvider
+  /// exposes (it only maps files/, cache/ and external storage). Attaching a
+  /// path outside those roots makes FileProvider.getUriForFile throw, which
+  /// surfaced to users as "could not open an email app". Copy each photo into
+  /// the temporary (cache) dir first — that IS a configured FileProvider root —
+  /// and attach the copies.
+  static Future<List<String>> _stageAttachments(List<CatchEntry> entries) async {
+    final paths = <String>[];
+    final tmp = await getTemporaryDirectory();
+    final shareDir = Directory('${tmp.path}/catch_share');
+    if (await shareDir.exists()) {
+      await shareDir.delete(recursive: true);
+    }
+    await shareDir.create(recursive: true);
+
+    for (final e in entries) {
+      final src = e.photoPath;
+      if (src == null) continue;
+      final srcFile = File(src);
+      if (!await srcFile.exists()) continue;
+      final name = src.split('/').last;
+      final dest = '${shareDir.path}/$name';
+      await srcFile.copy(dest);
+      paths.add(dest);
+    }
+    return paths;
   }
 
   static String _buildBody(List<CatchEntry> entries, bool metric) {

@@ -128,6 +128,10 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 99) — Catch Log fixes: email attachments & photo preview
+- **Email to captain now works with photos** — catch photos are staged into a shareable cache directory before sending, so attaching them no longer fails. (They live in the app documents dir, which isn't one of the email plugin's FileProvider roots; the old code mislabeled the resulting error as "could not open an email app".) The error message now distinguishes "no email app set up" from real send failures.
+- **Catch photo preview** — the entry screen now shows the whole photo (contain, not crop), so tall/portrait shots are no longer cut off at the top.
+
 ### v3.4.1 (build 98) — Catch Log: tournaments, shark rodeo & conditions snapshot
 - **Catch Log** — a private, on-device log of your catches (species, length/girth/weight, kept/released, GPS, photo) under the fish-hook icon on the home screen. Nothing leaves the phone unless you email it.
 - **Tournament Mode** (Settings ▸ Catch Log) adds optional tournament tagging, a requirement checklist on each catch, and a Tournament Info screen. Turn it off for a plain catch log.

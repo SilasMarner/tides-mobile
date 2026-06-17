@@ -357,8 +357,14 @@ class _CatchEntryScreenState extends ConsumerState<CatchEntryScreen> {
           if (_photoPath != null) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: Image.file(File(_photoPath!),
-                  height: 160, width: double.infinity, fit: BoxFit.cover),
+              // contain (not cover) so the whole catch photo is visible —
+              // taller/portrait shots were getting cropped at the top.
+              child: Container(
+                width: double.infinity,
+                color: Colors.black26,
+                constraints: const BoxConstraints(maxHeight: 320),
+                child: Image.file(File(_photoPath!), fit: BoxFit.contain),
+              ),
             ),
             const SizedBox(height: 8),
             Row(
