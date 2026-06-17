@@ -128,6 +128,9 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 101) — Catch Log: multi-catch email attaches every photo
+- **Emailing multiple catches now attaches all the photos**, not just the first. The catch details all arrived, but only the first photo did: when the share intent is wrapped in the system chooser, Android only reliably grants the chosen email app read access to the first attachment, so the rest were silently dropped. We now explicitly grant read permission for every attachment to every app that can handle the send, and give each staged photo a unique filename so email apps can't de-duplicate them by name.
+
 ### v3.4.1 (build 100) — Catch Log: blank email fix
 - **Catch emails are no longer blank** — the email now arrives with the full catch details (species, catch/release times, measurements, sex, tag & DNA numbers, recapture, GPS, notes) and the photo attached. The previous `flutter_email_sender` path put a `mailto:` URI on the share intent, which made Gmail drop the body and attachment. Sending now goes through a native `ACTION_SEND` chooser with our own `FileProvider`, so the captain's email (`EXTRA_EMAIL`) still prefills and everything reaches the composer.
 

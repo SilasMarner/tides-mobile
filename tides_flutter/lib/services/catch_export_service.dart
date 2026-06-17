@@ -49,13 +49,15 @@ class CatchExportService {
     }
     await shareDir.create(recursive: true);
 
-    for (final e in entries) {
-      final src = e.photoPath;
+    for (var i = 0; i < entries.length; i++) {
+      final src = entries[i].photoPath;
       if (src == null) continue;
       final srcFile = File(src);
       if (!await srcFile.exists()) continue;
+      // Prefix with the index so two catches can never produce the same staged
+      // filename — some email apps de-duplicate attachments by display name.
       final name = src.split('/').last;
-      final dest = '${shareDir.path}/$name';
+      final dest = '${shareDir.path}/${i}_$name';
       await srcFile.copy(dest);
       paths.add(dest);
     }

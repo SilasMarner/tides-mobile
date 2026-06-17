@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
@@ -107,6 +108,22 @@ class MainActivity : FlutterActivity() {
             chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             if (uris.isNotEmpty()) {
                 chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                // The chooser's automatic grant propagation only reliably covers
+                // the first URI on some Android versions, so a multi-attachment
+                // target (e.g. Gmail) could read the first photo but silently drop
+                // the rest. Explicitly grant read access for every attachment to
+                // every app that can handle the send.
+                val resolvers = packageManager.queryIntentActivities(
+                    intent, PackageManager.MATCH_DEFAULT_ONLY
+                )
+                for (ri in resolvers) {
+                    val pkg = ri.activityInfo.packageName
+                    for (uri in uris) {
+                        grantUriPermission(
+                            pkg, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    }
+                }
             }
             startActivity(chooser)
             result.success(true)
