@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_email_sender/flutter_email_sender.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import '../data/tournaments.dart';
@@ -13,6 +13,11 @@ import '../utils/unit_format.dart';
 class CatchExportService {
   static final _dateFmt = DateFormat('MMM d, yyyy  h:mm a');
 
+  /// Native side fires a clean ACTION_SEND intent. We don't use
+  /// flutter_email_sender: its attachment path set `mailto:` data on the SEND
+  /// intent, which made Gmail drop the body + photo (blank email).
+  static const _channel = MethodChannel('com.mattbettinger.tides/email');
+
   static Future<void> emailCatches(
     List<CatchEntry> entries, {
     required String defaultRecipient,
@@ -23,22 +28,18 @@ class CatchExportService {
     final body = _buildBody(entries, metric);
     final attachments = await _stageAttachments(entries);
 
-    await FlutterEmailSender.send(Email(
-      subject: subject,
-      body: body,
-      recipients: defaultRecipient.isNotEmpty ? [defaultRecipient] : [],
-      attachmentPaths: attachments,
-      isHTML: false,
-    ));
+    await _channel.invokeMethod<void>('sendEmail', {
+      'subject': subject,
+      'body': body,
+      'recipients': defaultRecipient.isNotEmpty ? [defaultRecipient] : <String>[],
+      'attachments': attachments,
+    });
   }
 
   /// Catch photos live in the app documents dir (`app_flutter/catch_photos`),
-  /// which is NOT one of the roots flutter_email_sender's bundled FileProvider
-  /// exposes (it only maps files/, cache/ and external storage). Attaching a
-  /// path outside those roots makes FileProvider.getUriForFile throw, which
-  /// surfaced to users as "could not open an email app". Copy each photo into
-  /// the temporary (cache) dir first — that IS a configured FileProvider root —
-  /// and attach the copies.
+  /// which our FileProvider (res/xml/file_paths.xml) does not expose. Copy each
+  /// photo into the temporary (cache) dir first — that IS a configured provider
+  /// root — so the native side can share it as a content:// URI.
   static Future<List<String>> _stageAttachments(List<CatchEntry> entries) async {
     final paths = <String>[];
     final tmp = await getTemporaryDirectory();

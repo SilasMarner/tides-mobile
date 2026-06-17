@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Catch photos are staged into the temporary (cache) dir before emailing. -->
+    <cache-path name="cache" path="." />
+    <files-path name="files" path="." />
+    <external-cache-path name="ext_cache" path="." />
+    <external-path name="external" path="." />
+</paths>

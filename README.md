@@ -128,6 +128,9 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 100) — Catch Log: blank email fix
+- **Catch emails are no longer blank** — the email now arrives with the full catch details (species, catch/release times, measurements, sex, tag & DNA numbers, recapture, GPS, notes) and the photo attached. The previous `flutter_email_sender` path put a `mailto:` URI on the share intent, which made Gmail drop the body and attachment. Sending now goes through a native `ACTION_SEND` chooser with our own `FileProvider`, so the captain's email (`EXTRA_EMAIL`) still prefills and everything reaches the composer.
+
 ### v3.4.1 (build 99) — Catch Log fixes: email attachments & photo preview
 - **Email to captain now works with photos** — catch photos are staged into a shareable cache directory before sending, so attaching them no longer fails. (They live in the app documents dir, which isn't one of the email plugin's FileProvider roots; the old code mislabeled the resulting error as "could not open an email app".) The error message now distinguishes "no email app set up" from real send failures.
 - **Catch photo preview** — the entry screen now shows the whole photo (contain, not crop), so tall/portrait shots are no longer cut off at the top.
