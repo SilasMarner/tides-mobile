@@ -102,21 +102,32 @@ class CatchExportService {
 
   static Future<Uint8List> _buildPdf(
       List<CatchEntry> entries, bool metric) async {
-    final doc = pw.Document(title: 'Catch Log');
+    // Embed a Unicode TTF as the base theme font. The pdf package's default
+    // Helvetica is a Latin-1 Type1 font with no glyph for the em-dash (U+2014)
+    // we use in the title, so it printed a missing-glyph box; an embedded TTF
+    // also covers smart quotes / degree signs / etc. a captain might type.
+    final base = pw.Font.ttf(await rootBundle.load('assets/Roboto-Regular.ttf'));
+    final bold = pw.Font.ttf(await rootBundle.load('assets/Roboto-Bold.ttf'));
+    final doc = pw.Document(
+      title: 'Catch Log',
+      theme: pw.ThemeData.withFont(base: base, bold: bold),
+    );
 
     // Pre-decode every photo (async) before building the synchronous widget
     // tree. Decode through dart:ui so EXIF orientation is baked in (the pdf
     // package doesn't honour EXIF) and wide photos are downscaled to keep the
     // file small — the captain still gets the untouched originals as separate
-    // attachments.
-    final images = <int, pw.MemoryImage>{};
+    // attachments. We hand the pdf package raw RGBA (not a re-encoded PNG):
+    // Android's Impeller renderer doesn't support toByteData(png), which threw
+    // and silently dropped every photo from the report.
+    final images = <int, pw.RawImage>{};
     for (var i = 0; i < entries.length; i++) {
       final src = entries[i].photoPath;
       if (src == null) continue;
       final f = File(src);
       if (!await f.exists()) continue;
       try {
-        images[i] = pw.MemoryImage(await _pdfImageBytes(await f.readAsBytes()));
+        images[i] = await _pdfImage(await f.readAsBytes());
       } catch (_) {
         // A single unreadable photo shouldn't sink the whole report.
       }
@@ -148,7 +159,7 @@ class CatchExportService {
   }
 
   static pw.Widget _pdfCatch(
-      CatchEntry e, pw.MemoryImage? img, bool metric) {
+      CatchEntry e, pw.RawImage? img, bool metric) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
@@ -174,9 +185,12 @@ class CatchExportService {
     );
   }
 
-  /// Decode → (optionally downscale) → re-encode PNG via dart:ui so the embedded
-  /// image is upright (EXIF applied) and not full-camera-resolution.
-  static Future<Uint8List> _pdfImageBytes(Uint8List original) async {
+  /// Decode → (optionally downscale) → hand the pdf package raw RGBA via dart:ui
+  /// so the embedded image is upright (EXIF applied) and not full-camera
+  /// resolution. We use rawRgba rather than re-encoding to PNG because
+  /// `toByteData(format: png)` is unsupported under Android's Impeller renderer
+  /// (it threw, which dropped the photo from the report); rawRgba always works.
+  static Future<pw.RawImage> _pdfImage(Uint8List original) async {
     final probe = await ui.instantiateImageCodec(original);
     final probeFrame = await probe.getNextFrame();
     final w = probeFrame.image.width;
@@ -186,9 +200,13 @@ class CatchExportService {
         ? await ui.instantiateImageCodec(original, targetWidth: 1280)
         : await ui.instantiateImageCodec(original);
     final frame = await codec.getNextFrame();
-    final data = await frame.image.toByteData(format: ui.ImageByteFormat.png);
+    final rgba =
+        await frame.image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    final iw = frame.image.width;
+    final ih = frame.image.height;
     frame.image.dispose();
-    return data!.buffer.asUint8List();
+    return pw.RawImage(
+        bytes: rgba!.buffer.asUint8List(), width: iw, height: ih);
   }
 
   // ── Shared text ───────────────────────────────────────────────────────────

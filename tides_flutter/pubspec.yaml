@@ -1,7 +1,7 @@
 name: tides
 description: Live NOAA tide conditions for Android
 publish_to: 'none'
-version: 3.4.1+108
+version: 3.4.1+109
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -34,3 +34,9 @@ flutter:
   uses-material-design: true
   assets:
     - assets/nps_parks.json.gz
+    # Embedded in the Catch Log PDF so Unicode glyphs (em-dash, smart quotes,
+    # degree, etc. — anything a captain might type into notes) render instead of
+    # the built-in Helvetica's missing-glyph box. Loaded via rootBundle, not the
+    # Flutter `fonts:` section (the PDF needs the raw bytes, not the UI engine).
+    - assets/Roboto-Regular.ttf
+    - assets/Roboto-Bold.ttf

@@ -129,6 +129,10 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 109) — Catch Log PDF: fix the broken title glyph and missing photos
+- **The PDF report's title no longer shows a "missing glyph" box.** The header ("Catch Log — N catches") used an em-dash, which the PDF's built-in Helvetica font can't draw, so it printed a rectangle-with-an-X in the title area. The report now embeds a Unicode font (Roboto), so the em-dash — and any smart quotes, degree signs, or other punctuation a captain types into species/notes/location — renders correctly instead of a box.
+- **Catch photos now appear inside the PDF.** The report re-encoded each photo to PNG via `toByteData(png)`, which Android's Impeller renderer doesn't support — it threw, the error was swallowed, and every photo silently dropped out of the report (the loose photo attachments were unaffected). Photos are now handed to the PDF as raw RGBA (always supported), so each catch's picture shows under its details as intended. Verified end-to-end on-device: title em-dash renders and the photo embeds.
+
 ### v3.4.1 (build 108) — Data maps: drop the station pin
 - **Removed the station pin from the Wind and Water Temp maps.** With the new centre crosshair already marking the point you're reading, the separate station pin was redundant — and because it's anchored to a fixed location it drifted off-centre and slid off-screen as you panned, then snapped back on recenter, reading as a "white pin" appearing and disappearing at random. The crosshair (⌖) at screen centre is now the single, stable read marker on both maps.
 
