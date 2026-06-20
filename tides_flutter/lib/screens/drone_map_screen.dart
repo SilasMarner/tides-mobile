@@ -8,6 +8,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../services/location_service.dart';
 import '../theme.dart';
+import '../widgets/map_recenter_button.dart';
 
 enum _AirspaceStatus { loading, clear, controlled, restricted, error }
 
@@ -49,7 +50,18 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
 
   List<_AirspaceZone> _zones = [];
   bool _zonesLoading = false;
-  bool _cardVisible = true;
+
+  // User-controlled collapse of the bottom status card. Toggled ONLY by tapping
+  // the card's handle / the collapsed bar — never by map gestures. The old
+  // auto-hide-on-pan behaviour is what made the card appear to bounce; collapse
+  // here is purely user-driven, so it can never bounce. Defaults to expanded so
+  // the airspace status is always visible when the safety screen first opens.
+  bool _cardCollapsed = false;
+
+  // Shows the recenter button once the user pans the GPS location away from the
+  // centre of the viewport. The location pin stays anchored where it is; this
+  // just offers a one-tap way back. Driven only by panning, never auto-moves.
+  bool _showRecenter = false;
 
   // NPS boundaries loaded from bundled asset (nps_parks.json.gz).
   // These never change between pans — no API call needed for NPS overlay.
@@ -533,13 +545,18 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
 
   void _onPositionChanged(MapCamera camera, bool hasGesture) {
     if (!hasGesture) return;
-    if (_cardVisible) setState(() => _cardVisible = false);
+    // Toggle the recenter button when the GPS pin drifts off-centre. setState
+    // only on a flip so we don't rebuild every pan frame.
+    if (_lat != null && _lon != null) {
+      final off = MapRecenterButton.offCenter(camera, LatLng(_lat!, _lon!));
+      if (off != _showRecenter) setState(() => _showRecenter = off);
+    }
+    // Refresh airspace zones for the new viewport once panning settles. The
+    // status card stays put — it used to slide away on every pan and back 700ms
+    // later, which read as the card bouncing up and down.
     _viewportDebounce?.cancel();
     _viewportDebounce = Timer(const Duration(milliseconds: 700), () {
-      if (mounted) {
-        setState(() => _cardVisible = true);
-        _fetchViewportZones(camera.visibleBounds);
-      }
+      if (mounted) _fetchViewportZones(camera.visibleBounds);
     });
   }
 
@@ -740,41 +757,36 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
                 ),
               ),
             ),
+          // Only while the card is collapsed — when expanded it covers the
+          // lower map and carries its own "My Location" action.
+          MapRecenterButton(
+            visible: _showRecenter && _cardCollapsed && _lat != null,
+            bottom: 96,
+            onPressed: () {
+              if (_lat != null && _lon != null) {
+                _mapController.move(LatLng(_lat!, _lon!), 11.0);
+                setState(() => _showRecenter = false);
+              }
+            },
+          ),
           Positioned(
             left: 0, right: 0, bottom: 0,
-            child: AnimatedSlide(
-              offset: _cardVisible ? Offset.zero : const Offset(0, 1),
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeInOut,
-              child: _StatusCard(
-                status: _displayStatus,
-                headline: _displayHeadline,
-                detail: _displayDetail,
-                isTappedLocation: _tappedPoint != null,
-                onRetry: _load,
-                onClearTap: _clearTap,
-              ),
-            ),
-          ),
-          if (!_cardVisible)
-            Positioned(
-              left: 0, right: 0, bottom: 0,
-              child: GestureDetector(
-                onTap: () => setState(() => _cardVisible = true),
-                child: Container(
-                  alignment: Alignment.center,
-                  padding: const EdgeInsets.symmetric(vertical: 7),
-                  decoration: BoxDecoration(
-                    color: kNavy.withValues(alpha: 0.80),
-                    borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(14)),
-                    border: Border.all(color: Colors.white10),
+            child: _cardCollapsed
+                ? _CollapsedBar(
+                    status: _displayStatus,
+                    headline: _displayHeadline,
+                    onExpand: () => setState(() => _cardCollapsed = false),
+                  )
+                : _StatusCard(
+                    status: _displayStatus,
+                    headline: _displayHeadline,
+                    detail: _displayDetail,
+                    isTappedLocation: _tappedPoint != null,
+                    onRetry: _load,
+                    onClearTap: _clearTap,
+                    onCollapse: () => setState(() => _cardCollapsed = true),
                   ),
-                  child: const Icon(Icons.expand_less,
-                      color: Colors.white38, size: 22),
-                ),
-              ),
-            ),
+          ),
         ],
       ),
     );
@@ -838,6 +850,7 @@ class _StatusCard extends StatelessWidget {
   final bool isTappedLocation;
   final VoidCallback onRetry;
   final VoidCallback onClearTap;
+  final VoidCallback onCollapse;
 
   const _StatusCard({
     required this.status,
@@ -846,6 +859,7 @@ class _StatusCard extends StatelessWidget {
     required this.isTappedLocation,
     required this.onRetry,
     required this.onClearTap,
+    required this.onCollapse,
   });
 
   @override
@@ -862,7 +876,7 @@ class _StatusCard extends StatelessWidget {
       top: false,
       child: Container(
         margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
         decoration: BoxDecoration(
           color: kNavyLight,
           borderRadius: BorderRadius.circular(12),
@@ -873,6 +887,33 @@ class _StatusCard extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Tap (or drag down on) the handle to collapse the card to a thin bar.
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onCollapse,
+              onVerticalDragEnd: (d) {
+                if ((d.primaryVelocity ?? 0) > 0) onCollapse();
+              },
+              child: Container(
+                width: double.infinity,
+                alignment: Alignment.center,
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 36, height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const Icon(Icons.expand_more,
+                        color: Colors.white38, size: 18),
+                  ],
+                ),
+              ),
+            ),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(children: const [
@@ -989,6 +1030,83 @@ class _StatusCard extends StatelessWidget {
               style: TextStyle(color: Colors.white30, fontSize: 10, height: 1.4),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The collapsed form of [_StatusCard]: a thin bar pinned to the bottom that
+/// still shows the airspace status colour + headline at a glance. Tapping it (or
+/// dragging up) re-expands the full card. Collapse/expand is entirely
+/// user-driven — nothing here reacts to map panning, so it can never bounce.
+class _CollapsedBar extends StatelessWidget {
+  final _AirspaceStatus status;
+  final String headline;
+  final VoidCallback onExpand;
+
+  const _CollapsedBar({
+    required this.status,
+    required this.headline,
+    required this.onExpand,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final (borderColor, statusIcon, textColor) = switch (status) {
+      _AirspaceStatus.loading    => (Colors.white24,          Icons.hourglass_empty, Colors.white70),
+      _AirspaceStatus.clear      => (const Color(0xFF27AE60), Icons.check_circle,    const Color(0xFF2ECC71)),
+      _AirspaceStatus.controlled => (const Color(0xFFE67E22), Icons.warning_amber,   const Color(0xFFF39C12)),
+      _AirspaceStatus.restricted => (const Color(0xFFE74C3C), Icons.block,           const Color(0xFFE74C3C)),
+      _AirspaceStatus.error      => (Colors.white24,          Icons.wifi_off,        Colors.white54),
+    };
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onExpand,
+          onVerticalDragEnd: (d) {
+            if ((d.primaryVelocity ?? 0) < 0) onExpand();
+          },
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+            decoration: BoxDecoration(
+              color: kNavyLight,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                  color: borderColor.withValues(alpha: 0.65), width: 1.5),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.expand_less, color: Colors.white38, size: 18),
+                Row(
+                  children: [
+                    Icon(statusIcon, color: textColor, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        headline,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: textColor,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text('Tap to expand',
+                        style:
+                            TextStyle(color: Colors.white30, fontSize: 10)),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

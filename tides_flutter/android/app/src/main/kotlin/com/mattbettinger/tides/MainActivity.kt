@@ -89,7 +89,9 @@ class MainActivity : FlutterActivity() {
             val intent = Intent(
                 if (uris.size > 1) Intent.ACTION_SEND_MULTIPLE else Intent.ACTION_SEND
             )
-            intent.type = if (uris.isEmpty()) "text/plain" else "image/*"
+            // Attachments are a mix now (a PDF report + the original photos), so
+            // a generic type is correct; "image/*" would mis-describe the PDF.
+            intent.type = if (uris.isEmpty()) "text/plain" else "*/*"
 
             if (!recipients.isNullOrEmpty()) {
                 intent.putExtra(Intent.EXTRA_EMAIL, recipients.toTypedArray())

@@ -211,11 +211,18 @@ class _TideChartState extends State<TideChart> {
                     sideTitles: SideTitles(
                       showTitles: true,
                       reservedSize: 32,
-                      getTitlesWidget: (v, _) => Text(
-                        v.toStringAsFixed(widget.metric ? 1 : 0),
-                        style:
-                            const TextStyle(color: Colors.white38, fontSize: 10),
-                      ),
+                      getTitlesWidget: (v, _) {
+                        final digits = widget.metric ? 1 : 0;
+                        var s = v.toStringAsFixed(digits);
+                        // A small negative value (e.g. -0.04 ft) rounds to a
+                        // signed zero ("-0"); show a plain "0" instead.
+                        if (double.parse(s) == 0) s = 0.toStringAsFixed(digits);
+                        return Text(
+                          s,
+                          style: const TextStyle(
+                              color: Colors.white38, fontSize: 10),
+                        );
+                      },
                     ),
                   ),
                   bottomTitles: AxisTitles(

@@ -302,7 +302,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                             child: Text('No stations found.',
                                 style: TextStyle(color: Colors.white54)))
                         : _StationList(
-                            label: 'Results for "${_ctrl.text}"',
+                            label: _ctrl.text,
                             stations: results,
                             onTap: _openStation,
                             onLongPress: _toggleFavorite,

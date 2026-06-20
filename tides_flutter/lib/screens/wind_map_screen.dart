@@ -11,6 +11,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../providers/units_provider.dart';
 import '../theme.dart';
+import '../widgets/map_recenter_button.dart';
 
 // ── Color ramps (opacity baked in) ───────────────────────────────────────────
 // Piecewise-linear ramps: values lerp between stops, so the wash renders as one
@@ -1100,6 +1101,9 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   String? _error;
   LatLng? _probe; // point the user tapped to read a value
   Timer? _moveDebounce;
+  // Recenter button shows once the station pin pans off-centre; the pin stays
+  // anchored, this just snaps the camera back. Toggled only by panning.
+  bool _showRecenter = false;
   // Radar animation (rain layer): NOAA WMS frames (past) + forecast overlays.
   List<_RadarFrame> _radarFrames = [];
   int _radarIndex = 0;
@@ -1183,6 +1187,9 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   // the visible area — like Windy, the data follows the map.
   void _onPositionChanged(MapCamera camera, bool hasGesture) {
     if (!hasGesture) return;
+    final off =
+        MapRecenterButton.offCenter(camera, LatLng(widget.lat, widget.lon));
+    if (off != _showRecenter) setState(() => _showRecenter = off);
     final cur = _kLayers[_currentLayer]!;
     _moveDebounce?.cancel();
     _moveDebounce = Timer(const Duration(milliseconds: 350), () {
@@ -2166,6 +2173,15 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                 ),
               ),
             ),
+          MapRecenterButton(
+            visible: _showRecenter,
+            bottom: 120,
+            onPressed: () {
+              _mapController.move(
+                  LatLng(widget.lat, widget.lon), _initialZoom(_currentLayer));
+              setState(() => _showRecenter = false);
+            },
+          ),
         ],
       ),
     );

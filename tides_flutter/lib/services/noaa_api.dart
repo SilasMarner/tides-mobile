@@ -319,9 +319,13 @@ String beaufort(double mph) {
 }
 
 String fmtHhmm(double decimalHours) {
-  final h = decimalHours % 24;
-  final hh = h.floor();
-  final mm = ((h - hh) * 60).round();
+  // Round to whole minutes FIRST, then split into h/m. Rounding the minutes on
+  // their own can carry to 60 (e.g. 6.999h → "6:60"); collapsing to a single
+  // minute count and wrapping a full day keeps the carry correct (→ "7:00",
+  // and 23:59.7 → "12:00 AM").
+  final mins = ((decimalHours % 24) * 60).round() % (24 * 60);
+  final hh = mins ~/ 60;
+  final mm = mins % 60;
   final hh12 = hh % 12 == 0 ? 12 : hh % 12;
   final suffix = hh < 12 ? 'AM' : 'PM';
   return '$hh12:${mm.toString().padLeft(2, '0')} $suffix';
@@ -433,17 +437,61 @@ SolunarInfo solunarTimes(DateTime d, double lon, double utcOff) {
   return SolunarInfo(major1: upper, major2: lower, minor1: minor1, minor2: minor2);
 }
 
-double _centralUtcOffset(DateTime d) {
+/// A station's time zone, read once from NOAA station metadata and cached for
+/// the process. [corr] is the STANDARD-time GMT offset (no DST); [abbr] is
+/// NOAA's zone code (CST, EST, HAST, …), used to tell whether the station
+/// shifts for daylight saving.
+class _StationTz {
+  final double corr;
+  final String abbr;
+  const _StationTz(this.corr, this.abbr);
+}
+
+final Map<String, _StationTz> _tzCache = {};
+
+/// Zones (by NOAA abbreviation) that do NOT observe daylight saving. Coastal US
+/// tide stations all shift for DST except Hawaii and the non-DST island
+/// territories (Atlantic/Samoa/Chamorro); Arizona has no coastal stations.
+const _noDstZones = {'HST', 'HAST', 'AST', 'SST', 'ChST', 'GST'};
+
+/// Fetch (and cache) the station's time zone from NOAA's metadata API. Falls
+/// back to a longitude estimate of the standard offset if the call fails, so a
+/// network hiccup lands in the right zone rather than forcing Central time.
+Future<_StationTz> _stationTz(Station station) async {
+  final cached = _tzCache[station.id];
+  if (cached != null) return cached;
+  try {
+    final url =
+        'https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/'
+        '${station.id}.json';
+    final data = await apiGet(url);
+    final s = (data?['stations'] as List?)?.first as Map<String, dynamic>?;
+    final corr = (s?['timezonecorr'] as num?)?.toDouble();
+    if (corr != null) {
+      final tz = _StationTz(corr, (s?['timezone'] as String?) ?? '');
+      _tzCache[station.id] = tz;
+      return tz;
+    }
+  } catch (_) {}
+  return _StationTz((station.lon / 15).roundToDouble(), '');
+}
+
+/// The local offset NOAA uses for `lst_ldt`: the station's standard offset plus
+/// an hour during the US DST window for zones that observe it.
+double _localUtcOffset(_StationTz tz, DateTime d) {
+  final observesDst = !_noDstZones.contains(tz.abbr);
+  return tz.corr + (observesDst && _isUsDst(d) ? 1.0 : 0.0);
+}
+
+bool _isUsDst(DateTime d) {
   final y = d.year;
   final dstStart = List.generate(7, (i) => DateTime(y, 3, 8 + i))
       .firstWhere((dt) => dt.weekday == DateTime.sunday);
   final dstEnd = List.generate(7, (i) => DateTime(y, 11, 1 + i))
       .firstWhere((dt) => dt.weekday == DateTime.sunday);
   final dateOnly = DateTime(d.year, d.month, d.day);
-  return (dateOnly.isAfter(dstStart.subtract(const Duration(days: 1))) &&
-          dateOnly.isBefore(dstEnd))
-      ? -5.0
-      : -6.0;
+  return dateOnly.isAfter(dstStart.subtract(const Duration(days: 1))) &&
+      dateOnly.isBefore(dstEnd);
 }
 
 // Day-level fishing rating for a future date (no real-time wind or clock).
@@ -1179,7 +1227,6 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
     return cached.data;
   }
   final dateStr = _dateFmt.format(dateOnly);
-  final utcOff = _centralUtcOffset(dateOnly);
   final id = station.id;
   final lat = station.lat;
   final lon = station.lon;
@@ -1196,6 +1243,7 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
     _fetchNws(lat, lon),                       // 8
     _fetchObs(id, 'salinity'),                 // 9
     fetchOpenMeteoWaves(lat, lon, day: dateOnly), // 10
+    _stationTz(station),                       // 11
   ]);
 
   final hourlyList = results[0] as List<TidePrediction>;
@@ -1203,6 +1251,11 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
   final pressureTrend = results[5] as int;
   final nwsRaw = results[8] as Map<String, dynamic>?;
   final waves = results[10] as WaveData?;
+  // Sun/solunar are computed locally, so they need the station's OWN local
+  // offset (NOAA serves tide times in lst_ldt). Using a fixed Central offset
+  // put sunrise/sunset hours off by the timezone difference everywhere outside
+  // the Gulf (e.g. Honolulu was ~5 h wrong).
+  final utcOff = _localUtcOffset(results[11] as _StationTz, dateOnly);
 
   // Build hourly map; fall back to cosine interpolation from hi/lo when the
   // station is a subordinate that only publishes hi/lo predictions.

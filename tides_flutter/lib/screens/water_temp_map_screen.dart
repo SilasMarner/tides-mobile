@@ -8,6 +8,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../providers/units_provider.dart';
 import '../theme.dart';
+import '../widgets/map_recenter_button.dart';
 
 // ── Water Temp map ────────────────────────────────────────────────────────────
 //
@@ -165,6 +166,10 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
   String? _probeText;
   int _probeSeq = 0; // ignore stale responses after a newer tap
 
+  // Recenter button shows once the station pin pans off-centre. The pin stays
+  // anchored; this just snaps the camera back. Toggled only by panning.
+  bool _showRecenter = false;
+
   // erdMH1 latitude storage order isn't documented like MUR's (ascending,
   // verified); learned empirically — flipped once if the first request 500s.
   static bool _kd490LatAscending = true;
@@ -214,6 +219,9 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
   // Re-fetch when the user pans/zooms so the overlay follows the map.
   void _onPositionChanged(MapCamera camera, bool hasGesture) {
     if (!hasGesture) return;
+    final off =
+        MapRecenterButton.offCenter(camera, LatLng(widget.lat, widget.lon));
+    if (off != _showRecenter) setState(() => _showRecenter = off);
     _moveDebounce?.cancel();
     _moveDebounce = Timer(const Duration(milliseconds: 350), () {
       if (!mounted) return;
@@ -711,6 +719,14 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
               ),
             ),
           if (!_loading && _error == null) _legend(def, metric),
+          MapRecenterButton(
+            visible: _showRecenter,
+            bottom: 104,
+            onPressed: () {
+              _mapController.move(LatLng(widget.lat, widget.lon), 7);
+              setState(() => _showRecenter = false);
+            },
+          ),
         ],
       ),
     );

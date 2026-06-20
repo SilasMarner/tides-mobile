@@ -191,6 +191,7 @@ class UserGuideScreen extends StatelessWidget {
         '• Teal — State Park: most states prohibit drone use in state parks, but rules vary. The app flags state parks so you can check that state\'s specific regulations before flying.',
         '• Purple — USFWS National Wildlife Refuge: drones require a Special Use Permit on most refuges, and many explicitly prohibit them. Contact the refuge manager before flying.',
         'Tap anywhere on the map to check airspace at that exact point. A cyan pin drops on the tapped spot and the status card shows the combined result across all four sources. Tap "My Location" to return to your GPS status.',
+        'Want more of the map? Collapse the status card using its handle at the top (or flick it down) — it shrinks to a thin bar that still shows the airspace status at a glance. Tap the bar (or flick up) to bring the full card back. The card never hides itself, so it can\'t get in your way unexpectedly.',
         'National park and state park data comes from the USGS Protected Areas Database (PAD-US) — the authoritative federal inventory of all protected lands in the US, covering NPS units and state parks nationwide. This screen is for quick reference only — always confirm with the FAA NOTAM system and local park rules before flying.',
       ],
     ),

@@ -70,6 +70,7 @@ Colored overlays cover the entire visible map and update as you pan and zoom:
 | Purple | **USFWS National Wildlife Refuge** — drones require a Special Use Permit on most refuges and are explicitly prohibited on many. Contact the refuge manager before flying. |
 
 - **Tap anywhere on the map** to check airspace at that exact point — a cyan pin drops and the status card shows the combined result across all four sources. Tap **My Location** to return to your GPS status.
+- **Collapse the status card** with its handle (or a downward flick) to get a full-screen look at the map; it shrinks to a thin bar that still shows the airspace status at a glance. Tap the bar to bring it back. The card never hides itself — collapsing is entirely up to you.
 - National park and state park data comes from the **USGS Protected Areas Database (PAD-US)** — the authoritative federal inventory covering all NPS units and state parks nationwide.
 - This screen is for quick reference only — always confirm with the FAA NOTAM system and local land-manager rules before flying.
 
@@ -127,6 +128,17 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 ---
 
 ## Changelog
+
+### v3.4.1 (build 105) — Pre-production QA: correct sun/solunar times everywhere + map polish
+- **Sunrise, sunset and solunar times are now correct outside the Gulf Coast.** They were being computed against a fixed US Central offset, so for any station in another time zone they were off by the time difference (Honolulu showed sunrise at 10:54 AM instead of ~5:54 AM) while the tide times — which come straight from NOAA in the station's own local time — were right, an obvious mismatch. Each station's actual time zone is now read from NOAA station metadata (with daylight saving applied where the zone observes it) and used for all sun/moon/solunar math.
+- **No more impossible clock times.** A rounding edge could print a time like `6:60 AM`; minutes now carry correctly to the next hour (`7:00 AM`).
+- **Recenter button on the maps.** When you pan the Wind, Water Temp or Before-You-Fly map away from your station, a one-tap crosshair button appears to snap the view back; the anchored station pin stays put while you explore.
+- **Email a catch report to the captain.** Selecting catches and emailing now sends a tidy PDF report (each catch's details followed by its photo, in order) *and* the untouched original photo files, so the captain can both read the log and re-upload the images.
+- Minor polish: the search results header no longer double-prints "Results for …", and the tide chart's axis no longer shows a `-0` label.
+
+### v3.4.1 (build 104) — Before You Fly: collapsible status card (no more bounce)
+- **The status card no longer bounces.** It used to slide away on every map pan and slide back ~700ms later, which read as the card jittering up and down while you explored the map. The card now stays put while you pan; panning only refreshes the airspace overlay, as before.
+- **You can collapse the card yourself.** A drag-handle (or a downward flick) shrinks the card to a thin bar that still shows the airspace status colour + headline at a glance, freeing the map for a full-screen look. Tap the bar (or flick up) to re-expand. Collapse/expand is entirely user-driven and never automatic — so it can't bounce. The card defaults to expanded each time you open the screen, so the airspace status is always visible up front.
 
 ### v3.4.1 (build 103) — Catch Log: multi-catch email photos, the real fix
 - **Emailing multiple catches now reliably attaches every photo in Gmail.** Build 101's attempt — hand-building the intent's `ClipData` and manually granting read permission to each resolver — actually made it worse (Gmail dropped *all* photos instead of just the extra ones). The root cause: setting `ClipData` ourselves *suppresses* Android's `migrateExtraStreamToClipData()`, the framework step that moves every `EXTRA_STREAM` URI into the clip and grants read access to all of them — which is exactly the data Gmail's composer reads. We now do the minimal, standard thing: set `EXTRA_STREAM` + `FLAG_GRANT_READ_URI_PERMISSION` and let the OS migrate and grant. Verified on-device that a multi-photo share now delivers and grants every attachment.
