@@ -2036,24 +2036,9 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                     field: _field,
                     colorFn: def.colorFn,
                     skipEmpty: def.isMarine),
-              // Station pin — always visible on every layer.
-              MarkerLayer(markers: [
-                Marker(
-                  point: LatLng(widget.lat, widget.lon),
-                  width: 36,
-                  height: 44,
-                  alignment: Alignment.bottomCenter,
-                  child: const Icon(
-                    Icons.location_on,
-                    size: 36,
-                    color: kCyan,
-                    shadows: [
-                      Shadow(color: Colors.black54, blurRadius: 6),
-                      Shadow(color: Colors.white,   blurRadius: 2),
-                    ],
-                  ),
-                ),
-              ]),
+              // Station pin removed: the centre crosshair now marks the read
+              // point, so a separate (and geographically-anchored) pin only
+              // added clutter and drifted off-centre while panning.
               RichAttributionWidget(
                 attributions: [
                   const TextSourceAttribution('© CARTO'),
