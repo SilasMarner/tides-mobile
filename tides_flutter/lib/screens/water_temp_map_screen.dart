@@ -161,7 +161,6 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
     connectTimeout: const Duration(seconds: 10),
     receiveTimeout: const Duration(seconds: 15),
   ));
-  LatLng? _probePoint;
   bool _probeLoading = false;
   String? _probeText;
   int _probeSeq = 0; // ignore stale responses after a newer tap
@@ -195,6 +194,8 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
       // Either confirms the prefetched URL (early-return) or silently updates
       // to the exact screen bounds in the background (_refreshing path).
       _fetchOverlay();
+      // Seed the centre-reticle readout for the opening view (centre == station).
+      _probe(LatLng(widget.lat, widget.lon));
     });
   }
 
@@ -225,6 +226,9 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
     _moveDebounce?.cancel();
     _moveDebounce = Timer(const Duration(milliseconds: 350), () {
       if (!mounted) return;
+      // Read the value under the centre reticle once the pan settles. Debounced
+      // (not per-frame) because each read is a server round-trip to ERDDAP.
+      _probe(_mapController.camera.center);
       // Skip if the current overlay already covers the new request area —
       // no API chatter for small pans within the already-loaded region.
       if (_overlayBounds != null) {
@@ -364,13 +368,14 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
       _clearProbe();
     });
     _fetchOverlay(layer: l);
+    // Re-read the centre point for the newly selected layer.
+    _probe(_mapController.camera.center);
   }
 
-  // ── Tap probe ────────────────────────────────────────────────────────────
+  // ── Centre-reticle probe ───────────────────────────────────────────────────
 
   void _clearProbe() {
     _probeSeq++;
-    _probePoint = null;
     _probeLoading = false;
     _probeText = null;
   }
@@ -380,7 +385,6 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
     final def = _kLayers[l]!;
     final seq = ++_probeSeq;
     setState(() {
-      _probePoint = p;
       _probeLoading = true;
       _probeText = null;
     });
@@ -516,7 +520,6 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
                     InteractiveFlag.doubleTapZoom,
               ),
               onPositionChanged: _onPositionChanged,
-              onTap: (_, p) => _probe(p),
             ),
             children: [
               TileLayer(
@@ -557,19 +560,6 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
                     ],
                   ),
                 ),
-                if (_probePoint != null)
-                  Marker(
-                    point: _probePoint!,
-                    width: 22,
-                    height: 22,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: kCyan.withValues(alpha: 0.4),
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                    ),
-                  ),
               ]),
               const RichAttributionWidget(
                 attributions: [
@@ -614,69 +604,53 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
                 ),
               ),
             ),
-          // Tap hint — visible until the user taps for the first time.
-          if (_probePoint == null && _overlayUrl != null &&
-              !_loading && _error == null)
+          // Fixed centre reticle — the readout reflects this crosshair.
+          if (_overlayUrl != null && !_loading && _error == null)
+            const IgnorePointer(
+              child: Center(
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: CustomPaint(painter: _CrosshairPainter()),
+                ),
+              ),
+            ),
+          // Centre-point reading — refreshes after each pan settles.
+          if (_overlayUrl != null && !_loading && _error == null)
             Positioned(
               top: 46,
               left: 0,
               right: 0,
               child: Center(
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.55),
+                    color: Colors.black.withValues(alpha: 0.75),
                     borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: kCyan, width: 1),
                   ),
-                  child: const Text('Tap the map to read a value',
-                      style: TextStyle(color: Colors.white70, fontSize: 11)),
-                ),
-              ),
-            ),
-          // Probe reading — tap anywhere on the water to populate.
-          if (_probePoint != null && !_loading && _error == null)
-            Positioned(
-              top: 46,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: GestureDetector(
-                  onTap: () => setState(_clearProbe),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.75),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: kCyan, width: 1),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (_probeLoading) ...[
-                          const SizedBox(
-                            width: 10,
-                            height: 10,
-                            child: CircularProgressIndicator(
-                                color: kCyan, strokeWidth: 2),
-                          ),
-                          const SizedBox(width: 6),
-                          const Text('Reading…',
-                              style: TextStyle(
-                                  color: Colors.white70, fontSize: 12)),
-                        ] else ...[
-                          Flexible(
-                            child: Text(_probeText ?? '',
-                                style: const TextStyle(
-                                    color: Colors.white, fontSize: 12)),
-                          ),
-                          const SizedBox(width: 6),
-                          const Icon(Icons.close,
-                              color: Colors.white38, size: 13),
-                        ],
-                      ],
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_probeLoading || _probeText == null) ...[
+                        const SizedBox(
+                          width: 10,
+                          height: 10,
+                          child: CircularProgressIndicator(
+                              color: kCyan, strokeWidth: 2),
+                        ),
+                        const SizedBox(width: 6),
+                        const Text('Reading…',
+                            style: TextStyle(
+                                color: Colors.white70, fontSize: 12)),
+                      ] else
+                        Flexible(
+                          child: Text(_probeText!,
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 12)),
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -905,4 +879,42 @@ class _LayerPicker extends StatelessWidget {
           ],
         ),
       );
+}
+
+// Fixed centre crosshair drawn over the map. White lines over a dark halo for
+// contrast on the light basemap; a small cyan dot marks the exact point read.
+class _CrosshairPainter extends CustomPainter {
+  const _CrosshairPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    const gap = 5.0; // clear window around the centre dot
+    const arm = 13.0; // length of each crosshair arm from centre
+
+    void drawArms(Color color, double width) {
+      final p = Paint()
+        ..color = color
+        ..strokeWidth = width
+        ..strokeCap = StrokeCap.round;
+      canvas.drawLine(Offset(c.dx - arm, c.dy), Offset(c.dx - gap, c.dy), p);
+      canvas.drawLine(Offset(c.dx + gap, c.dy), Offset(c.dx + arm, c.dy), p);
+      canvas.drawLine(Offset(c.dx, c.dy - arm), Offset(c.dx, c.dy - gap), p);
+      canvas.drawLine(Offset(c.dx, c.dy + gap), Offset(c.dx, c.dy + arm), p);
+    }
+
+    drawArms(Colors.black54, 4); // halo for contrast
+    drawArms(Colors.white, 2); // bright crosshair
+    canvas.drawCircle(c, 2.5, Paint()..color = kCyan);
+    canvas.drawCircle(
+        c,
+        2.5,
+        Paint()
+          ..color = Colors.white
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1);
+  }
+
+  @override
+  bool shouldRepaint(covariant _CrosshairPainter oldDelegate) => false;
 }

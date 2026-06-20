@@ -1099,7 +1099,13 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   ui.Image? _gradientImage;
   bool _loading = true;
   String? _error;
-  LatLng? _probe; // point the user tapped to read a value
+  // The map centre, tracked live as you pan — the centre reticle reads the
+  // value here (Windy-style), so there's no tap-to-place probe dot anymore.
+  LatLng? _probe;
+  // The point the readout samples: the live centre, falling back to the station
+  // before the first camera frame / right after a layer switch (map is recentred
+  // on the station then, so the station IS the centre).
+  LatLng get _readPoint => _probe ?? LatLng(widget.lat, widget.lon);
   Timer? _moveDebounce;
   // Recenter button shows once the station pin pans off-centre; the pin stays
   // anchored, this just snaps the camera back. Toggled only by panning.
@@ -1186,6 +1192,11 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   // Re-fetch (quietly) when the user pans/zooms so the overlay always covers
   // the visible area — like Windy, the data follows the map.
   void _onPositionChanged(MapCamera camera, bool hasGesture) {
+    // Live centre readout: keep _probe pinned to the map centre so the reticle's
+    // value updates as you pan. Cheap — it just resamples the in-memory grid.
+    if (_field != null && camera.center != _probe) {
+      setState(() => _probe = camera.center);
+    }
     if (!hasGesture) return;
     final off =
         MapRecenterButton.offCenter(camera, LatLng(widget.lat, widget.lon));
@@ -1947,9 +1958,6 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                     InteractiveFlag.pinchZoom |
                     InteractiveFlag.doubleTapZoom,
               ),
-              onTap: (_, latLng) {
-                if (_field != null) setState(() => _probe = latLng);
-              },
               onPositionChanged: _onPositionChanged,
             ),
             children: [
@@ -2046,21 +2054,6 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                   ),
                 ),
               ]),
-              if (_probe != null)
-                MarkerLayer(markers: [
-                  Marker(
-                    point: _probe!,
-                    width: 22,
-                    height: 22,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: kCyan.withValues(alpha: 0.4),
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                    ),
-                  ),
-                ]),
               RichAttributionWidget(
                 attributions: [
                   const TextSourceAttribution('© CARTO'),
@@ -2152,27 +2145,20 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
             _seasTimeline(),
           if (def.isRadar && _hourlyStrip.isNotEmpty && !_loading && _error == null)
             _hourlyStripWidget(metric),
-          if (_probe != null && _field != null && !_loading && _error == null)
-            _probeReadout(def, metric)
-          else if (_probe == null && _field != null && !_loading &&
-              _error == null && !def.isRadar && !def.isSeas)
-            Positioned(
-              top: 12,
-              left: 0,
-              right: 0,
+          // Fixed centre reticle — the readout always reflects this crosshair.
+          if (_field != null && !_loading && _error == null &&
+              !def.isRadar && !def.isSatellite)
+            const IgnorePointer(
               child: Center(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.55),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Text('Tap the map to read a value',
-                      style: TextStyle(color: Colors.white70, fontSize: 11)),
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: CustomPaint(painter: _CrosshairPainter()),
                 ),
               ),
             ),
+          if (_field != null && !_loading && _error == null)
+            _probeReadout(def, metric),
           MapRecenterButton(
             visible: _showRecenter,
             bottom: 120,
@@ -2478,7 +2464,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   }
 
   Widget _probeReadout(_LayerDef def, bool metric) {
-    final sample = _field!.pointAt(_probe!.latitude, _probe!.longitude);
+    final sample = _field!.pointAt(_readPoint.latitude, _readPoint.longitude);
     final text = _readoutText(def, sample, metric);
     return Positioned(
       // Drop below the Seas forecast timeline, which occupies the top strip.
@@ -2487,7 +2473,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
       right: 12,
       child: Center(
         child: Container(
-          padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
             color: Colors.black.withValues(alpha: 0.78),
             borderRadius: BorderRadius.circular(20),
@@ -2503,15 +2489,6 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                       color: Colors.white,
                       fontSize: 13,
                       fontWeight: FontWeight.w600)),
-              const SizedBox(width: 2),
-              InkWell(
-                onTap: () => setState(() => _probe = null),
-                borderRadius: BorderRadius.circular(12),
-                child: const Padding(
-                  padding: EdgeInsets.all(4),
-                  child: Icon(Icons.close, color: Colors.white54, size: 16),
-                ),
-              ),
             ],
           ),
         ),
@@ -2532,7 +2509,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
       case _Layer.swell:
       case _Layer.seas:
         final cov =
-            _field!.coverageAt(_probe!.latitude, _probe!.longitude);
+            _field!.coverageAt(_readPoint.latitude, _readPoint.longitude);
         if (cov < 0.4) return 'Land — no wave data';
         // Open-Meteo marine grids store 0 at land points; un-dilute the
         // near-coast bilinear the same way the wash render does.
@@ -2717,4 +2694,43 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
           ),
         ),
       );
+}
+
+// Fixed centre crosshair drawn over the map. White lines over a dark halo so it
+// reads on both the light and (satellite) dark basemaps; a small cyan dot marks
+// the exact sample point that drives the readout panel.
+class _CrosshairPainter extends CustomPainter {
+  const _CrosshairPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    const gap = 5.0; // clear window around the centre dot
+    const arm = 13.0; // length of each crosshair arm from centre
+
+    void drawArms(Color color, double width) {
+      final p = Paint()
+        ..color = color
+        ..strokeWidth = width
+        ..strokeCap = StrokeCap.round;
+      canvas.drawLine(Offset(c.dx - arm, c.dy), Offset(c.dx - gap, c.dy), p);
+      canvas.drawLine(Offset(c.dx + gap, c.dy), Offset(c.dx + arm, c.dy), p);
+      canvas.drawLine(Offset(c.dx, c.dy - arm), Offset(c.dx, c.dy - gap), p);
+      canvas.drawLine(Offset(c.dx, c.dy + gap), Offset(c.dx, c.dy + arm), p);
+    }
+
+    drawArms(Colors.black54, 4); // halo for contrast
+    drawArms(Colors.white, 2); // bright crosshair
+    canvas.drawCircle(c, 2.5, Paint()..color = kCyan);
+    canvas.drawCircle(
+        c,
+        2.5,
+        Paint()
+          ..color = Colors.white
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1);
+  }
+
+  @override
+  bool shouldRepaint(covariant _CrosshairPainter oldDelegate) => false;
 }

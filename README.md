@@ -129,6 +129,9 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 107) — Data maps: read the centre, live as you pan
+- **The Wind and Water Temp maps now read the value under a fixed centre crosshair, updated as you move the map** — Windy-style. Before, you tapped a spot to drop a probe dot and read it; that left three markers competing for attention (the tapped dot, the white pin, and the station pin) and the white dot added no real information. Now there's a single centre reticle (⌖): pan the map and the readout panel tracks whatever is under the crosshair. On the **Wind map** it updates continuously (the wind grid is held in memory); on the **Water Temp map** it refreshes the moment a pan settles (each reading is a live NOAA query) and also re-reads when you switch between Water Temp / Upwelling / Turbidity. The station pin stays put as your reference.
+
 ### v3.4.1 (build 106) — Notifications: the "0 alerts scheduled" confusion, fixed
 - **Enabling a station now updates the alert count immediately.** Turning on notifications, enabling a station, or changing the lead time / alert types updated the *setting* but didn't reschedule, so the "N alerts scheduled" line stayed stale — most visibly, enabling a station still read **"0 tide alerts scheduled"** until you reopened the app or hit "Reschedule alerts now". Every notification setting change now reschedules and refreshes the count on the spot, so what you see always matches what's actually scheduled. (The underlying scheduling was working; only the displayed count lagged.)
 - **A disabled station stays disabled.** Turning off your only station could silently re-enable it on the next reschedule — the app re-enrolled all favourites whenever no station was selected, which also disagreed with the toggle shown on screen. Station enrollment is now driven solely by the master switch and the per-station toggles, so an explicit "off" sticks.
