@@ -129,6 +129,10 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 106) — Notifications: the "0 alerts scheduled" confusion, fixed
+- **Enabling a station now updates the alert count immediately.** Turning on notifications, enabling a station, or changing the lead time / alert types updated the *setting* but didn't reschedule, so the "N alerts scheduled" line stayed stale — most visibly, enabling a station still read **"0 tide alerts scheduled"** until you reopened the app or hit "Reschedule alerts now". Every notification setting change now reschedules and refreshes the count on the spot, so what you see always matches what's actually scheduled. (The underlying scheduling was working; only the displayed count lagged.)
+- **A disabled station stays disabled.** Turning off your only station could silently re-enable it on the next reschedule — the app re-enrolled all favourites whenever no station was selected, which also disagreed with the toggle shown on screen. Station enrollment is now driven solely by the master switch and the per-station toggles, so an explicit "off" sticks.
+
 ### v3.4.1 (build 105) — Pre-production QA: correct sun/solunar times everywhere + map polish
 - **Sunrise, sunset and solunar times are now correct outside the Gulf Coast.** They were being computed against a fixed US Central offset, so for any station in another time zone they were off by the time difference (Honolulu showed sunrise at 10:54 AM instead of ~5:54 AM) while the tide times — which come straight from NOAA in the station's own local time — were right, an obvious mismatch. Each station's actual time zone is now read from NOAA station metadata (with daylight saving applied where the zone observes it) and used for all sun/moon/solunar math.
 - **No more impossible clock times.** A rounding edge could print a time like `6:60 AM`; minutes now carry correctly to the next hour (`7:00 AM`).

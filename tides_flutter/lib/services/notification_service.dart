@@ -163,7 +163,7 @@ class NotificationService {
 
       final prefsStr = sp.getString('notification_prefs');
       if (prefsStr == null) return;
-      var prefs = NotificationPrefs.fromJsonString(prefsStr);
+      final prefs = NotificationPrefs.fromJsonString(prefsStr);
       if (!prefs.enabled || !prefs.notifyTides) return;
 
       final favsStr = sp.getString('favorites');
@@ -172,13 +172,11 @@ class NotificationService {
           .map((j) => Station.fromJson(j as Map<String, dynamic>))
           .toList();
 
-      // If no stations are individually toggled on, auto-enroll all favorites
-      // so the user doesn't have to manually enable each one.
-      if (prefs.stations.isEmpty && favorites.isNotEmpty) {
-        prefs = prefs.copyWith(stations: favorites.map((s) => s.id).toSet());
-        await sp.setString('notification_prefs', prefs.toJsonString());
-      }
-
+      // NB: enrollment is owned by the prefs (setEnabled auto-enrolls favorites
+      // when notifications are first turned on; toggleStation edits the set).
+      // Do NOT re-enroll favorites here just because the set is empty — that
+      // would silently undo a user's explicit opt-out on the next reschedule
+      // and diverge from the provider state shown in the UI.
       final metric = sp.getBool('use_metric') ?? false;
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);

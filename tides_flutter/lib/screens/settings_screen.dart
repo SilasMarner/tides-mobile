@@ -75,6 +75,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     }
   }
 
+  // Apply a notification preference change, then immediately reschedule so the
+  // "N alerts scheduled" count reflects the change without the user having to
+  // hit "Reschedule alerts now" or reopen the app. (Toggling a station/event
+  // used to leave the count stale, reading as "enabled a station but still
+  // 0 scheduled".)
+  Future<void> _applyChange(Future<void> Function() apply) async {
+    await apply();
+    if (mounted) await _rescheduleNow();
+  }
+
   @override
   Widget build(BuildContext context) {
     final prefs = ref.watch(notificationPrefsProvider);
@@ -212,9 +222,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 prefs.enabled ? Icons.notifications_active : Icons.notifications_off,
                 color: prefs.enabled ? kCyan : Colors.white38,
               ),
-              onChanged: (v) async {
-                await notifier.setEnabled(v);
-              },
+              onChanged: (v) => _applyChange(() => notifier.setEnabled(v)),
             ),
           ),
 
@@ -292,7 +300,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   children: [15, 30, 45, 60].map((m) {
                     final selected = prefs.leadMinutes == m;
                     return GestureDetector(
-                      onTap: () => notifier.setLeadMinutes(m),
+                      onTap: () => _applyChange(() => notifier.setLeadMinutes(m)),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 150),
                         padding: const EdgeInsets.symmetric(
@@ -333,7 +341,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                     label: 'High & Low Tide',
                     subtitle: 'Alert before each tide change',
                     value: prefs.notifyTides,
-                    onChanged: notifier.setNotifyTides,
+                    onChanged: (v) => _applyChange(() => notifier.setNotifyTides(v)),
                   ),
                   const Divider(color: Colors.white10, height: 1),
                   _eventToggle(
@@ -341,7 +349,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                     label: 'Solunar Major Windows',
                     subtitle: 'Peak feeding periods',
                     value: prefs.notifySolunarMajor,
-                    onChanged: notifier.setNotifySolunarMajor,
+                    onChanged: (v) =>
+                        _applyChange(() => notifier.setNotifySolunarMajor(v)),
                   ),
                   const Divider(color: Colors.white10, height: 1),
                   _eventToggle(
@@ -349,7 +358,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                     label: 'Best Fishing Days',
                     subtitle: '4+ star rating — morning alert only',
                     value: prefs.notifyFishing,
-                    onChanged: notifier.setNotifyFishing,
+                    onChanged: (v) => _applyChange(() => notifier.setNotifyFishing(v)),
                   ),
                   const Divider(color: Colors.white10, height: 1),
                   _eventToggle(
@@ -357,7 +366,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                     label: 'Pressure Drops',
                     subtitle: 'Falling barometer — front approaching',
                     value: prefs.notifyPressureDrop,
-                    onChanged: notifier.setNotifyPressureDrop,
+                    onChanged: (v) =>
+                        _applyChange(() => notifier.setNotifyPressureDrop(v)),
                   ),
                   const Divider(color: Colors.white10, height: 1),
                   _eventToggle(
@@ -365,7 +375,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                     label: 'Upwelling',
                     subtitle: 'Water much colder than normal nearby',
                     value: prefs.notifyUpwelling,
-                    onChanged: notifier.setNotifyUpwelling,
+                    onChanged: (v) => _applyChange(() => notifier.setNotifyUpwelling(v)),
                   ),
                 ],
               ),
@@ -409,7 +419,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                             color: on ? kCyan : Colors.white38,
                             size: 20,
                           ),
-                          onChanged: (_) => notifier.toggleStation(s.id),
+                          onChanged: (_) =>
+                              _applyChange(() => notifier.toggleStation(s.id)),
                         ),
                         if (i < favorites.length - 1)
                           const Divider(color: Colors.white10, height: 1),
