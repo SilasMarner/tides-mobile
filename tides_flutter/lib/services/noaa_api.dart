@@ -231,6 +231,7 @@ Map<String, dynamic> _tideToJson(TideData d) => {
             .toList(),
       },
       'wave': _waveToJson(d.waves),
+      if (d.isPartial) 'part': true,
     };
 
 TideData _tideFromJson(Map<String, dynamic> j) {
@@ -272,6 +273,7 @@ TideData _tideFromJson(Map<String, dynamic> j) {
           .toList(),
     ),
     waves: _waveFromJson(j['wave'] as Map<String, dynamic>?),
+    isPartial: j['part'] == true,
   );
 }
 
@@ -1223,7 +1225,12 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
   final dateOnly = DateTime(date.year, date.month, date.day);
   final cacheKey = _tideCacheKey(station.id, dateOnly);
   final cached = _tideCache[cacheKey];
-  if (cached != null && _tideFresh(cached.data, cached.fetchedAt)) {
+  // A fresh, complete entry is served directly. A *partial* entry (tides-only,
+  // warmed in the background) is only a fallback — fall through to a live fetch
+  // so we get conditions when NOAA is reachable.
+  if (cached != null &&
+      !cached.data.isPartial &&
+      _tideFresh(cached.data, cached.fetchedAt)) {
     return cached.data;
   }
   final dateStr = _dateFmt.format(dateOnly);
@@ -1248,6 +1255,16 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
 
   final hourlyList = results[0] as List<TidePrediction>;
   final hilo = results[1] as List<TidePrediction>;
+
+  // No tide predictions came back — the NOAA datagetter is unreachable (e.g. a
+  // 50x outage). Never overwrite a good cache with a blank: serve whatever we
+  // already have for this day (a background-warmed partial, or a stale full
+  // entry) so the tide curve still shows. Only when there's nothing cached do
+  // we surface the empty result, and we don't persist it.
+  if (hourlyList.isEmpty && hilo.isEmpty) {
+    if (cached != null) return cached.data;
+  }
+
   final pressureTrend = results[5] as int;
   final nwsRaw = results[8] as Map<String, dynamic>?;
   final waves = results[10] as WaveData?;
@@ -1346,10 +1363,16 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
     fishing: fishing,
     waves: waves,
   );
-  final fetchedAt = DateTime.now();
-  _tideCache[cacheKey] = (data: result, fetchedAt: fetchedAt);
-  _persistTide(cacheKey, result, fetchedAt);
-  if (isToday) _writeCarSummary(result);
+  // Only cache a result that actually carries tide predictions. If the NOAA
+  // datagetter returned nothing (an outage with no prior cache for this day),
+  // return the empty result transiently but never persist it — caching a blank
+  // would shadow the real data once NOAA recovers.
+  if (hilo.isNotEmpty || hourly.isNotEmpty) {
+    final fetchedAt = DateTime.now();
+    _tideCache[cacheKey] = (data: result, fetchedAt: fetchedAt);
+    _persistTide(cacheKey, result, fetchedAt);
+    if (isToday) _writeCarSummary(result);
+  }
   return result;
 }
 
@@ -1407,4 +1430,83 @@ Future<List<TidePrediction>> fetchWeekHilo(
   _weekCache[key] = (data: result, fetchedAt: fetchedAt);
   _persistWeek(key, result, fetchedAt);
   return result;
+}
+
+/// Background-friendly cache warmer. Fetches ONE week of hi/lo predictions for
+/// [station] (a single NOAA request) and reconstructs a per-day *tides-only*
+/// [TideData] — the astronomical tide curve plus locally-computed
+/// sun/moon/solunar/fishing, with no live conditions. Each day is persisted to
+/// the disk cache as a partial entry so that, if the NOAA datagetter is later
+/// unreachable, the app can still draw a tide curve for the user's favourites.
+///
+/// Uses the same disk format the foreground rehydrates, so it works unchanged
+/// from a WorkManager background isolate. Best-effort: a network failure leaves
+/// the cache untouched (never persists a blank), and a day that already holds a
+/// fresh, complete entry is skipped so a partial never downgrades richer data.
+Future<void> warmTidesOnly(Station station, {int daysAhead = 7}) async {
+  final today = _todayOnly();
+  final end = today.add(Duration(days: daysAhead));
+  final week = await fetchWeekHilo(station.id, today, end);
+  if (week.isEmpty) return; // NOAA unreachable — nothing to warm.
+
+  final tz = await _stationTz(station);
+  final sp = await SharedPreferences.getInstance();
+
+  for (var offset = 0; offset <= daysAhead; offset++) {
+    final day = today.add(Duration(days: offset));
+    final key = _tideCacheKey(station.id, day);
+
+    // Don't downgrade a fresh, complete entry (in memory or on disk) to a partial.
+    final mem = _tideCache[key];
+    if (mem != null && !mem.data.isPartial && _tideFresh(mem.data, mem.fetchedAt)) {
+      continue;
+    }
+    if (_diskHasFreshFullTide(sp, '$_tideDiskPrefix$key', day)) continue;
+
+    final dayHilo = week
+        .where((p) =>
+            p.time.year == day.year &&
+            p.time.month == day.month &&
+            p.time.day == day.day)
+        .toList();
+    if (dayHilo.isEmpty) continue;
+
+    final utcOff = _localUtcOffset(tz, day);
+    final solunar = solunarTimes(day, station.lon, utcOff);
+    final data = TideData(
+      stationId: station.id,
+      lat: station.lat,
+      lon: station.lon,
+      targetDate: day,
+      isToday: day == today,
+      hourly: _interpolateHourlyFromHilo(dayHilo),
+      hilo: dayHilo,
+      conditions: const Conditions(),
+      sun: sunTimes(day, station.lat, station.lon, utcOff),
+      moon: moonPhase(day),
+      solunar: solunar,
+      fishing: fishingRatingDay(dayHilo, solunar),
+      isPartial: true,
+    );
+    final fetchedAt = DateTime.now();
+    _tideCache[key] = (data: data, fetchedAt: fetchedAt);
+    _persistTide(key, data, fetchedAt);
+  }
+}
+
+// Whether the disk already holds a fresh, COMPLETE (non-partial) tide entry for
+// [day]. Lets [warmTidesOnly] avoid clobbering richer foreground-fetched data
+// from a cold background isolate (which can't see the in-memory cache).
+bool _diskHasFreshFullTide(SharedPreferences sp, String diskKey, DateTime day) {
+  try {
+    final raw = sp.getString(diskKey);
+    if (raw == null) return false;
+    final j = jsonDecode(raw) as Map<String, dynamic>;
+    if ((j['d'] as Map<String, dynamic>)['part'] == true) return false;
+    final fetchedAt = DateTime.fromMillisecondsSinceEpoch(j['f'] as int);
+    final ttl = day == _todayOnly() ? _cacheTtl : _staticTtl;
+    return DateTime.now().difference(fetchedAt) < ttl;
+  } catch (_) {
+    return false;
+  }
 }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'theme.dart';
 import 'providers/theme_provider.dart';
 import 'screens/home_screen.dart';
+import 'services/background_refresh.dart';
 import 'services/noaa_api.dart';
 
 void main() async {
@@ -22,6 +23,9 @@ void main() async {
     systemNavigationBarContrastEnforced: false,
   ));
   await hydrateCacheFromDisk();
+  // Keep the favourites' tide cache warm twice a day so a NOAA outage (or an
+  // offline launch) still shows tide curves. Best-effort — never blocks startup.
+  initBackgroundRefresh().ignore();
   runApp(const ProviderScope(child: TidesApp()));
 }
 

@@ -208,6 +208,13 @@ class TideData {
   final FishingInfo fishing;
   final WaveData? waves;
 
+  /// True when this entry carries only tide predictions (curve + hi/lo +
+  /// locally-computed sun/moon/solunar/fishing) with no live conditions —
+  /// e.g. warmed by the background refresh task. The foreground always prefers
+  /// a fresh live fetch over a partial entry; a partial is only served when the
+  /// NOAA datagetter is unreachable. See [fetchAllData].
+  final bool isPartial;
+
   const TideData({
     required this.stationId,
     required this.lat,
@@ -223,5 +230,6 @@ class TideData {
     required this.solunar,
     required this.fishing,
     this.waves,
+    this.isPartial = false,
   });
 }
