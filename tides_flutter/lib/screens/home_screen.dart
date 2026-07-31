@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:in_app_update/in_app_update.dart';
@@ -33,6 +35,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   bool _locating = false;
   String? _locMsg;
   List<Station>? _nearbyStations;
+  // Debounces searchQueryProvider updates so typing doesn't trigger a NOAA
+  // station-list fetch/decode on every keystroke.
+  Timer? _searchDebounce;
 
   @override
   void initState() {
@@ -58,6 +63,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _searchDebounce?.cancel();
     _ctrl.dispose();
     super.dispose();
   }
@@ -134,6 +140,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       _nearbyStations = stations;
     });
     _ctrl.clear();
+    _searchDebounce?.cancel();
     ref.read(searchQueryProvider.notifier).state = '';
   }
 
@@ -247,8 +254,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       contentPadding:
                           EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     ),
-                    onChanged: (v) =>
-                        ref.read(searchQueryProvider.notifier).state = v,
+                    onChanged: (v) {
+                      _searchDebounce?.cancel();
+                      _searchDebounce =
+                          Timer(const Duration(milliseconds: 300), () {
+                        if (mounted) {
+                          ref.read(searchQueryProvider.notifier).state = v;
+                        }
+                      });
+                    },
                     textInputAction: TextInputAction.search,
                   ),
                 ),

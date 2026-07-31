@@ -215,6 +215,13 @@ class TideData {
   /// NOAA datagetter is unreachable. See [fetchAllData].
   final bool isPartial;
 
+  /// When this entry was actually fetched/computed — not necessarily "now",
+  /// since a NOAA outage or a cold background-warm can mean the caller is
+  /// being served something fetched minutes or days ago. Lets the UI show a
+  /// "showing saved data" indicator instead of silently presenting stale data
+  /// as if it were live. See [DetailScreen]'s offline/cached banner.
+  final DateTime fetchedAt;
+
   const TideData({
     required this.stationId,
     required this.lat,
@@ -231,5 +238,6 @@ class TideData {
     required this.fishing,
     this.waves,
     this.isPartial = false,
+    required this.fetchedAt,
   });
 }

@@ -27,7 +27,13 @@ class CatchExportService {
   /// intent, which made Gmail drop the body + photo (blank email).
   static const _channel = MethodChannel('com.mattbettinger.tides/email');
 
-  static Future<void> emailCatches(
+  /// Returns the number of original photo files actually staged as
+  /// attachments (as opposed to the number of catches that HAD a photo) — the
+  /// caller compares this against its own expected count and warns the user
+  /// if any were dropped (e.g. a photo file that no longer exists on disk),
+  /// since [_stageAttachments] otherwise fails that silently and the email
+  /// would go out short a photo with no indication anything went wrong.
+  static Future<int> emailCatches(
     List<CatchEntry> entries, {
     required String defaultRecipient,
     required bool metric,
@@ -48,6 +54,7 @@ class CatchExportService {
       // PDF report first so it's the obvious thing to open, originals after.
       'attachments': [pdfPath, ...photos],
     });
+    return photos.length;
   }
 
   /// Catch photos live in the app documents dir (`app_flutter/catch_photos`),

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show compute;
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/station.dart';
@@ -80,7 +81,8 @@ Future<void> hydrateCacheFromDisk() async {
           if (raw == null) continue;
           final j = jsonDecode(raw) as Map<String, dynamic>;
           final fetchedAt = DateTime.fromMillisecondsSinceEpoch(j['f'] as int);
-          final data = _tideFromJson(j['d'] as Map<String, dynamic>);
+          final data =
+              _tideFromJson(j['d'] as Map<String, dynamic>, fetchedAt);
           final stale = data.targetDate.isBefore(cutoff) ||
               now.difference(fetchedAt) > const Duration(days: 7) ||
               data.isToday != (data.targetDate == today);
@@ -234,7 +236,7 @@ Map<String, dynamic> _tideToJson(TideData d) => {
       if (d.isPartial) 'part': true,
     };
 
-TideData _tideFromJson(Map<String, dynamic> j) {
+TideData _tideFromJson(Map<String, dynamic> j, DateTime fetchedAt) {
   final sun = j['sun'] as Map<String, dynamic>;
   final moon = j['moon'] as Map<String, dynamic>;
   final sol = j['sol'] as Map<String, dynamic>;
@@ -274,6 +276,7 @@ TideData _tideFromJson(Map<String, dynamic> j) {
     ),
     waves: _waveFromJson(j['wave'] as Map<String, dynamic>?),
     isPartial: j['part'] == true,
+    fetchedAt: fetchedAt,
   );
 }
 
@@ -933,12 +936,98 @@ Future<Map<String, Set<String>>> fetchCapabilityMap() async {
   return map;
 }
 
+// ── Station list cache (search / nearest) ────────────────────────────────────
+//
+// NOAA has no incremental/paged station endpoint — every search keystroke or
+// "nearest me" lookup used to re-download AND re-decode the full ~3k-entry
+// list on the UI isolate (visible typing jank, and useless on a bad
+// connection). Station metadata barely changes, so it's cached in memory for
+// the process lifetime and mirrored to disk for a day: search stays instant
+// after the first lookup, works fully offline within the TTL, and the decode
+// itself runs off the UI isolate via [compute].
+const _stationsCacheTtl = Duration(hours: 24);
+const _stationsDiskKey = 'stations_list_json';
+const _stationsDiskAtKey = 'stations_list_at';
+
+List<dynamic>? _stationsMemCache;
+DateTime? _stationsMemCacheAt;
+
+Future<List<dynamic>> _stationsList() async {
+  final now = DateTime.now();
+  if (_stationsMemCache != null &&
+      now.difference(_stationsMemCacheAt!) < _stationsCacheTtl) {
+    return _stationsMemCache!;
+  }
+
+  final sp = await SharedPreferences.getInstance();
+  final diskAtMs = sp.getInt(_stationsDiskAtKey);
+  final diskJson = sp.getString(_stationsDiskKey);
+  final diskAt =
+      diskAtMs != null ? DateTime.fromMillisecondsSinceEpoch(diskAtMs) : null;
+  if (diskJson != null &&
+      diskAt != null &&
+      now.difference(diskAt) < _stationsCacheTtl) {
+    final decoded = await compute(_decodeStationsList, diskJson);
+    if (decoded != null) {
+      _stationsMemCache = decoded;
+      _stationsMemCacheAt = diskAt;
+      return decoded;
+    }
+  }
+
+  final raw = await _fetchStationsRaw();
+  final decoded = raw != null ? await compute(_decodeStationsList, raw) : null;
+  if (decoded == null) {
+    // Fetch or parse failed — fall back to disk even if stale, then memory,
+    // rather than returning an empty list: a stale station list beats none
+    // when NOAA (or the network) is unreachable.
+    if (diskJson != null) {
+      final stale = await compute(_decodeStationsList, diskJson);
+      if (stale != null) {
+        _stationsMemCache = stale;
+        _stationsMemCacheAt = diskAt ?? now;
+        return stale;
+      }
+    }
+    return _stationsMemCache ?? [];
+  }
+
+  _stationsMemCache = decoded;
+  _stationsMemCacheAt = now;
+  await sp.setString(_stationsDiskKey, raw!);
+  await sp.setInt(_stationsDiskAtKey, now.millisecondsSinceEpoch);
+  return decoded;
+}
+
+Future<String?> _fetchStationsRaw() async {
+  try {
+    final resp = await _dio.get<String>(_stationsUrl,
+        options: Options(
+          responseType: ResponseType.plain,
+          receiveTimeout: const Duration(seconds: 15),
+        ));
+    return resp.data;
+  } catch (_) {
+    return null;
+  }
+}
+
+// Runs on a background isolate via compute(): decoding NOAA's full station
+// list on the UI isolate is what caused search-field jank.
+List<dynamic>? _decodeStationsList(String raw) {
+  try {
+    final data = jsonDecode(raw) as Map<String, dynamic>;
+    return data['stations'] as List<dynamic>?;
+  } catch (_) {
+    return null;
+  }
+}
+
 Future<List<Station>> searchStations(String query) async {
-  final data = await apiGet(_stationsUrl);
-  if (data == null || data['stations'] == null) return [];
+  final stations = await _stationsList();
   final q = query.toLowerCase();
   final results = <Station>[];
-  for (final s in data['stations'] as List) {
+  for (final s in stations) {
     final name = (s['name'] as String? ?? '').toLowerCase();
     final state = (s['state'] as String? ?? '').toLowerCase();
     if (name.contains(q) || state.contains(q)) {
@@ -956,10 +1045,9 @@ Future<List<Station>> searchStations(String query) async {
 }
 
 Future<List<Station>> nearestStations(double lat, double lon, {int n = 6}) async {
-  final data = await apiGet(_stationsUrl);
-  if (data == null || data['stations'] == null) return [];
+  final stations = await _stationsList();
   final results = <Station>[];
-  for (final s in data['stations'] as List) {
+  for (final s in stations) {
     try {
       final slat = double.parse(s['lat'].toString());
       final slon = double.parse(s['lng'].toString());
@@ -1347,6 +1435,7 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
     );
   }
 
+  final fetchedAt = DateTime.now();
   final result = TideData(
     stationId: id,
     lat: lat,
@@ -1362,13 +1451,13 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
     solunar: solunar,
     fishing: fishing,
     waves: waves,
+    fetchedAt: fetchedAt,
   );
   // Only cache a result that actually carries tide predictions. If the NOAA
   // datagetter returned nothing (an outage with no prior cache for this day),
   // return the empty result transiently but never persist it — caching a blank
   // would shadow the real data once NOAA recovers.
   if (hilo.isNotEmpty || hourly.isNotEmpty) {
-    final fetchedAt = DateTime.now();
     _tideCache[cacheKey] = (data: result, fetchedAt: fetchedAt);
     _persistTide(cacheKey, result, fetchedAt);
     if (isToday) _writeCarSummary(result);
@@ -1473,6 +1562,7 @@ Future<void> warmTidesOnly(Station station, {int daysAhead = 7}) async {
 
     final utcOff = _localUtcOffset(tz, day);
     final solunar = solunarTimes(day, station.lon, utcOff);
+    final fetchedAt = DateTime.now();
     final data = TideData(
       stationId: station.id,
       lat: station.lat,
@@ -1487,8 +1577,8 @@ Future<void> warmTidesOnly(Station station, {int daysAhead = 7}) async {
       solunar: solunar,
       fishing: fishingRatingDay(dayHilo, solunar),
       isPartial: true,
+      fetchedAt: fetchedAt,
     );
-    final fetchedAt = DateTime.now();
     _tideCache[key] = (data: data, fetchedAt: fetchedAt);
     _persistTide(key, data, fetchedAt);
   }

@@ -27,7 +27,48 @@ class _TideChartState extends State<TideChart> {
   double? _touchX;
   double? _touchY;
 
+  // Derived from widget.hourly/hilo/solunar/metric. Computed once in
+  // initState/didUpdateWidget rather than in build(): build() also re-runs on
+  // every touch-drag setState while scrubbing the chart, and re-deriving the
+  // spot list + solunar bands on every drag frame (the data hasn't changed,
+  // only _touchX/_touchY have) showed up as chart-scrub jank.
+  late List<FlSpot> _spots;
+  late double _minY;
+  late double _maxY;
+  late List<VerticalRangeAnnotation> _solBands;
+
   double get _unitScale => widget.metric ? 0.3048 : 1.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _recomputeDerived();
+  }
+
+  @override
+  void didUpdateWidget(covariant TideChart oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.hourly != widget.hourly ||
+        oldWidget.hilo != widget.hilo ||
+        oldWidget.solunar != widget.solunar ||
+        oldWidget.metric != widget.metric) {
+      _recomputeDerived();
+    }
+  }
+
+  void _recomputeDerived() {
+    _spots = _buildSpots();
+    if (_spots.isEmpty) {
+      _minY = 0;
+      _maxY = 0;
+      _solBands = const [];
+      return;
+    }
+    final pad = widget.metric ? 0.2 : 0.5;
+    _minY = _spots.map((s) => s.y).reduce((a, b) => a < b ? a : b) - pad;
+    _maxY = _spots.map((s) => s.y).reduce((a, b) => a > b ? a : b) + pad;
+    _solBands = _buildSolBands();
+  }
 
   // Interpolate to 30-min resolution for smoother touch snapping
   List<FlSpot> _buildSpots() {
@@ -45,6 +86,43 @@ class _TideChartState extends State<TideChart> {
       }
     }
     return spots;
+  }
+
+  // Solunar feeding-period bands (like the Grafana dashboard): a green wash
+  // over each window — wider/brighter for majors (2 h), narrower/fainter for
+  // minors (1 h). Each window starts at the solunar time and runs forward,
+  // matching the fishing-rating logic; bands that cross midnight are split.
+  List<VerticalRangeAnnotation> _buildSolBands() {
+    final bands = <VerticalRangeAnnotation>[];
+    final sol = widget.solunar;
+    if (sol == null) return bands;
+
+    const solGreen = Color(0xFF66BB6A);
+    void addBand(double start, double dur, double alpha) {
+      start = start % 24;
+      void seg(double a, double b) {
+        a = a.clamp(0, 23).toDouble();
+        b = b.clamp(0, 23).toDouble();
+        if (b > a) {
+          bands.add(VerticalRangeAnnotation(
+              x1: a, x2: b, color: solGreen.withValues(alpha: alpha)));
+        }
+      }
+
+      final end = start + dur;
+      if (end <= 24) {
+        seg(start, end);
+      } else {
+        seg(start, 24);
+        seg(0, end - 24);
+      }
+    }
+
+    addBand(sol.major1, 2, 0.20);
+    addBand(sol.major2, 2, 0.20);
+    addBand(sol.minor1, 1, 0.11);
+    addBand(sol.minor2, 1, 0.11);
+    return bands;
   }
 
   // Cosine ease [0,1] → [0,1], used for tide-curve-shaped interpolation
@@ -74,7 +152,7 @@ class _TideChartState extends State<TideChart> {
 
   @override
   Widget build(BuildContext context) {
-    final spots = _buildSpots();
+    final spots = _spots;
     if (spots.isEmpty) {
       return const SizedBox(
         height: 160,
@@ -83,9 +161,6 @@ class _TideChartState extends State<TideChart> {
       );
     }
 
-    final pad = widget.metric ? 0.2 : 0.5;
-    final minY = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b) - pad;
-    final maxY = spots.map((s) => s.y).reduce((a, b) => a > b ? a : b) + pad;
     final nowX = widget.isToday
         ? DateTime.now().hour + DateTime.now().minute / 60.0
         : -1.0;
@@ -105,40 +180,6 @@ class _TideChartState extends State<TideChart> {
           strokeWidth: 1.5,
         ),
     ];
-
-    // Solunar feeding-period bands (like the Grafana dashboard): a green wash
-    // over each window — wider/brighter for majors (2 h), narrower/fainter for
-    // minors (1 h). Each window starts at the solunar time and runs forward,
-    // matching the fishing-rating logic; bands that cross midnight are split.
-    final solBands = <VerticalRangeAnnotation>[];
-    final sol = widget.solunar;
-    if (sol != null) {
-      const solGreen = Color(0xFF66BB6A);
-      void addBand(double start, double dur, double alpha) {
-        start = start % 24;
-        void seg(double a, double b) {
-          a = a.clamp(0, 23).toDouble();
-          b = b.clamp(0, 23).toDouble();
-          if (b > a) {
-            solBands.add(VerticalRangeAnnotation(
-                x1: a, x2: b, color: solGreen.withValues(alpha: alpha)));
-          }
-        }
-
-        final end = start + dur;
-        if (end <= 24) {
-          seg(start, end);
-        } else {
-          seg(start, 24);
-          seg(0, end - 24);
-        }
-      }
-
-      addBand(sol.major1, 2, 0.20);
-      addBand(sol.major2, 2, 0.20);
-      addBand(sol.minor1, 1, 0.11);
-      addBand(sol.minor2, 1, 0.11);
-    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -167,8 +208,8 @@ class _TideChartState extends State<TideChart> {
               LineChartData(
                 minX: 0,
                 maxX: 23,
-                minY: minY,
-                maxY: maxY,
+                minY: _minY,
+                maxY: _maxY,
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,
@@ -245,7 +286,7 @@ class _TideChartState extends State<TideChart> {
                       sideTitles: SideTitles(showTitles: false)),
                 ),
                 rangeAnnotations:
-                    RangeAnnotations(verticalRangeAnnotations: solBands),
+                    RangeAnnotations(verticalRangeAnnotations: _solBands),
                 extraLinesData: ExtraLinesData(verticalLines: verticalLines),
                 lineBarsData: [
                   LineChartBarData(

@@ -29,20 +29,24 @@ class DetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tideAsync = ref.watch(tideDataProvider);
-    final isFav = ref.watch(favoritesProvider).any((s) => s.id == station.id);
     final date = ref.watch(selectedDateProvider);
     final weekAsync = ref.watch(weekDataProvider);
     final showWeek = ref.watch(showWeekProvider);
-    final notifPrefs = ref.watch(notificationPrefsProvider);
     final metric = ref.watch(unitsProvider);
-    final notifEnabled = notifPrefs.enabled &&
-        notifPrefs.stations.contains(station.id);
 
     // Schedule notifications whenever today's data loads.
     // Pass week hilo if already available so tide alerts cover 7 days, not just
     // today's remaining events (which are often all past by afternoon).
+    //
+    // notifPrefs/notifEnabled are read fresh (not watched at the top of build)
+    // so this screen doesn't rebuild its whole body whenever notification
+    // prefs change for *any* station — see _NotificationButton below, which
+    // owns the only watch of notificationPrefsProvider on this screen.
     ref.listen(tideDataProvider, (_, next) {
       next.whenData((data) {
+        final notifPrefs = ref.read(notificationPrefsProvider);
+        final notifEnabled =
+            notifPrefs.enabled && notifPrefs.stations.contains(station.id);
         if (data != null && data.isToday && notifEnabled) {
           final weekHilo = ref.read(weekDataProvider).valueOrNull
               ?.where((p) => p.type != null)
@@ -58,6 +62,9 @@ class DetailScreen extends ConsumerWidget {
     // Also re-schedule when week data arrives (may finish after tideDataProvider).
     ref.listen(weekDataProvider, (_, next) {
       next.whenData((week) {
+        final notifPrefs = ref.read(notificationPrefsProvider);
+        final notifEnabled =
+            notifPrefs.enabled && notifPrefs.stations.contains(station.id);
         if (week.isNotEmpty && notifEnabled) {
           final data = ref.read(tideDataProvider).valueOrNull;
           if (data != null && data.isToday) {
@@ -76,6 +83,9 @@ class DetailScreen extends ConsumerWidget {
     // Dedup (once per station per day) lives in the service.
     ref.listen(sstAnomalyProvider, (_, next) {
       next.whenData((anom) {
+        final notifPrefs = ref.read(notificationPrefsProvider);
+        final notifEnabled =
+            notifPrefs.enabled && notifPrefs.stations.contains(station.id);
         if (anom != null &&
             anom <= kUpwellingThresholdC &&
             notifEnabled &&
@@ -92,43 +102,8 @@ class DetailScreen extends ConsumerWidget {
         backgroundColor: kNavyLight,
         foregroundColor: Colors.white,
         actions: [
-          IconButton(
-            icon: Icon(
-              isFav ? Icons.star : Icons.star_outline,
-              color: isFav ? kCyan : Colors.white38,
-            ),
-            tooltip: isFav ? 'Remove from favorites' : 'Add to favorites',
-            onPressed: () {
-              if (isFav) {
-                ref.read(favoritesProvider.notifier).remove(station.id);
-              } else {
-                ref.read(favoritesProvider.notifier).add(station);
-              }
-            },
-          ),
-          IconButton(
-            icon: Icon(
-              notifEnabled
-                  ? Icons.notifications_active
-                  : Icons.notifications_none,
-              color: notifEnabled ? kCyan : Colors.white38,
-            ),
-            tooltip: notifEnabled ? 'Notifications on' : 'Notifications off',
-            onPressed: () {
-              if (!notifPrefs.enabled) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Enable notifications in Settings first'),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
-                return;
-              }
-              ref
-                  .read(notificationPrefsProvider.notifier)
-                  .toggleStation(station.id);
-            },
-          ),
+          _FavoriteButton(station: station),
+          _NotificationButton(station: station),
           // All four map screens live under one globe menu — four standalone
           // icons would truncate the AppBar on narrow phones.
           PopupMenuButton<String>(
@@ -278,6 +253,66 @@ class DetailScreen extends ConsumerWidget {
   }
 }
 
+// ── AppBar action icons — each owns its own narrow provider watch so toggling
+// a favorite or a notification (for THIS or ANY station) only rebuilds the
+// small icon, not the whole screen body (chart, cards, week list). ───────────
+
+class _FavoriteButton extends ConsumerWidget {
+  final Station station;
+  const _FavoriteButton({required this.station});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isFav = ref.watch(favoritesProvider
+        .select((favs) => favs.any((s) => s.id == station.id)));
+    return IconButton(
+      icon: Icon(
+        isFav ? Icons.star : Icons.star_outline,
+        color: isFav ? kCyan : Colors.white38,
+      ),
+      tooltip: isFav ? 'Remove from favorites' : 'Add to favorites',
+      onPressed: () {
+        if (isFav) {
+          ref.read(favoritesProvider.notifier).remove(station.id);
+        } else {
+          ref.read(favoritesProvider.notifier).add(station);
+        }
+      },
+    );
+  }
+}
+
+class _NotificationButton extends ConsumerWidget {
+  final Station station;
+  const _NotificationButton({required this.station});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notifPrefs = ref.watch(notificationPrefsProvider);
+    final notifEnabled =
+        notifPrefs.enabled && notifPrefs.stations.contains(station.id);
+    return IconButton(
+      icon: Icon(
+        notifEnabled ? Icons.notifications_active : Icons.notifications_none,
+        color: notifEnabled ? kCyan : Colors.white38,
+      ),
+      tooltip: notifEnabled ? 'Notifications on' : 'Notifications off',
+      onPressed: () {
+        if (!notifPrefs.enabled) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Enable notifications in Settings first'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+          return;
+        }
+        ref.read(notificationPrefsProvider.notifier).toggleStation(station.id);
+      },
+    );
+  }
+}
+
 // ── Station banner — always visible, full name + ID ──────────────────────────
 
 class _StationBanner extends StatelessWidget {
@@ -396,6 +431,46 @@ class _NavRow extends ConsumerWidget {
   }
 }
 
+// True when [d] is something other than a just-fetched live entry — either a
+// background-warmed partial (no live conditions), or "today" data old enough
+// that a fresher live fetch should have happened by now (e.g. served from
+// cache during a NOAA outage, per [fetchAllData]'s never-overwrite-with-blank
+// fallback). Predictions for a non-today date are astronomical and don't go
+// stale, so only isPartial matters for those.
+bool _looksStale(TideData d) {
+  if (d.isPartial) return true;
+  if (!d.isToday) return false;
+  return DateTime.now().difference(d.fetchedAt) > const Duration(minutes: 30);
+}
+
+final _cachedAtFmt = DateFormat('MMM d, h:mm a');
+
+class _CachedDataBanner extends StatelessWidget {
+  final TideData data;
+  const _CachedDataBanner({required this.data});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        color: Colors.amber.withValues(alpha: 0.15),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            const Icon(Icons.cloud_off, color: Colors.amber, size: 16),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                data.isPartial
+                    ? 'Showing saved tide predictions — live conditions unavailable'
+                    : 'Showing saved data from ${_cachedAtFmt.format(data.fetchedAt)}',
+                style: const TextStyle(color: Colors.amber, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
 class _TodayView extends StatelessWidget {
   final TideData data;
   final Station station;
@@ -406,6 +481,7 @@ class _TodayView extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ListView(
         children: [
+          if (_looksStale(data)) _CachedDataBanner(data: data),
           ConditionsCard(c: data.conditions, forecast: !data.isToday),
           if (data.waves != null) _WaveCard(waves: data.waves!, metric: metric),
           if (data.nws != null) _NwsCard(nws: data.nws!, metric: metric),

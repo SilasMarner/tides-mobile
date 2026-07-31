@@ -49,10 +49,21 @@ class _CatchLogScreenState extends ConsumerState<CatchLogScreen> {
         catches.where((e) => _selectedIds.contains(e.id)).toList();
     if (selected.isEmpty) return;
     final recipient = ref.read(captainEmailProvider);
+    final expectedPhotos =
+        selected.where((e) => e.photoPath != null).length;
     try {
-      await CatchExportService.emailCatches(selected,
+      final stagedPhotos = await CatchExportService.emailCatches(selected,
           defaultRecipient: recipient, metric: metric);
       _toggleSelecting(false);
+      if (mounted && stagedPhotos < expectedPhotos) {
+        final missing = expectedPhotos - stagedPhotos;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(missing == 1
+              ? 'Sent, but 1 photo could not be attached — the file was missing.'
+              : 'Sent, but $missing photos could not be attached — the files were missing.'),
+          duration: const Duration(seconds: 4),
+        ));
+      }
     } on PlatformException catch (e) {
       if (!mounted) return;
       final msg = e.code == 'no_email_app'
