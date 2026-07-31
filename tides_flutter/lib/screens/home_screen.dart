@@ -38,6 +38,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // Debounces searchQueryProvider updates so typing doesn't trigger a NOAA
   // station-list fetch/decode on every keystroke.
   Timer? _searchDebounce;
+  // Station id from a tapped notification, held until favorites finish
+  // loading from disk (they load asynchronously — see FavoritesNotifier) so
+  // we can resolve it to a full Station and open its detail screen.
+  String? _pendingNotificationStationId;
 
   @override
   void initState() {
@@ -45,6 +49,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _checkForUpdate();
+      // Tapping a notification while the app is already running (foreground
+      // or backgrounded) fires this; a cold start is handled separately below
+      // via consumeLaunchStationId().
+      NotificationService.onStationTapped = (id) {
+        _pendingNotificationStationId = id;
+        _tryOpenPendingStation(ref.read(favoritesProvider));
+      };
+      final launchStationId = await NotificationService.consumeLaunchStationId();
+      if (launchStationId != null) {
+        _pendingNotificationStationId = launchStationId;
+      }
       // Reschedule 7-day tide alerts for all stations. Run after first frame so
       // the Flutter engine and notification plugin are fully initialized.
       // Await so that any auto-enrollment written to SharedPreferences is
@@ -53,16 +68,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       // Sync Riverpod state with whatever rescheduleAllStations() may have
       // written to SharedPreferences (e.g. auto-enrolled stations).
       if (mounted) ref.invalidate(notificationPrefsProvider);
-      // Warm the cache for favorites as soon as they load from disk.
+      // Warm the cache for favorites as soon as they load from disk, and
+      // resolve any pending notification-tap station once they're available.
       ref.listenManual(favoritesProvider, (_, favorites) {
         if (favorites.isNotEmpty) schedulePrefetch(favorites);
+        _tryOpenPendingStation(favorites);
       }, fireImmediately: true);
     });
+  }
+
+  // Opens the detail screen for a notification-tapped station once it's
+  // resolvable from favorites (notifications are only ever scheduled for
+  // favorited stations — see NotificationService.rescheduleAllStations).
+  // Clears the pending id as soon as favorites have loaded, matched or not,
+  // so a stale/unfavorited station id doesn't keep retrying forever.
+  void _tryOpenPendingStation(List<Station> favorites) {
+    final id = _pendingNotificationStationId;
+    if (id == null || favorites.isEmpty) return;
+    _pendingNotificationStationId = null;
+    Station? station;
+    for (final s in favorites) {
+      if (s.id == id) {
+        station = s;
+        break;
+      }
+    }
+    if (station == null || !mounted) return;
+    Navigator.push(
+        context, MaterialPageRoute(builder: (_) => DetailScreen(station: station!)));
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    NotificationService.onStationTapped = null;
     _searchDebounce?.cancel();
     _ctrl.dispose();
     super.dispose();

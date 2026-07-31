@@ -16,6 +16,12 @@ class NotificationService {
   static bool _canExact = false;
   static const _setupChannel = MethodChannel('com.mattbettinger.tides/setup');
 
+  /// Set by HomeScreen so a notification tap (app already running, in the
+  /// foreground or background) can navigate straight to the tapped station
+  /// instead of just bringing the app to the front on the home screen. The
+  /// payload is the station id — see [_schedule] call sites below.
+  static void Function(String stationId)? onStationTapped;
+
   static Future<void> init() async {
     if (_initialized) return;
     tz.initializeTimeZones();
@@ -36,6 +42,7 @@ class NotificationService {
     try {
       await _plugin.initialize(
         const InitializationSettings(android: android, iOS: ios),
+        onDidReceiveNotificationResponse: _onTap,
       );
     } catch (_) {
       // If the plugin fails to initialize (e.g. icon resource not found),
@@ -61,6 +68,31 @@ class NotificationService {
     _canExact = await androidImpl?.canScheduleExactNotifications() ?? false;
 
     _initialized = true;
+  }
+
+  /// Fires when the user taps a notification while the app process is alive
+  /// (foreground or backgrounded) — NOT for a cold start, see
+  /// [consumeLaunchStationId] for that case.
+  static void _onTap(NotificationResponse response) {
+    final id = response.payload;
+    if (id != null && id.isNotEmpty) onStationTapped?.call(id);
+  }
+
+  /// If the app was launched (cold start) by tapping a notification, returns
+  /// that notification's station-id payload; otherwise null. Call once, after
+  /// the first frame — flutter_local_notifications only surfaces this once
+  /// per launch. [_onTap] above handles the same tap if the app was already
+  /// running instead of cold-starting.
+  static Future<String?> consumeLaunchStationId() async {
+    if (!_initialized) await init();
+    try {
+      final details = await _plugin.getNotificationAppLaunchDetails();
+      if (details?.didNotificationLaunchApp == true) {
+        final payload = details!.notificationResponse?.payload;
+        if (payload != null && payload.isNotEmpty) return payload;
+      }
+    } catch (_) {}
+    return null;
   }
 
   /// Re-checks exact-alarm availability (call after returning from system settings).
