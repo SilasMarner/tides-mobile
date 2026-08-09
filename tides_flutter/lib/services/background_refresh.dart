@@ -10,7 +10,10 @@ import 'noaa_api.dart';
 // outage (or simply opening the app offline) still shows tide curves. Twice a
 // day WorkManager wakes a background isolate that fetches one week of hi/lo
 // predictions per favourite and persists a tides-only entry per day to the same
-// disk cache the UI rehydrates on launch. See [warmTidesOnly].
+// disk cache the UI rehydrates on launch (see [warmTidesOnly]), and refreshes
+// each favourite's year-long season cache once it starts aging out (see
+// [warmSeason]) — the season cache is what actually survives a long stretch
+// with no connectivity, since it doesn't depend on this job firing on time.
 
 const _taskName = 'opentides.tideCacheRefresh';
 const _uniqueName = 'opentides-tide-cache-refresh';
@@ -50,6 +53,7 @@ Future<void> _refreshFavouritesCache() async {
     try {
       final station = Station.fromJson(entry as Map<String, dynamic>);
       await warmTidesOnly(station);
+      await warmSeason(station);
     } catch (_) {
       // Skip a malformed favourite or a station whose fetch failed; keep going.
     }

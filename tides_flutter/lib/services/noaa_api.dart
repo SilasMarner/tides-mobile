@@ -26,6 +26,25 @@ final _weekCache = <String, ({List<TidePrediction> data, DateTime fetchedAt})>{}
 const _tideDiskPrefix = 'tcache_';
 const _weekDiskPrefix = 'wcache_';
 
+// A full year of hi/lo predictions per favourite, one NOAA request, stored as
+// a single compact disk blob keyed by station id (not date range, so it's
+// simply overwritten in place on refresh). This is the offline safety net:
+// [warmTidesOnly]'s rolling window only stays useful if WorkManager's
+// periodic job keeps firing on schedule, which real devices don't guarantee
+// (Doze, OEM battery managers, or the app just not being opened). A season of
+// predictions comfortably outlives any such gap — see [warmSeason].
+const _seasonDiskPrefix = 'scache_';
+const _seasonSpan = Duration(days: 380);
+// Re-fetch once the cached season is older than this, leaving a large buffer
+// before the cached range actually runs dry.
+const _seasonRefreshAfter = Duration(days: 300);
+// Sanity bound on how long a rehydrated season blob is kept around for. Not
+// load-bearing for correctness (a day past the fetched range just yields no
+// matching hi/lo and falls through) — purely caps unbounded disk growth for
+// an app that's never reopened.
+const _seasonDiskCutoff = Duration(days: 730);
+final _seasonCache = <String, ({List<TidePrediction> data, DateTime fetchedAt})>{};
+
 String _tideCacheKey(String id, DateTime date) => '$id-${_dateFmt.format(date)}';
 String _weekCacheKey(String id, DateTime s, DateTime e) =>
     '$id-week-${_dateFmt.format(s)}-${_dateFmt.format(e)}';
@@ -52,6 +71,12 @@ bool _tideFresh(TideData d, DateTime fetchedAt) {
 /// days that are already cached and fresh (in memory or rehydrated from disk).
 void schedulePrefetch(List<Station> stations) {
   final today = _todayOnly();
+  // Seed/refresh the year-long offline safety net too. Self-throttled (a
+  // no-op unless missing or aging out), so this is cheap on every call —
+  // including the frequent ones (station open, app resume).
+  for (final station in stations) {
+    warmSeason(station).ignore();
+  }
   // Offsets: -2, -1, 0 (today), +1 … +7
   for (var offset = -2; offset <= 7; offset++) {
     final date = today.add(Duration(days: offset));
@@ -105,6 +130,20 @@ Future<void> hydrateCacheFromDisk() async {
               .map((e) => _predFromJson(e as Map<String, dynamic>))
               .toList();
           _weekCache[k.substring(_weekDiskPrefix.length)] =
+              (data: list, fetchedAt: fetchedAt);
+        } else if (k.startsWith(_seasonDiskPrefix)) {
+          final raw = sp.getString(k);
+          if (raw == null) continue;
+          final j = jsonDecode(raw) as Map<String, dynamic>;
+          final fetchedAt = DateTime.fromMillisecondsSinceEpoch(j['f'] as int);
+          if (now.difference(fetchedAt) > _seasonDiskCutoff) {
+            await sp.remove(k);
+            continue;
+          }
+          final list = (j['d'] as List)
+              .map((e) => _predFromJson(e as Map<String, dynamic>))
+              .toList();
+          _seasonCache[k.substring(_seasonDiskPrefix.length)] =
               (data: list, fetchedAt: fetchedAt);
         }
       } catch (_) {
@@ -1345,12 +1384,31 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
   final hilo = results[1] as List<TidePrediction>;
 
   // No tide predictions came back — the NOAA datagetter is unreachable (e.g. a
-  // 50x outage). Never overwrite a good cache with a blank: serve whatever we
-  // already have for this day (a background-warmed partial, or a stale full
-  // entry) so the tide curve still shows. Only when there's nothing cached do
-  // we surface the empty result, and we don't persist it.
+  // 50x outage, or no network at all). Never overwrite a good cache with a
+  // blank: serve whatever we already have for this day (a background-warmed
+  // partial, or a stale full entry) so the tide curve still shows.
   if (hourlyList.isEmpty && hilo.isEmpty) {
     if (cached != null) return cached.data;
+    // Nothing warmed for this exact day (e.g. the 7-day background window
+    // never reached it) — fall back to the year-long season cache, which
+    // doesn't depend on WorkManager having run recently. Reconstructed
+    // on-the-fly and persisted so this day is fast/warm next time too.
+    final season = _seasonCache[id];
+    if (season != null) {
+      final dayHilo = season.data
+          .where((p) =>
+              p.time.year == dateOnly.year &&
+              p.time.month == dateOnly.month &&
+              p.time.day == dateOnly.day)
+          .toList();
+      if (dayHilo.isNotEmpty) {
+        final partial = _partialTideFromHilo(
+            station, dateOnly, dayHilo, results[11] as _StationTz);
+        _tideCache[cacheKey] = (data: partial, fetchedAt: partial.fetchedAt);
+        _persistTide(cacheKey, partial, partial.fetchedAt);
+        return partial;
+      }
+    }
   }
 
   final pressureTrend = results[5] as int;
@@ -1560,27 +1618,9 @@ Future<void> warmTidesOnly(Station station, {int daysAhead = 7}) async {
         .toList();
     if (dayHilo.isEmpty) continue;
 
-    final utcOff = _localUtcOffset(tz, day);
-    final solunar = solunarTimes(day, station.lon, utcOff);
-    final fetchedAt = DateTime.now();
-    final data = TideData(
-      stationId: station.id,
-      lat: station.lat,
-      lon: station.lon,
-      targetDate: day,
-      isToday: day == today,
-      hourly: _interpolateHourlyFromHilo(dayHilo),
-      hilo: dayHilo,
-      conditions: const Conditions(),
-      sun: sunTimes(day, station.lat, station.lon, utcOff),
-      moon: moonPhase(day),
-      solunar: solunar,
-      fishing: fishingRatingDay(dayHilo, solunar),
-      isPartial: true,
-      fetchedAt: fetchedAt,
-    );
-    _tideCache[key] = (data: data, fetchedAt: fetchedAt);
-    _persistTide(key, data, fetchedAt);
+    final data = _partialTideFromHilo(station, day, dayHilo, tz);
+    _tideCache[key] = (data: data, fetchedAt: data.fetchedAt);
+    _persistTide(key, data, data.fetchedAt);
   }
 }
 
@@ -1596,6 +1636,88 @@ bool _diskHasFreshFullTide(SharedPreferences sp, String diskKey, DateTime day) {
     final fetchedAt = DateTime.fromMillisecondsSinceEpoch(j['f'] as int);
     final ttl = day == _todayOnly() ? _cacheTtl : _staticTtl;
     return DateTime.now().difference(fetchedAt) < ttl;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// Builds a tides-only (no live conditions) [TideData] for [day] from that
+/// day's hi/lo predictions — the astronomical curve plus locally-computed
+/// sun/moon/solunar/fishing. Shared by [warmTidesOnly] (near-term background
+/// warm) and the season-cache fallback in [fetchAllData] (last resort when
+/// both the per-day cache and NOAA are unreachable).
+TideData _partialTideFromHilo(
+    Station station, DateTime day, List<TidePrediction> dayHilo, _StationTz tz) {
+  final utcOff = _localUtcOffset(tz, day);
+  final solunar = solunarTimes(day, station.lon, utcOff);
+  return TideData(
+    stationId: station.id,
+    lat: station.lat,
+    lon: station.lon,
+    targetDate: day,
+    isToday: day == _todayOnly(),
+    hourly: _interpolateHourlyFromHilo(dayHilo),
+    hilo: dayHilo,
+    conditions: const Conditions(),
+    sun: sunTimes(day, station.lat, station.lon, utcOff),
+    moon: moonPhase(day),
+    solunar: solunar,
+    fishing: fishingRatingDay(dayHilo, solunar),
+    isPartial: true,
+    fetchedAt: DateTime.now(),
+  );
+}
+
+/// Fetches (and disk-persists) a full year of hi/lo tide predictions for
+/// [station] in a SINGLE NOAA request — the offline safety net for
+/// favourites. Unlike [warmTidesOnly]'s rolling 7-day window, which stays
+/// useful only if WorkManager's periodic job keeps firing on schedule (real
+/// devices don't guarantee that — Doze, OEM battery managers, or the app
+/// simply not being opened), a year of predictions comfortably outlives any
+/// such gap: a multi-week trip with zero connectivity still has tide data for
+/// every day of it, reconstructed on the fly by [fetchAllData]. Self-
+/// throttled: a no-op unless the cached season is missing or aging out, so
+/// it's cheap to call from every [schedulePrefetch].
+Future<void> warmSeason(Station station) async {
+  final id = station.id;
+  final mem = _seasonCache[id];
+  if (mem != null && DateTime.now().difference(mem.fetchedAt) < _seasonRefreshAfter) {
+    return;
+  }
+  final sp = await SharedPreferences.getInstance();
+  if (_diskHasFreshSeason(sp, id)) return;
+
+  final today = _todayOnly();
+  final end = today.add(_seasonSpan);
+  final url = 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter'
+      '?begin_date=${_dateFmt.format(today)}'
+      '&end_date=${_dateFmt.format(end)}'
+      '&station=$id'
+      '&product=predictions&datum=MLLW&time_zone=lst_ldt'
+      '&interval=hilo&units=english&format=json&application=tides_flutter';
+  final data = await apiGet(url);
+  final list = _parsePredictions((data?['predictions'] as List?) ?? []);
+  if (list.isEmpty) return; // NOAA unreachable — leave any existing cache untouched.
+
+  final fetchedAt = DateTime.now();
+  _seasonCache[id] = (data: list, fetchedAt: fetchedAt);
+  try {
+    await sp.setString(
+        '$_seasonDiskPrefix$id',
+        jsonEncode({
+          'f': fetchedAt.millisecondsSinceEpoch,
+          'd': list.map(_predToJson).toList(),
+        }));
+  } catch (_) {/* best-effort */}
+}
+
+bool _diskHasFreshSeason(SharedPreferences sp, String id) {
+  try {
+    final raw = sp.getString('$_seasonDiskPrefix$id');
+    if (raw == null) return false;
+    final j = jsonDecode(raw) as Map<String, dynamic>;
+    final fetchedAt = DateTime.fromMillisecondsSinceEpoch(j['f'] as int);
+    return DateTime.now().difference(fetchedAt) < _seasonRefreshAfter;
   } catch (_) {
     return false;
   }
