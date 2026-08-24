@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:dio/dio.dart';
@@ -1168,14 +1169,19 @@ Future<dynamic> _fetchWaterLevel(String stationId) async {
 Future<Map<String, dynamic>?> _fetchNws(double lat, double lon) async {
   const hdr = {'User-Agent': 'tides-flutter/2.0'};
   // Many coastal/offshore stations sit on water where NWS has no grid data.
-  // Try the exact coords first, then small offsets to find a valid land grid point.
+  // Try the exact coords first, then small offsets to find a valid land grid
+  // point. Fired concurrently rather than one-at-a-time: on a weak/offshore
+  // connection each attempt can burn its full timeout before failing, and
+  // seven of those in series (~15s each) could stall the whole tide fetch for
+  // well over a minute before anything falls back to the offline cache.
   const offsets = [
     [0.0, 0.0], [0.06, 0.0], [-0.06, 0.0],
     [0.0, 0.06], [0.0, -0.06], [0.06, 0.06], [-0.06, -0.06],
   ];
-  for (final off in offsets) {
-    final result = await _tryNwsFetch(lat + off[0], lon + off[1], hdr);
-    if (result != null) return result;
+  final results = await Future.wait(
+      offsets.map((off) => _tryNwsFetch(lat + off[0], lon + off[1], hdr)));
+  for (final r in results) {
+    if (r != null) return r;
   }
   return null;
 }
@@ -1268,23 +1274,43 @@ NwsForecast? _parseNws(Map<String, dynamic>? raw) {
 
 // ── Hourly interpolation from hi/lo (for subordinate stations) ────────────────
 
-Map<int, double> _interpolateHourlyFromHilo(List<TidePrediction> hilo) {
-  if (hilo.length < 2) return {};
+// [hilo] is normally just the target day's own extrema (hour-of-day mode).
+// Callers reconstructing a curve from sparse cached data (season cache,
+// near-term partial warm) may instead pass in nearby days' extrema too, in
+// which case [day] must be given so points are placed on a continuous
+// (possibly negative, possibly >24) hours-from-midnight timeline instead of
+// colliding on raw hour-of-day.
+Map<int, double> _interpolateHourlyFromHilo(List<TidePrediction> hilo, {DateTime? day}) {
+  if (hilo.isEmpty) return {};
   final sorted = [...hilo]..sort((a, b) => a.time.compareTo(b.time));
-  // Convert to (fractional hour, height) pairs, adding synthetic boundary
-  // points one full tidal period (~12.4h) before first and after last.
+  final dayStart = day != null ? DateTime(day.year, day.month, day.day) : null;
+  double offsetOf(TidePrediction p) => dayStart != null
+      ? p.time.difference(dayStart).inMinutes / 60.0
+      : p.time.hour + p.time.minute / 60.0;
+
+  // Convert to (hour offset, height) pairs, adding synthetic boundary points
+  // one full tidal period (~12.4h) before first and after last.
   final pts = <(double, double)>[];
   const period = 12.42; // avg tidal period in hours
-  final first = sorted.first;
-  final last = sorted.last;
-  final firstH = first.time.hour + first.time.minute / 60.0;
-  final lastH = last.time.hour + last.time.minute / 60.0;
-  // Mirror boundary points so edges of the day are covered.
-  pts.add((firstH - period, first.height));
-  for (final p in sorted) {
-    pts.add((p.time.hour + p.time.minute / 60.0, p.height));
+  if (sorted.length == 1) {
+    // Only one known extremum near this day (e.g. a Gulf-Coast mixed/diurnal
+    // station on a day with a single hi/lo) — mirror it a tidal period on
+    // each side so the day at least renders that known height flat, instead
+    // of nothing at all.
+    final only = sorted.first;
+    final h = offsetOf(only);
+    pts.add((h - period, only.height));
+    pts.add((h, only.height));
+    pts.add((h + period, only.height));
+  } else {
+    final first = sorted.first;
+    final last = sorted.last;
+    pts.add((offsetOf(first) - period, first.height));
+    for (final p in sorted) {
+      pts.add((offsetOf(p), p.height));
+    }
+    pts.add((offsetOf(last) + period, last.height));
   }
-  pts.add((lastH + period, last.height));
 
   final out = <int, double>{};
   for (var hour = 0; hour < 24; hour++) {
@@ -1365,20 +1391,36 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
   final lat = station.lat;
   final lon = station.lon;
 
-  final results = await Future.wait([
-    _fetchPredictions(id, dateStr, 'h'),       // 0
-    _fetchPredictions(id, dateStr, 'hilo'),    // 1
-    _fetchObs(id, 'air_temperature'),          // 2
-    _fetchObs(id, 'wind'),                     // 3
-    _fetchObs(id, 'air_pressure'),             // 4
-    _fetchPressureTrend(id),                   // 5
-    _fetchObs(id, 'water_temperature'),        // 6
-    _fetchWaterLevel(id),                      // 7
-    _fetchNws(lat, lon),                       // 8
-    _fetchObs(id, 'salinity'),                 // 9
-    fetchOpenMeteoWaves(lat, lon, day: dateOnly), // 10
-    _stationTz(station),                       // 11
-  ]);
+  List<dynamic> results;
+  try {
+    results = await Future.wait([
+      _fetchPredictions(id, dateStr, 'h'),       // 0
+      _fetchPredictions(id, dateStr, 'hilo'),    // 1
+      _fetchObs(id, 'air_temperature'),          // 2
+      _fetchObs(id, 'wind'),                     // 3
+      _fetchObs(id, 'air_pressure'),             // 4
+      _fetchPressureTrend(id),                   // 5
+      _fetchObs(id, 'water_temperature'),        // 6
+      _fetchWaterLevel(id),                      // 7
+      _fetchNws(lat, lon),                       // 8
+      _fetchObs(id, 'salinity'),                 // 9
+      fetchOpenMeteoWaves(lat, lon, day: dateOnly), // 10
+      _stationTz(station),                       // 11
+    ]).timeout(const Duration(seconds: 12));
+  } on TimeoutException {
+    // A weak/offshore connection can leave several of the dozen calls above
+    // each burning their own multi-second timeout, stacking up to well past a
+    // minute before this function would otherwise give up and fall back to
+    // the offline cache. Cap the wait instead: past this point, treat it the
+    // same as a NOAA outage (empty predictions) so the season-cache fallback
+    // below kicks in promptly rather than leaving the UI spinning.
+    results = <dynamic>[
+      const <TidePrediction>[],
+      const <TidePrediction>[],
+      null, null, null, 0, null, null, null, null, null,
+      _StationTz((lon / 15).roundToDouble(), ''),
+    ];
+  }
 
   final hourlyList = results[0] as List<TidePrediction>;
   final hilo = results[1] as List<TidePrediction>;
@@ -1402,8 +1444,16 @@ Future<TideData> fetchAllData(Station station, {DateTime? targetDate}) async {
               p.time.day == dateOnly.day)
           .toList();
       if (dayHilo.isNotEmpty) {
+        // A day or two either side, for interpolation context — cheap since
+        // the season cache is one in-memory list already held for [id].
+        final context = season.data
+            .where((p) =>
+                p.time.isAfter(dateOnly.subtract(const Duration(days: 2))) &&
+                p.time.isBefore(dateOnly.add(const Duration(days: 3))))
+            .toList();
         final partial = _partialTideFromHilo(
-            station, dateOnly, dayHilo, results[11] as _StationTz);
+            station, dateOnly, dayHilo, results[11] as _StationTz,
+            context: context);
         _tideCache[cacheKey] = (data: partial, fetchedAt: partial.fetchedAt);
         _persistTide(cacheKey, partial, partial.fetchedAt);
         return partial;
@@ -1618,7 +1668,9 @@ Future<void> warmTidesOnly(Station station, {int daysAhead = 7}) async {
         .toList();
     if (dayHilo.isEmpty) continue;
 
-    final data = _partialTideFromHilo(station, day, dayHilo, tz);
+    // The whole fetched week (already small) as interpolation context, so a
+    // sparse day still gets a real curve from its actual neighbours.
+    final data = _partialTideFromHilo(station, day, dayHilo, tz, context: week);
     _tideCache[key] = (data: data, fetchedAt: data.fetchedAt);
     _persistTide(key, data, data.fetchedAt);
   }
@@ -1646,8 +1698,17 @@ bool _diskHasFreshFullTide(SharedPreferences sp, String diskKey, DateTime day) {
 /// sun/moon/solunar/fishing. Shared by [warmTidesOnly] (near-term background
 /// warm) and the season-cache fallback in [fetchAllData] (last resort when
 /// both the per-day cache and NOAA are unreachable).
+///
+/// [dayHilo] (strictly [day]'s own extrema) drives the HIGH/LOW TIDES list
+/// and the fishing rating. [context] — [dayHilo] plus a few days either side,
+/// when the caller has it cheaply available — drives the hourly curve: a
+/// mixed/diurnal Gulf-Coast day can have as few as one extremum, too sparse
+/// to interpolate a curve from on its own, so pulling in the real
+/// neighbouring-day extrema (rather than mirroring [day]'s single point flat)
+/// keeps the offline curve shaped like the live one would be.
 TideData _partialTideFromHilo(
-    Station station, DateTime day, List<TidePrediction> dayHilo, _StationTz tz) {
+    Station station, DateTime day, List<TidePrediction> dayHilo, _StationTz tz,
+    {List<TidePrediction>? context}) {
   final utcOff = _localUtcOffset(tz, day);
   final solunar = solunarTimes(day, station.lon, utcOff);
   return TideData(
@@ -1656,7 +1717,7 @@ TideData _partialTideFromHilo(
     lon: station.lon,
     targetDate: day,
     isToday: day == _todayOnly(),
-    hourly: _interpolateHourlyFromHilo(dayHilo),
+    hourly: _interpolateHourlyFromHilo(context ?? dayHilo, day: day),
     hilo: dayHilo,
     conditions: const Conditions(),
     sun: sunTimes(day, station.lat, station.lon, utcOff),
