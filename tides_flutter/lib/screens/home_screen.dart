@@ -16,6 +16,7 @@ import '../widgets/station_tile.dart';
 import '../theme.dart';
 import '../providers/notification_provider.dart';
 import '../services/notification_service.dart';
+import '../services/home_widget_service.dart';
 import 'about_screen.dart';
 import 'catch_log_screen.dart';
 import 'detail_screen.dart';
@@ -60,6 +61,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       if (launchStationId != null) {
         _pendingNotificationStationId = launchStationId;
       }
+      // Home-screen widget tap: the payload already carries id/name/lat/lon
+      // (the widget stores its own station, unlike a notification's bare id),
+      // so this can open straight away without waiting on favorites to load.
+      HomeWidgetService.init();
+      HomeWidgetService.onStationTapped = (payload) => _openWidgetStation(payload);
+      final pendingWidget = await HomeWidgetService.consumePendingStation();
+      if (pendingWidget != null) _openWidgetStation(pendingWidget);
       // Reschedule 7-day tide alerts for all stations. Run after first frame so
       // the Flutter engine and notification plugin are fully initialized.
       // Await so that any auto-enrollment written to SharedPreferences is
@@ -98,10 +106,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         context, MaterialPageRoute(builder: (_) => DetailScreen(station: station!)));
   }
 
+  void _openWidgetStation(Map<String, dynamic> payload) {
+    if (!mounted) return;
+    final station = Station(
+      id: payload['id'] as String,
+      name: payload['name'] as String,
+      lat: (payload['lat'] as num).toDouble(),
+      lon: (payload['lon'] as num).toDouble(),
+    );
+    Navigator.push(
+        context, MaterialPageRoute(builder: (_) => DetailScreen(station: station)));
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     NotificationService.onStationTapped = null;
+    HomeWidgetService.onStationTapped = null;
     _searchDebounce?.cancel();
     _ctrl.dispose();
     super.dispose();

@@ -66,6 +66,26 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- Home-screen widget: previous tide + next 3 for one favorite station. -->
+        <receiver
+            android:name=".widget.TideWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/tide_widget_info"/>
+        </receiver>
+        <activity
+            android:name=".widget.TideWidgetConfigActivity"
+            android:exported="true"
+            android:theme="@style/NormalTheme">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE"/>
+            </intent-filter>
+        </activity>
+
         <!-- Shares staged catch photos (in the cache dir) with the email composer
              as content:// URIs. Authority is distinct from any plugin provider. -->
         <provider

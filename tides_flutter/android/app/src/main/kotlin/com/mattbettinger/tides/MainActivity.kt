@@ -12,8 +12,33 @@ import java.io.File
 import java.util.ArrayList
 
 class MainActivity : FlutterActivity() {
+    private var widgetChannel: MethodChannel? = null
+
+    // A widget tap's station payload, held until Dart asks for it. Only needed
+    // for a cold start (configureFlutterEngine runs before HomeScreen's Dart
+    // code has registered a handler, so pushing immediately would be dropped);
+    // a tap while already running is pushed straight through instead — see
+    // captureWidgetIntent.
+    private var pendingWidgetStation: Map<String, Any?>? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        widgetChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.mattbettinger.tides/widget"
+        ).also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                if (call.method == "consumePendingStation") {
+                    result.success(pendingWidgetStation)
+                    pendingWidgetStation = null
+                } else {
+                    result.notImplemented()
+                }
+            }
+        }
+        captureWidgetIntent(intent, push = false)
+
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "com.mattbettinger.tides/setup"
@@ -48,6 +73,38 @@ class MainActivity : FlutterActivity() {
             } else {
                 result.notImplemented()
             }
+        }
+    }
+
+    // launchMode="singleTop" reuses this activity for a widget tap while the
+    // app's already running, instead of a fresh onCreate — that's the only
+    // case this fires (a cold start is handled in configureFlutterEngine).
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        captureWidgetIntent(intent, push = true)
+    }
+
+    /**
+     * Reads the widget-tap extras MainActivity is launched with, if any. On a
+     * cold start ([push] false) the payload is stashed for Dart to pull once
+     * it's ready; while already running ([push] true) it's pushed straight to
+     * Dart's already-registered listener.
+     */
+    private fun captureWidgetIntent(intent: Intent?, push: Boolean) {
+        val stationId = intent?.getStringExtra("station_id") ?: return
+        val payload = mapOf(
+            "id" to stationId,
+            "name" to (intent.getStringExtra("station_name") ?: ""),
+            "lat" to intent.getDoubleExtra("station_lat", 0.0),
+            "lon" to intent.getDoubleExtra("station_lon", 0.0),
+        )
+        // Avoid re-delivering the same tap if this intent is read again.
+        intent.removeExtra("station_id")
+        if (push) {
+            widgetChannel?.invokeMethod("openStation", payload)
+        } else {
+            pendingWidgetStation = payload
         }
     }
 

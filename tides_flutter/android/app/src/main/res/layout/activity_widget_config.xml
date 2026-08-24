@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#0D1B2A"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Choose a station"
+        android:textColor="#4DD0E1"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:paddingBottom="12dp" />
+
+    <TextView
+        android:id="@+id/config_empty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Favorite a station in the app first, then add this widget."
+        android:textColor="#E0F7FA"
+        android:visibility="gone" />
+
+    <ListView
+        android:id="@+id/config_list"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+</LinearLayout>

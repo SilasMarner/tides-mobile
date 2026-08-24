@@ -105,18 +105,30 @@ object NoaaRepo {
 
     /**
      * High/low tide predictions over today + the next two days (so "next tides"
-     * spans past midnight), in station-local time. Background-thread only.
+     * spans past midnight). Background-thread only.
+     *
+     * Fetched as GMT rather than the station's own lst_ldt: NOAA's naive
+     * "yyyy-MM-dd HH:mm" strings carry no offset, so parsing them assumes
+     * *some* timezone, and SimpleDateFormat defaults to the device's — wrong
+     * whenever the device isn't in the station's zone (any driver checking an
+     * out-of-area or out-of-timezone station). Callers comparing [TidePoint.time]
+     * against `Date()` (e.g. "is this the next high tide") got a silently wrong
+     * answer instead of a crash, which is what made this easy to miss. GMT has
+     * no such ambiguity; [TidePoint.time] is a real instant, and display
+     * formatting elsewhere already uses the device's local zone, which is
+     * standard for a phone/car UI.
      */
     fun fetchTides(station: CarStation): List<TidePoint> {
-        val ymd = SimpleDateFormat("yyyyMMdd", Locale.US)
+        val gmt = java.util.TimeZone.getTimeZone("GMT")
+        val ymd = SimpleDateFormat("yyyyMMdd", Locale.US).apply { timeZone = gmt }
         val now = Date()
         val begin = ymd.format(now)
         val end = ymd.format(Date(now.time + 2L * 24 * 3600 * 1000))
         val url = "$BASE?begin_date=$begin&end_date=$end&station=${station.id}" +
-            "&product=predictions&datum=MLLW&time_zone=lst_ldt&interval=hilo" +
+            "&product=predictions&datum=MLLW&time_zone=gmt&interval=hilo" +
             "&units=english&format=json&application=opentides_auto"
         val preds = JSONObject(httpGet(url)).optJSONArray("predictions") ?: return emptyList()
-        val parse = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
+        val parse = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).apply { timeZone = gmt }
         val out = ArrayList<TidePoint>()
         for (i in 0 until preds.length()) {
             val p = preds.getJSONObject(i)
