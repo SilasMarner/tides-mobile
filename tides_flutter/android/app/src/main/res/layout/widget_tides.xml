@@ -34,28 +34,44 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:textColor="#E0F7FA"
-                android:textSize="12sp" />
+                android:textSize="12sp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:paddingTop="2dp"
+                android:paddingBottom="2dp" />
 
             <TextView
                 android:id="@+id/widget_row1"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:textColor="#E0F7FA"
-                android:textSize="12sp" />
+                android:textSize="12sp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:paddingTop="2dp"
+                android:paddingBottom="2dp" />
 
             <TextView
                 android:id="@+id/widget_row2"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:textColor="#E0F7FA"
-                android:textSize="12sp" />
+                android:textSize="12sp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:paddingTop="2dp"
+                android:paddingBottom="2dp" />
 
             <TextView
                 android:id="@+id/widget_row3"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:textColor="#E0F7FA"
-                android:textSize="12sp" />
+                android:textSize="12sp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:paddingTop="2dp"
+                android:paddingBottom="2dp" />
 
         </LinearLayout>
     </LinearLayout>

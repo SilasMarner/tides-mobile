@@ -9,10 +9,18 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Choose a station"
+        android:text="Choose up to 4 stations"
         android:textColor="#4DD0E1"
         android:textSize="18sp"
-        android:textStyle="bold"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="One station shows its full tide chart; more than one shows just the next tide for each."
+        android:textColor="#7FA3B0"
+        android:textSize="13sp"
+        android:paddingTop="4dp"
         android:paddingBottom="12dp" />
 
     <TextView
@@ -26,6 +34,15 @@
     <ListView
         android:id="@+id/config_list"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <Button
+        android:id="@+id/config_add"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="Add Widget"
+        android:enabled="false" />
 
 </LinearLayout>
