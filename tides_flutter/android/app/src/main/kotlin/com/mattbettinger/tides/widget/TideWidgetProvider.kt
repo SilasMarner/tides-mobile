@@ -11,6 +11,7 @@ import android.widget.RemoteViews
 import com.mattbettinger.tides.MainActivity
 import com.mattbettinger.tides.R
 import com.mattbettinger.tides.car.CarStation
+import com.mattbettinger.tides.car.CarSummary
 import com.mattbettinger.tides.car.NoaaRepo
 import com.mattbettinger.tides.car.TidePoint
 import org.json.JSONArray
@@ -116,6 +117,10 @@ class TideWidgetProvider : AppWidgetProvider() {
         ) {
             val openPendingIntent = openStationPendingIntent(context, appWidgetId, 0, station)
 
+            // Cheap SharedPreferences read (no network) — safe to show right away
+            // rather than waiting on the tide fetch below.
+            val summaryLine = formatSummary(NoaaRepo.readCarSummary(context, station.id))
+
             val placeholder = RemoteViews(context.packageName, R.layout.widget_tides)
             placeholder.setTextViewText(R.id.widget_title, station.name)
             placeholder.setViewVisibility(R.id.widget_rows, View.VISIBLE)
@@ -124,6 +129,7 @@ class TideWidgetProvider : AppWidgetProvider() {
                 placeholder.setTextViewText(rid, "")
                 placeholder.setViewVisibility(rid, View.VISIBLE)
             }
+            setSummaryRow(placeholder, summaryLine)
             placeholder.setOnClickPendingIntent(R.id.widget_root, openPendingIntent)
             appWidgetManager.updateAppWidget(appWidgetId, placeholder)
 
@@ -142,8 +148,38 @@ class TideWidgetProvider : AppWidgetProvider() {
                     views.setTextViewText(ROW_IDS[i], rows.getOrElse(i) { "" })
                     views.setViewVisibility(ROW_IDS[i], View.VISIBLE)
                 }
+                setSummaryRow(views, summaryLine)
                 appWidgetManager.updateAppWidget(appWidgetId, views)
             }.start()
+        }
+
+        private fun setSummaryRow(views: RemoteViews, summaryLine: String?) {
+            if (summaryLine == null) {
+                views.setViewVisibility(R.id.widget_summary, View.GONE)
+            } else {
+                views.setTextViewText(R.id.widget_summary, summaryLine)
+                views.setViewVisibility(R.id.widget_summary, View.VISIBLE)
+            }
+        }
+
+        // "★★★★☆ Very Good · ↑6:16 AM ↓6:50 PM" — whichever pieces are cached.
+        // Null when nothing's cached (station never opened in the app yet).
+        private fun formatSummary(summary: CarSummary?): String? {
+            if (summary == null) return null
+            val rating = summary.stars?.let { stars ->
+                val filled = "★".repeat(stars.coerceIn(0, 5))
+                val empty = "☆".repeat((5 - stars).coerceIn(0, 5))
+                val label = summary.fishingLabel?.let { " $it" } ?: ""
+                "$filled$empty$label"
+            }
+            val sun = if (summary.sunrise != null || summary.sunset != null) {
+                listOfNotNull(
+                    summary.sunrise?.let { "↑$it" },
+                    summary.sunset?.let { "↓$it" },
+                ).joinToString(" ")
+            } else null
+            val parts = listOfNotNull(rating, sun)
+            return if (parts.isEmpty()) null else parts.joinToString(" · ")
         }
 
         // ── Multiple stations: one compact, independently-tappable line each ───
@@ -159,6 +195,7 @@ class TideWidgetProvider : AppWidgetProvider() {
             val placeholder = RemoteViews(context.packageName, R.layout.widget_tides)
             placeholder.setTextViewText(R.id.widget_title, "My Tides")
             placeholder.setViewVisibility(R.id.widget_rows, View.VISIBLE)
+            placeholder.setViewVisibility(R.id.widget_summary, View.GONE)
             placeholder.setOnClickPendingIntent(R.id.widget_root, genericOpenIntent)
             for (i in ROW_IDS.indices) {
                 if (i < stations.size) {

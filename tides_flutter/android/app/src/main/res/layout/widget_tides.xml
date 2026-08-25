@@ -73,6 +73,22 @@
                 android:paddingTop="2dp"
                 android:paddingBottom="2dp" />
 
+            <!-- Single-station mode only: fishing rating + sunrise/sunset,
+                 from the same phone-computed cache the Android Auto module
+                 reads (car_<stationId> in Flutter's SharedPreferences). Hidden
+                 in multi-station/unconfigured mode and when nothing's cached
+                 yet (station never opened in the app). -->
+            <TextView
+                android:id="@+id/widget_summary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="#FFCA28"
+                android:textSize="11sp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:paddingTop="4dp"
+                android:visibility="gone" />
+
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>
