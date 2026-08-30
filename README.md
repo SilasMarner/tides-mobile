@@ -129,6 +129,9 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 118) — Data maps: fix "API key required" watermark on the basemap
+- **Fixed a "API KEY REQUIRED" watermark tiled across the Wind, Water Temp, and Before You Fly maps.** CARTO cut off their free anonymous basemap tile tier (`basemaps.cartocdn.com`); unauthenticated requests still return a 200 OK PNG, but now with that text baked into the image, so the maps still "worked" — they just showed a wrecked, watermarked basemap under the live data. Swapped the basemap to Esri's free ArcGIS Online tile services (`World_Street_Map` for light, `World_Dark_Gray_Base`+`Reference` for the satellite/clouds dark map) — no key required, and the app already depended on Esri elsewhere (the ocean coastline overlay). Verified on-device across all three maps.
+
 ### v3.4.1 (build 115) — Offline tides: a year-long cache, not just a rolling week
 - **Favourited stations now keep a full year of tide predictions cached on-device**, fetched in one request per station and refreshed automatically well before it runs low. The existing background refresh only kept a rolling ~7-day window warm, which depended on WorkManager's periodic job actually firing on schedule — something Android's battery optimization doesn't guarantee on real phones. A trip with no signal for longer than that window (or after the background job simply didn't run) could leave a favourited station with no tide data at all. The year-long cache is seeded the moment you favourite a station and doesn't depend on background execution being reliable, so a multi-week trip with zero connectivity still shows tides for every day of it. Verified on-device: fully offline, a day 30 days out (never fetched live) still renders its full tide curve from the season cache, tagged "Showing saved data."
 

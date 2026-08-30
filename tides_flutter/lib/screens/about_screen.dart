@@ -247,7 +247,7 @@ class AboutScreen extends StatelessWidget {
     ('Open-Meteo Marine API', 'CC BY 4.0', 'open-meteo.com'),
     ('flutter_map', 'BSD 3-Clause', 'pub.dev/packages/flutter_map'),
     ('NOAA / NWS MRMS', 'Public domain', 'mrms.ncep.noaa.gov'),
-    ('CARTO / OpenStreetMap', '© CARTO · © OpenStreetMap', 'carto.com'),
+    ('Esri ArcGIS Online', '© Esri', 'arcgis.com'),
     ('NOAA NGOFS2 OFS', 'Public Domain', 'tidesandcurrents.noaa.gov/ofs'),
     ('NOAA CoastWatch ERDDAP', 'Public Domain', 'coastwatch.pfeg.noaa.gov/erddap'),
     ('JPL MUR SST (GHRSST)', 'Public Domain', 'podaac.jpl.nasa.gov'),
