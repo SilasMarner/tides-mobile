@@ -370,7 +370,7 @@ void prefetchWindMap(double lat, double lon, BuildContext context) {
       } catch (_) {/* best-effort */}
     }();
   }
-  // Warm the CARTO basemap tiles (z7–9, 3×3 around the station).
+  // Warm the Esri basemap tiles (z7–9, 3×3 around the station).
   () async {
     try {
       for (final z in [7, 8, 9]) {
@@ -378,8 +378,8 @@ void prefetchWindMap(double lat, double lon, BuildContext context) {
         for (var dx = -1; dx <= 1; dx++) {
           for (var dy = -1; dy <= 1; dy++) {
             if (!context.mounted) return;
-            final url = 'https://a.basemaps.cartocdn.com/rastertiles/voyager/'
-                '$z/${cx + dx}/${cy + dy}@2x.png';
+            final url = 'https://services.arcgisonline.com/ArcGIS/rest/services/'
+                'World_Street_Map/MapServer/tile/$z/${cy + dy}/${cx + dx}';
             precacheImage(NetworkImage(url), context).catchError((_) {});
           }
         }
@@ -1963,18 +1963,37 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
             children: [
               // Satellite uses a DARK basemap so bright IR cloud/storm tops pop
               // (like a real satellite view); other layers use the light map.
-              TileLayer(
-                key: ValueKey(def.isSatellite ? 'dark' : 'light'),
-                urlTemplate: def.isSatellite
-                    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-                    : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-                subdomains: const ['a', 'b', 'c', 'd'],
-                userAgentPackageName: 'com.mattbettinger.tides',
-                retinaMode: true,
-                // Prefetch a ring of tiles beyond the view edge so pans reveal
-                // loaded map instead of grey squares.
-                panBuffer: 2,
-              ),
+              // Esri ArcGIS Online free tile services (no API key) — CARTO's
+              // anonymous basemaps.cartocdn.com tier now watermarks unauthenticated
+              // tiles with "API key required".
+              if (def.isSatellite) ...[
+                TileLayer(
+                  key: const ValueKey('dark-base'),
+                  urlTemplate:
+                      'https://services.arcgisonline.com/ArcGIS/rest/services/'
+                      'Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+                  userAgentPackageName: 'com.mattbettinger.tides',
+                  panBuffer: 2,
+                ),
+                TileLayer(
+                  key: const ValueKey('dark-ref'),
+                  urlTemplate:
+                      'https://services.arcgisonline.com/ArcGIS/rest/services/'
+                      'Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+                  userAgentPackageName: 'com.mattbettinger.tides',
+                  panBuffer: 2,
+                ),
+              ] else
+                TileLayer(
+                  key: const ValueKey('light'),
+                  urlTemplate:
+                      'https://services.arcgisonline.com/ArcGIS/rest/services/'
+                      'World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+                  userAgentPackageName: 'com.mattbettinger.tides',
+                  // Prefetch a ring of tiles beyond the view edge so pans reveal
+                  // loaded map instead of grey squares.
+                  panBuffer: 2,
+                ),
               // NOAA radar layer — only when the current frame is observed radar.
               // WMS layer; the time dimension is swapped per frame (ValueKey
               // forces a reload), and GeoServer snaps to the nearest real frame.
@@ -2041,12 +2060,11 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
               // added clutter and drifted off-centre while panning.
               RichAttributionWidget(
                 attributions: [
-                  const TextSourceAttribution('© CARTO'),
-                  const TextSourceAttribution('© OpenStreetMap contributors'),
+                  const TextSourceAttribution('© Esri'),
                   TextSourceAttribution(def.isRadar
                       ? (_isRadarFrame(_radarIndex) ? 'NOAA / NWS' : 'Open-Meteo')
                       : def.isSatellite
-                          ? 'NASA GIBS · NOAA GOES · Esri'
+                          ? 'NASA GIBS · NOAA GOES'
                           : def.isSeas
                               ? 'NOAA NWS WaveWatch III · PacIOOS ERDDAP'
                               : 'Open-Meteo'),

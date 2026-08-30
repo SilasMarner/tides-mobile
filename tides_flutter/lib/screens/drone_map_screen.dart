@@ -672,10 +672,9 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
             children: [
               TileLayer(
                 urlTemplate:
-                    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-                subdomains: const ['a', 'b', 'c', 'd'],
+                    'https://services.arcgisonline.com/ArcGIS/rest/services/'
+                    'World_Street_Map/MapServer/tile/{z}/{y}/{x}',
                 userAgentPackageName: 'com.mattbettinger.tides',
-                retinaMode: true,
                 panBuffer: 2,
               ),
               for (final group in [usfwsZ, npsZ, faaZ, tfrZ])
@@ -731,8 +730,7 @@ class _DroneMapScreenState extends State<DroneMapScreen> {
                 ]),
               const RichAttributionWidget(
                 attributions: [
-                  TextSourceAttribution('© CARTO'),
-                  TextSourceAttribution('© OpenStreetMap contributors'),
+                  TextSourceAttribution('© Esri'),
                   TextSourceAttribution('FAA · USGS National Map · USFWS'),
                 ],
               ),

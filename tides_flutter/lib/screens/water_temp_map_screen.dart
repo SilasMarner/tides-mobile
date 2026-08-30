@@ -524,10 +524,9 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
             children: [
               TileLayer(
                 urlTemplate:
-                    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-                subdomains: const ['a', 'b', 'c', 'd'],
+                    'https://services.arcgisonline.com/ArcGIS/rest/services/'
+                    'World_Street_Map/MapServer/tile/{z}/{y}/{x}',
                 userAgentPackageName: 'com.mattbettinger.tides',
-                retinaMode: true,
                 panBuffer: 2,
               ),
               if (_overlayUrl != null && _overlayBounds != null)
@@ -549,8 +548,7 @@ class _WaterTempMapScreenState extends ConsumerState<WaterTempMapScreen> {
               // added clutter and drifted off-centre while panning.
               const RichAttributionWidget(
                 attributions: [
-                  TextSourceAttribution('© CARTO'),
-                  TextSourceAttribution('© OpenStreetMap contributors'),
+                  TextSourceAttribution('© Esri'),
                   TextSourceAttribution('NOAA CoastWatch · JPL MUR · MODIS'),
                 ],
               ),
