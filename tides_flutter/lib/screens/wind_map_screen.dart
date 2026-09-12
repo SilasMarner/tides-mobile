@@ -402,6 +402,7 @@ class _LayerDef {
   final bool isRadar; // overlay live weather-radar tiles instead of a grid
   final bool isSatellite; // overlay live GOES satellite tiles instead of a grid
   final bool isSeas; // animated NOAA WaveWatch III forecast (own timeline)
+  final bool hasForecast; // show the 24h hourly scrub timeline (grid layers)
   final String valueVar;
   final String? directionVar;
   final Color Function(double) colorFn;
@@ -416,6 +417,7 @@ class _LayerDef {
     this.isRadar = false,
     this.isSatellite = false,
     this.isSeas = false,
+    this.hasForecast = false,
     required this.valueVar,
     this.directionVar,
     required this.colorFn,
@@ -430,7 +432,7 @@ class _LayerDef {
 const _kLayers = <_Layer, _LayerDef>{
   _Layer.wind: _LayerDef(
     label: 'Wind', icon: Icons.air,
-    isMarine: false, hasFlow: true,
+    isMarine: false, hasFlow: true, hasForecast: true,
     valueVar: 'wind_speed_10m', directionVar: 'wind_direction_10m',
     colorFn: _windColor,
     legend: [
@@ -448,7 +450,7 @@ const _kLayers = <_Layer, _LayerDef>{
   ),
   _Layer.waves: _LayerDef(
     label: 'Waves', icon: Icons.waves,
-    isMarine: true, hasFlow: true,
+    isMarine: true, hasFlow: true, hasForecast: true,
     valueVar: 'wave_height', directionVar: 'wave_direction',
     colorFn: _waveColor,
     legend: [
@@ -466,7 +468,7 @@ const _kLayers = <_Layer, _LayerDef>{
   ),
   _Layer.swell: _LayerDef(
     label: 'Swell', icon: Icons.sailing,
-    isMarine: true, hasFlow: true,
+    isMarine: true, hasFlow: true, hasForecast: true,
     valueVar: 'swell_wave_height', directionVar: 'swell_wave_direction',
     colorFn: _swellColor,
     legend: [
@@ -516,7 +518,7 @@ const _kLayers = <_Layer, _LayerDef>{
   ),
   _Layer.temp: _LayerDef(
     label: 'Temperature', icon: Icons.thermostat,
-    isMarine: false, hasFlow: false,
+    isMarine: false, hasFlow: false, hasForecast: true,
     valueVar: 'temperature_2m', colorFn: _tempColor,
     legend: [
       (Color(0xFF2E86C1), '<50'),
@@ -533,7 +535,7 @@ const _kLayers = <_Layer, _LayerDef>{
   ),
   _Layer.pressure: _LayerDef(
     label: 'Pressure', icon: Icons.speed,
-    isMarine: false, hasFlow: false, hasIsobars: true,
+    isMarine: false, hasFlow: false, hasIsobars: true, hasForecast: true,
     valueVar: 'pressure_msl', colorFn: _pressureColor,
     legend: [
       (Color(0xFF6C5CE7), '<1000'),
@@ -1131,6 +1133,13 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   int _seasIndex = 0;
   bool _seasPlaying = true;
   Timer? _seasAnim;
+  // Hourly forecast (Wind/Waves/Swell/Temp/Pressure): 24 hourly frames from
+  // "now" onward, one shared set reused across whichever grid layer is
+  // active. Distinct from `_hourlyStrip` below (radar layer's bottom panel).
+  List<({DateTime time, _DataGrid grid, ui.Image image})> _hourlyFrames = [];
+  int _hourlyIndex = 0;
+  bool _hourlyPlaying = true;
+  Timer? _hourlyAnim;
   // Hourly strip: single-point forecast for the bottom panel.
   List<_HourForecast> _hourlyStrip = [];
   // Stale-data support: when Open-Meteo is down, show the last good grid.
@@ -1186,6 +1195,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     _moveDebounce?.cancel();
     _radarAnim?.cancel();
     _seasAnim?.cancel();
+    _hourlyAnim?.cancel();
     super.dispose();
   }
 
@@ -1271,6 +1281,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         _forecastGrids = []; _forecastImages = []; _forecastTimes = [];
         _hourlyStrip = [];
         _seasAnim?.cancel(); _seasFrames = []; _seasIndex = 0;
+        _hourlyAnim?.cancel(); _hourlyFrames = []; _hourlyIndex = 0;
       });
     }
     if (layer != null) {
@@ -1330,7 +1341,11 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         'longitude': lons.join(','),
         'current':   currentVars,
         if (!def.isMarine) 'wind_speed_unit': 'mph',
-        if (!def.isMarine) 'forecast_days': '1',
+        if (def.hasForecast) 'hourly': currentVars,
+        if (def.hasForecast) 'timezone': 'UTC',
+        // Forecast layers need a rolling 24h window from "now", regardless of
+        // what time of day it is, so ask for 2 days of hourly data.
+        if (!def.isMarine) 'forecast_days': def.hasForecast ? '2' : '1',
       });
 
       final items = resp.data as List;
@@ -1365,6 +1380,10 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
               imgN: 192, masked: true, covWeighted: true)
           : await _buildGradientImage(field, def.colorFn);
 
+      final hourlyFrames = def.hasForecast
+          ? await _buildHourlyFrames(items, def, latMin, lonMin, step)
+          : <({DateTime time, _DataGrid grid, ui.Image image})>[];
+
       if (mounted) {
         final entry = (field: field, image: img, fetchedAt: DateTime.now());
         _gridCache[_currentLayer] = entry;
@@ -1374,7 +1393,14 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
           _gradientImage = img;
           _staleDataTime = null;
           _loading = false;
+          if (def.hasForecast) {
+            _hourlyFrames = hourlyFrames;
+            _hourlyIndex = 0;
+          }
         });
+        if (def.hasForecast && hourlyFrames.isNotEmpty && _hourlyPlaying) {
+          _startHourlyAnim();
+        }
       }
     } catch (e) {
       if (!mounted || silent) return;
@@ -1408,6 +1434,77 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         setState(() { _error = msg; _loading = false; });
       }
     }
+  }
+
+  // Reshapes Open-Meteo's per-point hourly arrays (each of the grid points
+  // carries its own hourly.time[]/hourly.<var>[] pair) into 24 per-hour
+  // _DataGrid frames — i.e. transposes "per point, then per hour" into "per
+  // hour, then per point" so each frame is a full lat/lon grid snapshot,
+  // exactly like _fetchSeas's frames.
+  Future<List<({DateTime time, _DataGrid grid, ui.Image image})>>
+      _buildHourlyFrames(List items, _LayerDef def, double latMin,
+          double lonMin, double step) async {
+    if (items.isEmpty || items[0]['hourly'] == null) return [];
+
+    // Times are identical across every grid point (same request), so read
+    // them once from the first point. Open-Meteo returns bare strings with
+    // no 'Z' suffix even with timezone=UTC — DateTime.parse would otherwise
+    // interpret them as local time, so force UTC parsing explicitly.
+    final timesRaw = (items[0]['hourly']['time'] as List).cast<String>();
+    final times = timesRaw
+        .map((s) => DateTime.parse(s.endsWith('Z') ? s : '${s}Z'))
+        .toList();
+    if (times.isEmpty) return [];
+
+    final nowUtc = DateTime.now().toUtc();
+    var nowIdx = times.indexWhere((t) => !t.isBefore(nowUtc));
+    if (nowIdx < 0) nowIdx = 0; // fell off the end — clamp to start
+
+    const hours = 24;
+    final frames = <({DateTime time, _DataGrid grid, ui.Image image})>[];
+    for (var o = 0; o < hours; o++) {
+      final hi = (nowIdx + o).clamp(0, times.length - 1);
+      final pts = items.map<_DataPoint>((item) {
+        final h = item['hourly'] as Map? ?? {};
+        final vals = (h[def.valueVar] as List?)?.cast<num?>();
+        final raw = (vals != null && hi < vals.length) ? vals[hi] : null;
+        final dirList = def.directionVar != null
+            ? (h[def.directionVar!] as List?)?.cast<num?>()
+            : null;
+        final d = (dirList != null && hi < dirList.length)
+            ? dirList[hi]?.toDouble()
+            : null;
+        return _DataPoint(raw?.toDouble() ?? 0.0, d,
+            (def.isMarine && raw == null) ? 0.0 : 1.0);
+      }).toList();
+
+      final grid = _DataGrid(pts, latMin, lonMin, step, _n);
+      final image = def.isMarine
+          ? await _buildGradientImage(grid, def.colorFn,
+              imgN: 192, masked: true, covWeighted: true)
+          : await _buildGradientImage(grid, def.colorFn);
+      frames.add((time: times[hi], grid: grid, image: image));
+    }
+    return frames;
+  }
+
+  void _startHourlyAnim() {
+    _hourlyAnim?.cancel();
+    if (_hourlyFrames.length < 2) return;
+    void schedule() {
+      final atEnd = _hourlyIndex >= _hourlyFrames.length - 1;
+      _hourlyAnim = Timer(Duration(milliseconds: atEnd ? 1800 : 650), () {
+        if (!mounted || !_hourlyPlaying) return;
+        final next = atEnd ? 0 : _hourlyIndex + 1;
+        setState(() {
+          _hourlyIndex = next;
+          _field = _hourlyFrames[next].grid;
+          _gradientImage = _hourlyFrames[next].image;
+        });
+        schedule();
+      });
+    }
+    schedule();
   }
 
   // lat/lon → EPSG:3857 (Web Mercator) metres, matching the map projection so
@@ -2146,6 +2243,8 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
             _radarTimeline(),
           if (def.isSeas && _seasFrames.isNotEmpty && !_loading && _error == null)
             _seasTimeline(),
+          if (def.hasForecast && _hourlyFrames.isNotEmpty && !_loading && _error == null)
+            _hourlyTimeline(),
           if (def.isRadar && _hourlyStrip.isNotEmpty && !_loading && _error == null)
             _hourlyStripWidget(metric),
           // Fixed centre reticle — the readout always reflects this crosshair.
@@ -2466,12 +2565,120 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     );
   }
 
+  Widget _hourlyTimeline() {
+    final def = _kLayers[_currentLayer]!;
+    final total = _hourlyFrames.length;
+    final idx = _hourlyIndex.clamp(0, math.max(0, total - 1)).toInt();
+    final t = _hourlyFrames[idx].time;
+    final hoursAhead = t.difference(DateTime.now().toUtc()).inHours;
+    final label = hoursAhead <= 0
+        ? 'now'
+        : '${_fmtClock2(t.toLocal())}  +${hoursAhead}h';
+    final spanH = total > 1
+        ? _hourlyFrames.last.time.difference(_hourlyFrames.first.time).inHours
+        : 0;
+
+    return Positioned(
+      top: 10,
+      left: 12,
+      right: 12,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(4, 6, 14, 6),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.74),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  icon: Icon(_hourlyPlaying ? Icons.pause : Icons.play_arrow,
+                      color: kCyan),
+                  iconSize: 20,
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  constraints:
+                      const BoxConstraints(minWidth: 34, minHeight: 34),
+                  onPressed: () {
+                    setState(() => _hourlyPlaying = !_hourlyPlaying);
+                    if (_hourlyPlaying) {
+                      _startHourlyAnim();
+                    } else {
+                      _hourlyAnim?.cancel();
+                    }
+                  },
+                ),
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 2,
+                      thumbShape:
+                          const RoundSliderThumbShape(enabledThumbRadius: 6),
+                      overlayShape:
+                          const RoundSliderOverlayShape(overlayRadius: 12),
+                    ),
+                    child: Slider(
+                      min: 0,
+                      max: math.max(1, total - 1).toDouble(),
+                      divisions: math.max(1, total - 1),
+                      value: idx.toDouble(),
+                      activeColor: kCyan,
+                      inactiveColor: Colors.white24,
+                      onChanged: total < 2
+                          ? null
+                          : (v) {
+                              _hourlyAnim?.cancel();
+                              final ni = v.round();
+                              setState(() {
+                                _hourlyPlaying = false;
+                                _hourlyIndex = ni;
+                                _field = _hourlyFrames[ni].grid;
+                                _gradientImage = _hourlyFrames[ni].image;
+                              });
+                            },
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 86,
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.end,
+                    style: TextStyle(
+                      color: hoursAhead <= 0 ? Colors.white : Colors.amber,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(left: 8, right: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('${def.label} · Open-Meteo · ${spanH}h forecast',
+                      style: const TextStyle(
+                          color: Colors.white38, fontSize: 9)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _probeReadout(_LayerDef def, bool metric) {
     final sample = _field!.pointAt(_readPoint.latitude, _readPoint.longitude);
     final text = _readoutText(def, sample, metric);
     return Positioned(
-      // Drop below the Seas forecast timeline, which occupies the top strip.
-      top: def.isSeas ? 72 : 12,
+      // Drop below the Seas/hourly forecast timeline, which occupies the top strip.
+      top: (def.isSeas || def.hasForecast) ? 72 : 12,
       left: 12,
       right: 12,
       child: Center(
