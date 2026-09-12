@@ -33,9 +33,10 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 ### Weather map — native, Windy-style overlays
 
 A fully custom map (no third-party embed): a smooth GPU gradient wash, animated
-particle flow, and eight switchable layers (Wind, Waves, Swell, Seas, Rain,
-Temperature, Pressure, Clouds) — five of them scrub through a 24-hour hourly
-forecast. Tap anywhere to read the value at that point; the data follows the
+particle flow, and nine switchable layers (Wind, Waves, Swell, Seas, Rain,
+Temperature, Pressure, Clouds, Oxygen) — five of them scrub through a 24-hour
+hourly forecast, and Oxygen shows live GCOOS/IOOS buoy readings as tap-to-read
+markers. Tap anywhere to read the value at that point; the data follows the
 map as you pan and zoom.
 
 | Wind (gradient + particles) | Layer picker | Swell — hourly forecast |
@@ -130,6 +131,9 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 ---
 
 ## Changelog
+
+### v3.4.1 (build 122) — Wind map: new Oxygen (DO) layer
+- **A new "Oxygen (DO)" layer on the weather map** shows live dissolved-oxygen readings from GCOOS/IOOS Gulf buoys (Texas TABS, Dauphin Island Sea Lab, LUMCON, USF COMPS, WAVCIS, and more) as colour-coded markers — red for hypoxic (<2 mg/L, i.e. "dead zone" conditions), through orange/green to blue for healthy water. Unlike the other layers this isn't a smooth wash: the sensor network is a few dozen fixed buoys scattered across the Gulf, so each reading is shown as its own marker; tap one to see the exact value, station ID, and how long ago it was recorded. Buoys in view are found with a single bounding-box search against NOAA's free ERDDAP service — no API key, and no hand-maintained station list to go stale.
 
 ### v3.4.1 (build 121) — Wind map: hourly forecast slider, Windy-style
 - **Wind, Waves, Swell, Temperature, and Pressure now have a 24-hour scrub bar**, the same play/pause + drag timeline the Seas (WaveWatch III) and Rain layers already had. Before, these five layers only ever showed *current* conditions — checking how wind or wave height would change over the day meant leaving the app. Each layer now fetches a rolling 24-hour hourly forecast alongside its current reading (one Open-Meteo request, no extra round trip) and lets you scrub or auto-play through it, exactly like windy.com. Seas, Rain, and Clouds are unchanged — they keep their own existing timelines. Verified on-device across all five layers plus the unaffected three.

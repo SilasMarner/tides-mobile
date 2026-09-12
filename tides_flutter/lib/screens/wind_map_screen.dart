@@ -143,6 +143,17 @@ Color _cloudColor(double pct) {
   return Color.fromARGB((a * 255).round(), r, g, b);
 }
 
+// Dissolved-oxygen buoy marker fill. Thresholds follow the standard Gulf
+// hypoxia definition (<2 mg/L = dead-zone hypoxic; <5 mg/L = stressed).
+Color _oxygenColor(double mgL) => _ramp(mgL, const [
+      (0.0, Color(0xFF8B0000)),
+      (2.0, Color(0xFFEB4D4B)),
+      (3.5, Color(0xFFF0932B)),
+      (5.0, Color(0xFFF9CA24)),
+      (7.0, Color(0xFF56E39F)),
+      (9.0, Color(0xFF4BCFFA)),
+    ]);
+
 // ── Data model ────────────────────────────────────────────────────────────────
 
 class _DataPoint {
@@ -390,7 +401,7 @@ void prefetchWindMap(double lat, double lon, BuildContext context) {
 
 // ── Layer system ───────────────────────────────────────────────────────────────
 
-enum _Layer { wind, waves, swell, seas, rain, temp, pressure, clouds }
+enum _Layer { wind, waves, swell, seas, rain, temp, pressure, clouds, oxygen }
 
 
 class _LayerDef {
@@ -403,6 +414,7 @@ class _LayerDef {
   final bool isSatellite; // overlay live GOES satellite tiles instead of a grid
   final bool isSeas; // animated NOAA WaveWatch III forecast (own timeline)
   final bool hasForecast; // show the 24h hourly scrub timeline (grid layers)
+  final bool isOxygen; // discrete GCOOS buoy markers instead of a grid wash
   final String valueVar;
   final String? directionVar;
   final Color Function(double) colorFn;
@@ -418,6 +430,7 @@ class _LayerDef {
     this.isSatellite = false,
     this.isSeas = false,
     this.hasForecast = false,
+    this.isOxygen = false,
     required this.valueVar,
     this.directionVar,
     required this.colorFn,
@@ -555,6 +568,20 @@ const _kLayers = <_Layer, _LayerDef>{
       (Color(0xCC56E39F), 'Mid'),
       (Color(0xCCF9CA24), 'Tall'),
       (Color(0xCCEB4D4B), 'Storm tops'),
+    ],
+  ),
+  // Dissolved oxygen: discrete GCOOS/IOOS buoy markers (not a grid — the
+  // sensor network is far too sparse to interpolate a wash) colour-coded by
+  // the standard Gulf hypoxia thresholds. Tap a buoy to read its value.
+  _Layer.oxygen: _LayerDef(
+    label: 'Oxygen (DO)', icon: Icons.bubble_chart,
+    isMarine: false, hasFlow: false, isOxygen: true,
+    valueVar: 'oxygen', colorFn: _oxygenColor,
+    legend: [
+      (Color(0xFF8B0000), '<2 mg/L hypoxic'),
+      (Color(0xFFF0932B), '2–5 low'),
+      (Color(0xFF56E39F), '5–7 healthy'),
+      (Color(0xFF4BCFFA), '>7 mg/L'),
     ],
   ),
 };
@@ -1076,6 +1103,23 @@ class _HourForecast {
   });
 }
 
+// A GCOOS/IOOS buoy carrying a dissolved-oxygen sensor. `mgL`/`time` are null
+// when the buoy is in the viewport but its sensor has no recent valid reading.
+class _OxygenStation {
+  final String id;
+  final double lat;
+  final double lon;
+  final double? mgL;
+  final DateTime? time;
+  const _OxygenStation({
+    required this.id,
+    required this.lat,
+    required this.lon,
+    this.mgL,
+    this.time,
+  });
+}
+
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 class WindMapScreen extends ConsumerStatefulWidget {
@@ -1142,6 +1186,10 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   Timer? _hourlyAnim;
   // Hourly strip: single-point forecast for the bottom panel.
   List<_HourForecast> _hourlyStrip = [];
+  // Dissolved oxygen (GCOOS/IOOS buoys in the current viewport) + whichever
+  // one the user tapped, shown in a small readout instead of the crosshair.
+  List<_OxygenStation> _oxygenStations = [];
+  _OxygenStation? _selectedOxygen;
   // Stale-data support: when Open-Meteo is down, show the last good grid.
   DateTime? _staleDataTime; // non-null = currently showing cached data
   static final _gridCache =
@@ -1157,7 +1205,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
       ? 6.0
       : l == _Layer.clouds
           ? 6.0
-          : l == _Layer.seas
+          : l == _Layer.seas || l == _Layer.oxygen
               ? 6.5
               : l == _Layer.rain
                   ? 7.0
@@ -1282,6 +1330,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         _hourlyStrip = [];
         _seasAnim?.cancel(); _seasFrames = []; _seasIndex = 0;
         _hourlyAnim?.cancel(); _hourlyFrames = []; _hourlyIndex = 0;
+        _oxygenStations = []; _selectedOxygen = null;
       });
     }
     if (layer != null) {
@@ -1308,6 +1357,12 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     // Clouds is an animated GOES satellite tile layer (its own timeline).
     if (def.isSatellite) {
       _fetchSatellite();
+      return;
+    }
+
+    // Oxygen is discrete GCOOS buoy markers, not a sampled grid.
+    if (def.isOxygen) {
+      await _fetchOxygen(silent: silent);
       return;
     }
 
@@ -1655,6 +1710,81 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     await _precacheRadar();
     if (!mounted) return;
     if (_radarPlaying) _startAnim();
+  }
+
+  // Dissolved oxygen: GCOOS/IOOS buoys are sparse fixed points (Texas TABS,
+  // Dauphin Island Sea Lab, LUMCON, USF COMPS, WAVCIS, …), not a fetchable
+  // grid, so this finds whichever carry an oxygen sensor within the current
+  // viewport (ERDDAP's bounding-box-aware full-text search — one request,
+  // no hand-maintained station list) then reads each one's latest value.
+  Future<void> _fetchOxygen({bool silent = false}) async {
+    try {
+      final b = _mapController.camera.visibleBounds;
+      const margin = 0.75; // degrees — catch buoys just outside the view too
+      final minLon = (b.west - margin).toStringAsFixed(3);
+      final maxLon = (b.east + margin).toStringAsFixed(3);
+      final minLat = (b.south - margin).toStringAsFixed(3);
+      final maxLat = (b.north + margin).toStringAsFixed(3);
+
+      final searchResp = await _dio.get(
+        'https://erddap.gcoos.org/erddap/search/advanced.json',
+        queryParameters: {
+          'searchFor': 'oxygen',
+          'minLon': minLon, 'maxLon': maxLon,
+          'minLat': minLat, 'maxLat': maxLat,
+          'itemsPerPage': '100',
+        },
+      );
+      final table = searchResp.data['table'] as Map;
+      final cols = (table['columnNames'] as List).cast<String>();
+      final idIdx = cols.indexOf('Dataset ID');
+      final ids = (table['rows'] as List)
+          .map((r) => r[idIdx] as String)
+          .where((id) => id != 'allDatasets')
+          .toSet();
+
+      Future<_OxygenStation?> fetchOne(String id) async {
+        try {
+          final resp = await _dio.get(
+              'https://erddap.gcoos.org/erddap/tabledap/$id.json'
+              '?time,mass_concentration_of_oxygen_in_sea_water_1,longitude,latitude'
+              '&time>=now-6hours');
+          final rows = (resp.data['table'] as Map)['rows'] as List;
+          if (rows.isEmpty) return null;
+          double? mgL, lat, lon;
+          DateTime? t;
+          for (final r in rows) {
+            lon = (r[2] as num?)?.toDouble() ?? lon;
+            lat = (r[3] as num?)?.toDouble() ?? lat;
+            final v = r[1];
+            if (v != null) {
+              mgL = (v as num).toDouble();
+              t = DateTime.parse(r[0] as String);
+            }
+          }
+          if (lat == null || lon == null) return null;
+          return _OxygenStation(id: id, lat: lat, lon: lon, mgL: mgL, time: t);
+        } catch (_) {
+          return null; // one bad/offline buoy shouldn't sink the whole layer
+        }
+      }
+
+      final stations =
+          (await Future.wait(ids.map(fetchOne))).whereType<_OxygenStation>().toList();
+
+      if (!mounted) return;
+      setState(() {
+        _oxygenStations = stations;
+        _loading = false;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted || silent) return;
+      setState(() {
+        _error = 'Could not load dissolved-oxygen buoys';
+        _loading = false;
+      });
+    }
   }
 
   // Unified animation over all frames: radar tiles first, then forecast overlays.
@@ -2152,6 +2282,30 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                     field: _field,
                     colorFn: def.colorFn,
                     skipEmpty: def.isMarine),
+              if (def.isOxygen && _oxygenStations.isNotEmpty)
+                MarkerLayer(markers: [
+                  for (final s in _oxygenStations)
+                    Marker(
+                      point: LatLng(s.lat, s.lon),
+                      width: 26, height: 26,
+                      child: GestureDetector(
+                        onTap: () => setState(() => _selectedOxygen = s),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: (s.mgL != null
+                                    ? _oxygenColor(s.mgL!)
+                                    : Colors.white24)
+                                .withValues(alpha: 0.92),
+                            border: Border.all(color: Colors.white, width: 2),
+                            boxShadow: const [
+                              BoxShadow(color: Colors.black45, blurRadius: 4),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ]),
               // Station pin removed: the centre crosshair now marks the read
               // point, so a separate (and geographically-anchored) pin only
               // added clutter and drifted off-centre while panning.
@@ -2164,7 +2318,9 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                           ? 'NASA GIBS · NOAA GOES'
                           : def.isSeas
                               ? 'NOAA NWS WaveWatch III · PacIOOS ERDDAP'
-                              : 'Open-Meteo'),
+                              : def.isOxygen
+                                  ? 'GCOOS / IOOS'
+                                  : 'Open-Meteo'),
                 ],
               ),
             ],
@@ -2261,6 +2417,8 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
             ),
           if (_field != null && !_loading && _error == null)
             _probeReadout(def, metric),
+          if (def.isOxygen && _selectedOxygen != null)
+            _oxygenReadout(_selectedOxygen!),
           MapRecenterButton(
             visible: _showRecenter,
             bottom: 120,
@@ -2706,6 +2864,53 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     );
   }
 
+  Widget _oxygenReadout(_OxygenStation s) {
+    final mgL = s.mgL;
+    // Dissolved oxygen is reported in mg/L regardless of the app's units
+    // setting — there's no imperial/metric equivalent to convert between.
+    final text =
+        mgL == null ? 'No recent reading' : '${mgL.toStringAsFixed(1)} mg/L';
+    final sub = s.time != null ? '${s.id} · updated ${_fmtStale(s.time!)}' : s.id;
+    return Positioned(
+      top: 12, left: 12, right: 12,
+      child: Center(
+        child: GestureDetector(
+          onTap: () => setState(() => _selectedOxygen = null),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.82),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                  color: (mgL != null ? _oxygenColor(mgL) : Colors.white24)
+                      .withValues(alpha: 0.8)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.bubble_chart, color: kCyan, size: 15),
+                    const SizedBox(width: 7),
+                    Text(text,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600)),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(sub,
+                    style: const TextStyle(color: Colors.white54, fontSize: 10)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   String _readoutText(_LayerDef def, _DataPoint? sample, bool metric) {
     if (sample == null) return 'Outside data area';
     final v = sample.value;
@@ -2736,6 +2941,8 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         return '${v.toStringAsFixed(0)} hPa';
       case _Layer.clouds:
         return '${v.toStringAsFixed(0)}% cloud';
+      case _Layer.oxygen:
+        return ''; // marker-based layer; read via tapping a buoy, not the grid
     }
   }
 
