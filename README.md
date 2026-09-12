@@ -129,6 +129,9 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 121) — Wind map: hourly forecast slider, Windy-style
+- **Wind, Waves, Swell, Temperature, and Pressure now have a 24-hour scrub bar**, the same play/pause + drag timeline the Seas (WaveWatch III) and Rain layers already had. Before, these five layers only ever showed *current* conditions — checking how wind or wave height would change over the day meant leaving the app. Each layer now fetches a rolling 24-hour hourly forecast alongside its current reading (one Open-Meteo request, no extra round trip) and lets you scrub or auto-play through it, exactly like windy.com. Seas, Rain, and Clouds are unchanged — they keep their own existing timelines. Verified on-device across all five layers plus the unaffected three.
+
 ### v3.4.1 (build 118) — Data maps: fix "API key required" watermark on the basemap
 - **Fixed a "API KEY REQUIRED" watermark tiled across the Wind, Water Temp, and Before You Fly maps.** CARTO cut off their free anonymous basemap tile tier (`basemaps.cartocdn.com`); unauthenticated requests still return a 200 OK PNG, but now with that text baked into the image, so the maps still "worked" — they just showed a wrecked, watermarked basemap under the live data. Swapped the basemap to Esri's free ArcGIS Online tile services (`World_Street_Map` for light, `World_Dark_Gray_Base`+`Reference` for the satellite/clouds dark map) — no key required, and the app already depended on Esri elsewhere (the ocean coastline overlay). Verified on-device across all three maps.
 
