@@ -36,7 +36,7 @@ A fully custom map (no third-party embed): a smooth GPU gradient wash, animated
 particle flow, and seven switchable layers. Tap anywhere to read the value at
 that point; the data follows the map as you pan and zoom.
 
-| Wind (gradient + particles) | Layer picker | Swell |
+| Wind (gradient + particles) | Layer picker | Swell — hourly forecast |
 |------|-------------|-------|
 | ![Wind](screenshots/wind_map.png) | ![Layers](screenshots/wind_map_layers.png) | ![Swell](screenshots/wind_map_swell.png) |
 
