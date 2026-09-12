@@ -33,8 +33,10 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 ### Weather map — native, Windy-style overlays
 
 A fully custom map (no third-party embed): a smooth GPU gradient wash, animated
-particle flow, and seven switchable layers. Tap anywhere to read the value at
-that point; the data follows the map as you pan and zoom.
+particle flow, and eight switchable layers (Wind, Waves, Swell, Seas, Rain,
+Temperature, Pressure, Clouds) — five of them scrub through a 24-hour hourly
+forecast. Tap anywhere to read the value at that point; the data follows the
+map as you pan and zoom.
 
 | Wind (gradient + particles) | Layer picker | Swell — hourly forecast |
 |------|-------------|-------|
