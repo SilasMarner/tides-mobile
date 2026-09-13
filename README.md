@@ -132,6 +132,9 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 123) — Trip Planner
+- **New Trip Planner** (calendar icon on the home screen) lets you plan a fishing trip against one of your favorite stations: pick a date, optionally turn on a "best-time alert" that fires N minutes before the day's strongest bite window (same 15/30/45/60-minute lead-time picker as tide/solunar alerts, and it works for any future date — not just today, reusing the same tide/solunar bite-window engine that already powers the fishing-rating stars), attach photos (same camera/gallery flow as the Catch Log), and jot notes. Saving a trip automatically captures a weather/tide snapshot for that date (forecast conditions + the computed best window), which you can re-capture anytime with a "Refresh" button — handy for comparing the forecast you planned around against what actually happened. Trip alerts survive the periodic tide-alert reschedule (they used to share a notification queue that got silently wiped on every reschedule — fixed before it ever shipped) and tapping one opens straight to that trip.
+
 ### v3.4.1 (build 122) — Wind map: new Oxygen (DO) layer
 - **A new "Oxygen (DO)" layer on the weather map** shows live dissolved-oxygen readings from GCOOS/IOOS Gulf buoys (Texas TABS, Dauphin Island Sea Lab, LUMCON, USF COMPS, WAVCIS, and more) as colour-coded markers — red for hypoxic (<2 mg/L, i.e. "dead zone" conditions), through orange/green to blue for healthy water. Unlike the other layers this isn't a smooth wash: the sensor network is a few dozen fixed buoys scattered across the Gulf, so each reading is shown as its own marker; tap one to see the exact value, station ID, and how long ago it was recorded. Buoys in view are found with a single bounding-box search against NOAA's free ERDDAP service — no API key, and no hand-maintained station list to go stale.
 

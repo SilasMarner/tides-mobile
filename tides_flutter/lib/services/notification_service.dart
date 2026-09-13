@@ -7,8 +7,9 @@ import 'package:timezone/timezone.dart' as tz;
 import '../models/station.dart';
 import '../models/tide_data.dart';
 import '../models/notification_prefs.dart';
+import '../models/trip.dart';
 import '../utils/unit_format.dart';
-import 'noaa_api.dart' show fetchWeekHilo;
+import 'noaa_api.dart' show fetchWeekHilo, fetchAllData, computeBiteWindows;
 
 class NotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
@@ -246,6 +247,40 @@ class NotificationService {
     }
   }
 
+  /// Re-schedules best-window alerts for all upcoming trips with alerts
+  /// enabled. Must run after [rescheduleAllStations] on the same launch —
+  /// that method's `cancelAll()` would otherwise wipe these too, since trip
+  /// alerts share the same underlying notification queue.
+  static Future<void> rescheduleAllTrips() async {
+    try {
+      await init();
+      final sp = await SharedPreferences.getInstance();
+      final raw = sp.getString('trip_log');
+      if (raw == null) return;
+      final trips = (jsonDecode(raw) as List)
+          .map((j) => Trip.fromJson(j as Map<String, dynamic>))
+          .where((t) => t.alertEnabled);
+
+      final today = DateTime.now();
+      final todayOnly = DateTime(today.year, today.month, today.day);
+      for (final trip in trips) {
+        if (trip.plannedDate.isBefore(todayOnly)) continue; // trip has passed
+        try {
+          final station =
+              Station(id: trip.stationId, name: trip.stationName, lat: trip.lat, lon: trip.lon);
+          final data = await fetchAllData(station, targetDate: trip.plannedDate);
+          final bite = computeBiteWindows(data.hourly, data.solunar);
+          final window = bite.windows.isNotEmpty ? bite.windows.first : null;
+          await scheduleTripAlert(trip, window);
+        } catch (_) {
+          // Skip on network error — retries on next launch.
+        }
+      }
+    } catch (_) {
+      // Never crash main() on notification failure.
+    }
+  }
+
   static Future<void> scheduleForStation(
     String stationId,
     String stationName,
@@ -393,6 +428,43 @@ class NotificationService {
       ),
       payload: stationId,
     );
+  }
+
+  /// Schedules a single alert for a planned trip's best fishing window,
+  /// [trip.leadMinutes] before it starts — same lead-time convention as the
+  /// per-station alerts, just tied to a specific future date's window instead
+  /// of "today only". [window] is computed by the caller via
+  /// `computeBiteWindows(hourly, solunar)` for the trip's station + planned
+  /// date (that function works for any date, not just today — see its
+  /// callers in noaa_api.dart). Cancels any existing alert for this trip
+  /// first, so re-saving a trip (or turning its alert off) never double-books
+  /// or leaves a stale one behind.
+  static Future<void> scheduleTripAlert(Trip trip, BiteWindow? window) async {
+    await init();
+    await cancelForTrip(trip.id);
+    if (!trip.alertEnabled || window == null) return;
+    final eventTime = _hToDateTime(trip.plannedDate, window.startH);
+    final notifyAt = eventTime.subtract(Duration(minutes: trip.leadMinutes));
+    if (!notifyAt.isAfter(DateTime.now())) return;
+    final label = trip.nickname ?? trip.stationName;
+    await _schedule(
+      id: _id('trip:${trip.id}', 'trip', eventTime),
+      title: '🎣 Best Fishing Window in ${trip.leadMinutes} min',
+      body: '$label · ${_fmt(eventTime)} · ${window.reason}',
+      at: notifyAt,
+      payload: 'trip:${trip.id}',
+    );
+  }
+
+  /// Cancels the pending alert (if any) for a trip. A distinct `trip:`
+  /// payload prefix keeps this from being swept up by [cancelForStation]'s
+  /// `startsWith(stationId)` check or vice versa.
+  static Future<void> cancelForTrip(String tripId) async {
+    final pending = await _plugin.pendingNotificationRequests();
+    final payload = 'trip:$tripId';
+    for (final n in pending) {
+      if (n.payload == payload) await _plugin.cancel(n.id);
+    }
   }
 
   static Future<void> cancelForStation(String stationId) async {

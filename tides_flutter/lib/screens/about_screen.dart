@@ -229,6 +229,7 @@ class AboutScreen extends StatelessWidget {
     'Oxygen (DO) map layer — live dissolved-oxygen readings from GCOOS/IOOS Gulf buoys, colour-coded for hypoxia risk, tap a buoy to read its value and age',
     'Water Temp map — NOAA CoastWatch satellite layers: sea-surface temperature gradient (JPL MUR 1 km daily), upwelling (SST anomaly vs. normal), and turbidity / water clarity (MODIS Kd490); the data follows the map as you pan, and a tap reads the exact value at that spot',
     'Animated salinity map — NOAA NGOFS2 hourly surface-salinity forecast loop for Gulf bays (Galveston, Matagorda, Corpus Christi, Mobile and more)',
+    'Trip Planner — plan a trip to a favorite station with an optional best-fishing-window alert, linked photos, and an auto-captured weather/tide snapshot for the date',
     'Favorites and GPS-based nearest stations',
     'Notifications for tide changes, solunar majors, best fishing days, falling-barometer (cold-front) and upwelling alerts',
   ];

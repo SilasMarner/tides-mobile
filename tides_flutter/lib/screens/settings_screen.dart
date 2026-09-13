@@ -68,6 +68,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     setState(() { _rescheduling = true; _pendingCount = null; });
     try {
       await NotificationService.rescheduleAllStations();
+      // Must run after rescheduleAllStations() — its cancelAll() would
+      // otherwise wipe trip alerts too, since they share the same queue.
+      await NotificationService.rescheduleAllTrips();
       final count = await NotificationService.pendingCount();
       if (mounted) setState(() { _rescheduling = false; _pendingCount = count; });
     } catch (_) {

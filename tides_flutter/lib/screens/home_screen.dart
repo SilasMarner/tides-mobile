@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:in_app_update/in_app_update.dart';
 import '../models/station.dart';
+import '../models/trip.dart';
 import '../providers/search_provider.dart';
 import '../providers/favorites_provider.dart';
 import '../providers/detail_provider.dart';
@@ -11,6 +12,7 @@ import '../services/location_service.dart';
 import '../services/noaa_api.dart';
 import '../providers/capabilities_provider.dart';
 import '../providers/theme_provider.dart';
+import '../providers/trip_log_provider.dart';
 import '../widgets/wave_header.dart';
 import '../widgets/station_tile.dart';
 import '../theme.dart';
@@ -22,6 +24,8 @@ import 'catch_log_screen.dart';
 import 'detail_screen.dart';
 import 'drone_map_screen.dart';
 import 'settings_screen.dart';
+import 'trip_entry_screen.dart';
+import 'trip_log_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -43,6 +47,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // loading from disk (they load asynchronously — see FavoritesNotifier) so
   // we can resolve it to a full Station and open its detail screen.
   String? _pendingNotificationStationId;
+  // Same idea for a tapped trip-alert notification (payload "trip:<id>"),
+  // resolved against tripLogProvider once it's loaded from disk instead.
+  String? _pendingNotificationTripId;
 
   @override
   void initState() {
@@ -54,12 +61,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       // or backgrounded) fires this; a cold start is handled separately below
       // via consumeLaunchStationId().
       NotificationService.onStationTapped = (id) {
-        _pendingNotificationStationId = id;
-        _tryOpenPendingStation(ref.read(favoritesProvider));
+        if (id.startsWith('trip:')) {
+          _pendingNotificationTripId = id.substring(5);
+          _tryOpenPendingTrip(ref.read(tripLogProvider));
+        } else {
+          _pendingNotificationStationId = id;
+          _tryOpenPendingStation(ref.read(favoritesProvider));
+        }
       };
       final launchStationId = await NotificationService.consumeLaunchStationId();
       if (launchStationId != null) {
-        _pendingNotificationStationId = launchStationId;
+        if (launchStationId.startsWith('trip:')) {
+          _pendingNotificationTripId = launchStationId.substring(5);
+        } else {
+          _pendingNotificationStationId = launchStationId;
+        }
       }
       // Home-screen widget tap: the payload already carries id/name/lat/lon
       // (the widget stores its own station, unlike a notification's bare id),
@@ -73,6 +89,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       // Await so that any auto-enrollment written to SharedPreferences is
       // visible before we invalidate the Riverpod provider below.
       await NotificationService.rescheduleAllStations();
+      // Must run after rescheduleAllStations() — its cancelAll() would
+      // otherwise wipe trip alerts too, since they share the same queue.
+      await NotificationService.rescheduleAllTrips();
       // Sync Riverpod state with whatever rescheduleAllStations() may have
       // written to SharedPreferences (e.g. auto-enrolled stations).
       if (mounted) ref.invalidate(notificationPrefsProvider);
@@ -81,6 +100,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ref.listenManual(favoritesProvider, (_, favorites) {
         if (favorites.isNotEmpty) schedulePrefetch(favorites);
         _tryOpenPendingStation(favorites);
+      }, fireImmediately: true);
+      ref.listenManual(tripLogProvider, (_, trips) {
+        _tryOpenPendingTrip(trips);
       }, fireImmediately: true);
     });
   }
@@ -104,6 +126,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (station == null || !mounted) return;
     Navigator.push(
         context, MaterialPageRoute(builder: (_) => DetailScreen(station: station!)));
+  }
+
+  // Opens the trip-entry screen for a tapped trip-alert notification once
+  // tripLogProvider has loaded from disk. Mirrors _tryOpenPendingStation.
+  void _tryOpenPendingTrip(List<Trip> trips) {
+    final id = _pendingNotificationTripId;
+    if (id == null || trips.isEmpty) return;
+    _pendingNotificationTripId = null;
+    Trip? trip;
+    for (final t in trips) {
+      if (t.id == id) {
+        trip = t;
+        break;
+      }
+    }
+    if (trip == null || !mounted) return;
+    Navigator.push(
+        context, MaterialPageRoute(builder: (_) => TripEntryScreen(existing: trip)));
   }
 
   void _openWidgetStation(Map<String, dynamic> payload) {
@@ -278,6 +318,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             tooltip: 'Catch Log',
             onPressed: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const CatchLogScreen())),
+          ),
+          IconButton(
+            icon: Icon(Icons.event_available, color: accent),
+            tooltip: 'Trip Planner',
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const TripLogScreen())),
           ),
           IconButton(
             icon: Icon(Icons.info_outline, color: accent),
