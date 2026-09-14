@@ -132,6 +132,10 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 
 ## Changelog
 
+### v3.4.1 (build 124) — Widget fixes: min resize size, "No data" on cold-start tap
+- Widget can now be resized down to roughly 2x1 instead of being stuck at a forced 2x2/3x2 footprint (missing `minResizeWidth`/`minResizeHeight` in the widget's provider XML).
+- Fixed "No data" when tapping the widget for a station before the app had been opened to it — the widget's tap path wasn't setting `selectedStationProvider`, which the detail screen's data fetch actually depends on.
+
 ### v3.4.1 (build 123) — Trip Planner
 - **New Trip Planner** (calendar icon on the home screen) lets you plan a fishing trip against one of your favorite stations: pick a date, optionally turn on a "best-time alert" that fires N minutes before the day's strongest bite window (same 15/30/45/60-minute lead-time picker as tide/solunar alerts, and it works for any future date — not just today, reusing the same tide/solunar bite-window engine that already powers the fishing-rating stars), attach photos (same camera/gallery flow as the Catch Log), and jot notes. Saving a trip automatically captures a weather/tide snapshot for that date (forecast conditions + the computed best window), which you can re-capture anytime with a "Refresh" button — handy for comparing the forecast you planned around against what actually happened. Trip alerts survive the periodic tide-alert reschedule (they used to share a notification queue that got silently wiped on every reschedule — fixed before it ever shipped) and tapping one opens straight to that trip.
 

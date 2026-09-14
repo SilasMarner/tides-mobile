@@ -154,6 +154,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       lat: (payload['lat'] as num).toDouble(),
       lon: (payload['lon'] as num).toDouble(),
     );
+    // tideDataProvider reads selectedStationProvider, not DetailScreen's
+    // constructor argument -- without this a widget tap on a station the
+    // app hadn't already opened rendered "No data".
+    ref.read(selectedStationProvider.notifier).state = station;
+    final now = DateTime.now();
+    ref.read(selectedDateProvider.notifier).state =
+        DateTime(now.year, now.month, now.day);
     Navigator.push(
         context, MaterialPageRoute(builder: (_) => DetailScreen(station: station)));
   }
