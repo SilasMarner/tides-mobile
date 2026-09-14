@@ -33,11 +33,11 @@ To sideload: enable *Install unknown apps* for your file manager in Android Sett
 ### Weather map — native, Windy-style overlays
 
 A fully custom map (no third-party embed): a smooth GPU gradient wash, animated
-particle flow, and nine switchable layers (Wind, Waves, Swell, Seas, Rain,
-Temperature, Pressure, Clouds, Oxygen) — five of them scrub through a 24-hour
-hourly forecast, and Oxygen shows live GCOOS/IOOS buoy readings as tap-to-read
-markers. Tap anywhere to read the value at that point; the data follows the
-map as you pan and zoom.
+particle flow, and ten switchable layers (Wind, Waves, Swell, Seas, Rain,
+Temperature, Pressure, Clouds, Oxygen, Red Tide) — five of them scrub through
+a 24-hour hourly forecast, and Oxygen/Red Tide show live buoy/sample readings
+as tap-to-read markers. Tap anywhere to read the value at that point; the
+data follows the map as you pan and zoom.
 
 | Wind (gradient + particles) | Layer picker | Swell — hourly forecast |
 |------|-------------|-------|
@@ -131,6 +131,10 @@ Android Auto only permits simple, safety-approved templates, so the car view can
 ---
 
 ## Changelog
+
+### v3.4.1 (build 125) — Red tide advisory + map layer
+- **Conditions card now warns when red tide (Karenia brevis) is reported nearby** — pulls the latest FWC water sample within ~10 miles of the station from the last two weeks and shows an advisory (amber for low/very low, red for medium/high) with the location, category, and sample date. Florida only — FWC doesn't sample the Texas/Gulf coast, so it silently shows nothing there instead of an error or a "not available" message.
+- **New "Red Tide" wind-map layer** shows every nearby FWC sample as a tap-to-read marker, colour-coded by FWC's own concentration categories, so you can see the coastline-wide picture instead of just your one station.
 
 ### v3.4.1 (build 124) — Widget fixes: min resize size, "No data" on cold-start tap
 - Widget can now be resized down to roughly 2x1 instead of being stuck at a forced 2x2/3x2 footprint (missing `minResizeWidth`/`minResizeHeight` in the widget's provider XML).

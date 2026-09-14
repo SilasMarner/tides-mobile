@@ -227,6 +227,7 @@ class AboutScreen extends StatelessWidget {
     'Native weather map — animated Wind, Waves, Swell, Temperature, Pressure, and Clouds layers; Wind, Waves, Swell, Temperature, and Pressure each scrub through a 24-hour hourly forecast, Windy-style; plus a unified Rain timeline: NOAA MRMS radar (past 2 h) flowing into an Open-Meteo precipitation forecast (up to 18 h ahead) with an hourly strip',
     'Seas map — NOAA WaveWatch III offshore significant-wave-height forecast, animated through the next ~48 hours (StormSurf-style), with tap-to-read wave height',
     'Oxygen (DO) map layer — live dissolved-oxygen readings from GCOOS/IOOS Gulf buoys, colour-coded for hypoxia risk, tap a buoy to read its value and age',
+    'Red tide advisory and map layer (Florida) — a Conditions-card warning plus a tap-to-read map layer for nearby FWC Karenia brevis water samples',
     'Water Temp map — NOAA CoastWatch satellite layers: sea-surface temperature gradient (JPL MUR 1 km daily), upwelling (SST anomaly vs. normal), and turbidity / water clarity (MODIS Kd490); the data follows the map as you pan, and a tap reads the exact value at that spot',
     'Animated salinity map — NOAA NGOFS2 hourly surface-salinity forecast loop for Gulf bays (Galveston, Matagorda, Corpus Christi, Mobile and more)',
     'Trip Planner — plan a trip to a favorite station with an optional best-fishing-window alert, linked photos, and an auto-captured weather/tide snapshot for the date',

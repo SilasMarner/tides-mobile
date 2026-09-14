@@ -9,7 +9,9 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import '../models/red_tide.dart';
 import '../providers/units_provider.dart';
+import '../services/fwc_api.dart';
 import '../theme.dart';
 import '../widgets/map_recenter_button.dart';
 
@@ -152,6 +154,16 @@ Color _oxygenColor(double mgL) => _ramp(mgL, const [
       (5.0, Color(0xFFF9CA24)),
       (7.0, Color(0xFF56E39F)),
       (9.0, Color(0xFF4BCFFA)),
+    ]);
+
+// Red tide (Karenia brevis) marker fill. Thresholds match FWC's own
+// published classification for cells/liter.
+Color _redTideColor(double count) => _ramp(count, const [
+      (1000.0, Color(0xFF64B5F6)),
+      (10000.0, Color(0xFFF9CA24)),
+      (100000.0, Color(0xFFF0932B)),
+      (1000000.0, Color(0xFFEB4D4B)),
+      (5000000.0, Color(0xFF8B0000)),
     ]);
 
 // ── Data model ────────────────────────────────────────────────────────────────
@@ -401,7 +413,9 @@ void prefetchWindMap(double lat, double lon, BuildContext context) {
 
 // ── Layer system ───────────────────────────────────────────────────────────────
 
-enum _Layer { wind, waves, swell, seas, rain, temp, pressure, clouds, oxygen }
+enum _Layer {
+  wind, waves, swell, seas, rain, temp, pressure, clouds, oxygen, redTide
+}
 
 
 class _LayerDef {
@@ -415,6 +429,7 @@ class _LayerDef {
   final bool isSeas; // animated NOAA WaveWatch III forecast (own timeline)
   final bool hasForecast; // show the 24h hourly scrub timeline (grid layers)
   final bool isOxygen; // discrete GCOOS buoy markers instead of a grid wash
+  final bool isRedTide; // discrete FWC sample markers instead of a grid wash
   final String valueVar;
   final String? directionVar;
   final Color Function(double) colorFn;
@@ -431,6 +446,7 @@ class _LayerDef {
     this.isSeas = false,
     this.hasForecast = false,
     this.isOxygen = false,
+    this.isRedTide = false,
     required this.valueVar,
     this.directionVar,
     required this.colorFn,
@@ -582,6 +598,20 @@ const _kLayers = <_Layer, _LayerDef>{
       (Color(0xFFF0932B), '2–5 low'),
       (Color(0xFF56E39F), '5–7 healthy'),
       (Color(0xFF4BCFFA), '>7 mg/L'),
+    ],
+  ),
+  // Red tide (Karenia brevis): discrete FWC water-sample markers. Florida
+  // only — FWC doesn't sample the Texas/Gulf coast, so panning elsewhere
+  // just shows no markers rather than an error.
+  _Layer.redTide: _LayerDef(
+    label: 'Red Tide', icon: Icons.warning_amber_rounded,
+    isMarine: false, hasFlow: false, isRedTide: true,
+    valueVar: 'redTide', colorFn: _redTideColor,
+    legend: [
+      (Color(0xFF64B5F6), 'not present'),
+      (Color(0xFFF9CA24), 'very low/low'),
+      (Color(0xFFF0932B), 'medium'),
+      (Color(0xFFEB4D4B), 'high'),
     ],
   ),
 };
@@ -1190,6 +1220,10 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
   // one the user tapped, shown in a small readout instead of the crosshair.
   List<_OxygenStation> _oxygenStations = [];
   _OxygenStation? _selectedOxygen;
+  // Red tide (FWC samples in the current viewport, Florida only) + whichever
+  // one the user tapped.
+  List<RedTideSample> _redTideSamples = [];
+  RedTideSample? _selectedRedTide;
   // Stale-data support: when Open-Meteo is down, show the last good grid.
   DateTime? _staleDataTime; // non-null = currently showing cached data
   static final _gridCache =
@@ -1205,7 +1239,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
       ? 6.0
       : l == _Layer.clouds
           ? 6.0
-          : l == _Layer.seas || l == _Layer.oxygen
+          : l == _Layer.seas || l == _Layer.oxygen || l == _Layer.redTide
               ? 6.5
               : l == _Layer.rain
                   ? 7.0
@@ -1331,6 +1365,7 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         _seasAnim?.cancel(); _seasFrames = []; _seasIndex = 0;
         _hourlyAnim?.cancel(); _hourlyFrames = []; _hourlyIndex = 0;
         _oxygenStations = []; _selectedOxygen = null;
+        _redTideSamples = []; _selectedRedTide = null;
       });
     }
     if (layer != null) {
@@ -1363,6 +1398,12 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     // Oxygen is discrete GCOOS buoy markers, not a sampled grid.
     if (def.isOxygen) {
       await _fetchOxygen(silent: silent);
+      return;
+    }
+
+    // Red tide is discrete FWC sample markers, not a sampled grid.
+    if (def.isRedTide) {
+      await _fetchRedTideLayer(silent: silent);
       return;
     }
 
@@ -1787,6 +1828,34 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     }
   }
 
+  // Red tide: FWC water samples in the current viewport (Florida only — a
+  // single query, no per-station follow-up needed like oxygen since FWC's
+  // dataset already carries every sample's value directly).
+  Future<void> _fetchRedTideLayer({bool silent = false}) async {
+    try {
+      final b = _mapController.camera.visibleBounds;
+      const margin = 0.75; // degrees — catch samples just outside the view too
+      final samples = await fetchRedTideInBounds(
+        b.south - margin,
+        b.west - margin,
+        b.north + margin,
+        b.east + margin,
+      );
+      if (!mounted) return;
+      setState(() {
+        _redTideSamples = samples;
+        _loading = false;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted || silent) return;
+      setState(() {
+        _error = 'Could not load red tide samples';
+        _loading = false;
+      });
+    }
+  }
+
   // Unified animation over all frames: radar tiles first, then forecast overlays.
   void _startAnim() {
     _radarAnim?.cancel();
@@ -2057,6 +2126,14 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     return 'just now';
   }
 
+  // Red tide samples run days to weeks old, unlike the near-real-time data
+  // _fmtStale is meant for — "504h ago" isn't a useful thing to read.
+  static const _monthAbbr = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  String _fmtSampleDate(DateTime t) => '${_monthAbbr[t.month - 1]} ${t.day}';
+
   String _fmtClock(int epoch) {
     final t = DateTime.fromMillisecondsSinceEpoch(epoch * 1000);
     final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
@@ -2306,6 +2383,27 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                       ),
                     ),
                 ]),
+              if (def.isRedTide && _redTideSamples.isNotEmpty)
+                MarkerLayer(markers: [
+                  for (final s in _redTideSamples)
+                    Marker(
+                      point: LatLng(s.lat, s.lon),
+                      width: 22, height: 22,
+                      child: GestureDetector(
+                        onTap: () => setState(() => _selectedRedTide = s),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _redTideColor(s.count).withValues(alpha: 0.92),
+                            border: Border.all(color: Colors.white, width: 2),
+                            boxShadow: const [
+                              BoxShadow(color: Colors.black45, blurRadius: 4),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ]),
               // Station pin removed: the centre crosshair now marks the read
               // point, so a separate (and geographically-anchored) pin only
               // added clutter and drifted off-centre while panning.
@@ -2320,7 +2418,9 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
                               ? 'NOAA NWS WaveWatch III · PacIOOS ERDDAP'
                               : def.isOxygen
                                   ? 'GCOOS / IOOS'
-                                  : 'Open-Meteo'),
+                                  : def.isRedTide
+                                      ? 'FWC'
+                                      : 'Open-Meteo'),
                 ],
               ),
             ],
@@ -2419,6 +2519,8 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
             _probeReadout(def, metric),
           if (def.isOxygen && _selectedOxygen != null)
             _oxygenReadout(_selectedOxygen!),
+          if (def.isRedTide && _selectedRedTide != null)
+            _redTideReadout(_selectedRedTide!),
           MapRecenterButton(
             visible: _showRecenter,
             bottom: 120,
@@ -2911,6 +3013,52 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
     );
   }
 
+  Widget _redTideReadout(RedTideSample s) {
+    final color = _redTideColor(s.count);
+    final text = s.count < 1000
+        ? 'Not present'
+        : '${s.category[0].toUpperCase()}${s.category.substring(1)} '
+            '(${s.count.toStringAsFixed(0)} cells/L)';
+    final sub = '${s.location} · sampled ${_fmtSampleDate(s.sampleDate)}';
+    return Positioned(
+      top: 12, left: 12, right: 12,
+      child: Center(
+        child: GestureDetector(
+          onTap: () => setState(() => _selectedRedTide = null),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.82),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: color.withValues(alpha: 0.8)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.warning_amber_rounded,
+                        color: kCyan, size: 15),
+                    const SizedBox(width: 7),
+                    Text(text,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600)),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(sub,
+                    style: const TextStyle(color: Colors.white54, fontSize: 10)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   String _readoutText(_LayerDef def, _DataPoint? sample, bool metric) {
     if (sample == null) return 'Outside data area';
     final v = sample.value;
@@ -2942,7 +3090,8 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
       case _Layer.clouds:
         return '${v.toStringAsFixed(0)}% cloud';
       case _Layer.oxygen:
-        return ''; // marker-based layer; read via tapping a buoy, not the grid
+      case _Layer.redTide:
+        return ''; // marker-based layer; read via tapping a marker, not the grid
     }
   }
 

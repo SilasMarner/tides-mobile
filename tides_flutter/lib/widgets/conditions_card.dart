@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+import '../models/red_tide.dart';
 import '../models/tide_data.dart';
 import '../providers/detail_provider.dart'
-    show kUpwellingThresholdC, sstAnomalyProvider;
+    show kUpwellingThresholdC, sstAnomalyProvider, kRedTideThresholdCount, redTideProvider;
 import '../providers/units_provider.dart';
 import '../utils/unit_format.dart';
 import '../theme.dart';
@@ -18,6 +20,8 @@ class ConditionsCard extends ConsumerWidget {
     // The anomaly is a "today" reading — don't pin it on future-day forecasts.
     final sstAnomaly =
         forecast ? null : ref.watch(sstAnomalyProvider).valueOrNull;
+    final redTide =
+        forecast ? null : ref.watch(redTideProvider).valueOrNull;
     return Card(
         color: kCardBg,
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -58,6 +62,7 @@ class ConditionsCard extends ConsumerWidget {
               _windTideRow(metric),
               _waterAdvisory(),
               _upwellingAdvisory(sstAnomaly, metric),
+              _redTideAdvisory(redTide),
             ],
           ),
         ),
@@ -173,6 +178,41 @@ class ConditionsCard extends ConsumerWidget {
                 'in; bite patterns may shift.',
                 style:
                     const TextStyle(color: color, fontSize: 12, height: 1.35)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Red tide (Karenia brevis) heads-up: a nearby FWC water sample came back
+  // at or above the "low" threshold in the last two weeks. Florida only —
+  // FWC doesn't sample the Texas/Gulf coast, so this silently shows nothing
+  // there rather than an error or a "not available" message.
+  Widget _redTideAdvisory(RedTideSample? sample) {
+    if (sample == null || sample.count < kRedTideThresholdCount) {
+      return const SizedBox.shrink();
+    }
+    final severe = sample.count > 100000; // FWC "medium" and up
+    final color = severe ? const Color(0xFFEB4D4B) : const Color(0xFFFFB74D);
+    final sampled = DateFormat('MMM d').format(sample.sampleDate);
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warning_amber_rounded, color: color, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+                'Red tide (${sample.category}) reported nearby — ${sample.location}, '
+                'sampled $sampled. Watch for fish kills and respiratory irritation on the beach.',
+                style: TextStyle(color: color, fontSize: 12, height: 1.35)),
           ),
         ],
       ),
