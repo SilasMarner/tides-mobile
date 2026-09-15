@@ -1,0 +1,53 @@
+Categories:
+  - Sports & Health
+  - Navigation
+License: MIT
+AuthorName: Matt Bettinger
+SourceCode: https://github.com/SilasMarner/tides-mobile
+IssueTracker: https://github.com/SilasMarner/tides-mobile/issues
+
+AutoName: OpenTides
+Summary: Live NOAA tide predictions and conditions
+Description: |-
+    Live NOAA tide predictions and conditions, marine weather, and tools
+    for planning a day on the water — free and ad-free.
+
+    Features:
+
+    * Tide predictions and live conditions for NOAA stations nationwide
+    * Marine weather, wind map, and NOAA radar overlays
+    * Notifications for tide changes at your saved stations
+    * Catch log with tournament tagging and email export
+    * "Before You Fly" drone airspace map
+    * Android Auto support
+
+RepoType: git
+Repo: https://github.com/SilasMarner/tides-mobile.git
+
+Builds:
+  - versionName: 3.4.1
+    versionCode: 125
+    commit: v3.4.1+125
+    subdir: tides_flutter
+    srclibs:
+      - Flutter@3.47.4
+    # Google Play Core (pulled in via the in_app_update plugin) is a
+    # proprietary, Play-Services-only library — strip it before building.
+    # This mirrors tides_flutter/scripts/build_fdroid.sh in the source
+    # repo, which runs the same two steps for local testing; the Play
+    # Store build is unaffected.
+    build:
+      - sed -i '/in_app_update:/d' pubspec.yaml
+      - cp lib/services/app_update_service_fdroid.dart lib/services/app_update_service.dart
+      - $$Flutter$$/bin/flutter pub get
+      - $$Flutter$$/bin/flutter build apk --release
+    output: build/app/outputs/flutter-apk/app-release-unsigned.apk
+
+MaintainerNotes: |-
+    See Builds.build above for why in_app_update/Google Play Core is
+    removed for this build only.
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 3.4.1
+CurrentVersionCode: 125
