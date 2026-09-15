@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:in_app_update/in_app_update.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../services/app_update_service.dart';
 import '../theme.dart';
 import 'user_guide_screen.dart';
 
@@ -291,28 +291,25 @@ class _CheckForUpdatesButtonState extends State<_CheckForUpdatesButton> {
   Future<void> _check() async {
     setState(() { _checking = true; _status = null; _readyToInstall = false; });
     try {
-      final info = await InAppUpdate.checkForUpdate();
+      final info = await AppUpdateService.checkForUpdate();
       if (!mounted) return;
-      switch (info.updateAvailability) {
-        case UpdateAvailability.updateAvailable:
-          setState(() { _status = 'Downloading update…'; });
-          // startFlexibleUpdate() resolves once the download is COMPLETE.
-          final result = await InAppUpdate.startFlexibleUpdate();
-          if (!mounted) return;
-          if (result == AppUpdateResult.success) {
-            // Download staged — but it is NOT installed until we call
-            // completeFlexibleUpdate(). Surface an Install button for that.
-            setState(() {
-              _status = 'Downloaded — tap Install to finish';
-              _readyToInstall = true;
-            });
-          } else {
-            setState(() { _status = 'Update canceled'; });
-          }
-        case UpdateAvailability.updateNotAvailable:
-          setState(() { _status = 'You\'re up to date'; });
-        default:
-          setState(() { _status = 'Nothing available right now — try again later'; });
+      if (info.updateAvailable) {
+        setState(() { _status = 'Downloading update…'; });
+        // startFlexibleUpdate() resolves once the download is COMPLETE.
+        final success = await AppUpdateService.startFlexibleUpdate();
+        if (!mounted) return;
+        if (success) {
+          // Download staged — but it is NOT installed until we call
+          // completeFlexibleUpdate(). Surface an Install button for that.
+          setState(() {
+            _status = 'Downloaded — tap Install to finish';
+            _readyToInstall = true;
+          });
+        } else {
+          setState(() { _status = 'Update canceled'; });
+        }
+      } else {
+        setState(() { _status = 'You\'re up to date'; });
       }
     } catch (_) {
       // Thrown when the app wasn't installed via Google Play (e.g. sideloaded
@@ -331,7 +328,7 @@ class _CheckForUpdatesButtonState extends State<_CheckForUpdatesButton> {
   Future<void> _install() async {
     setState(() { _status = 'Installing — the app will restart…'; });
     try {
-      await InAppUpdate.completeFlexibleUpdate();
+      await AppUpdateService.completeFlexibleUpdate();
     } catch (_) {
       if (mounted) {
         setState(() {

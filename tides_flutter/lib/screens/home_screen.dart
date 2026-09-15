@@ -2,12 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:in_app_update/in_app_update.dart';
 import '../models/station.dart';
 import '../models/trip.dart';
 import '../providers/search_provider.dart';
 import '../providers/favorites_provider.dart';
 import '../providers/detail_provider.dart';
+import '../services/app_update_service.dart';
 import '../services/location_service.dart';
 import '../services/noaa_api.dart';
 import '../providers/capabilities_provider.dart';
@@ -187,15 +187,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   Future<void> _checkForUpdate() async {
     try {
-      final info = await InAppUpdate.checkForUpdate();
-      if (info.updateAvailability != UpdateAvailability.updateAvailable) return;
+      final info = await AppUpdateService.checkForUpdate();
+      if (!info.updateAvailable) return;
       if (!mounted) return;
       if (info.flexibleUpdateAllowed) {
-        await InAppUpdate.startFlexibleUpdate();
-        InAppUpdate.installUpdateListener.listen((status) {
-          if (status == InstallStatus.downloaded && mounted) {
-            _showUpdateBanner();
-          }
+        await AppUpdateService.startFlexibleUpdate();
+        AppUpdateService.onUpdateDownloaded.listen((_) {
+          if (mounted) _showUpdateBanner();
         });
       }
     } catch (_) {
@@ -215,7 +213,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           TextButton(
             onPressed: () {
               ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
-              InAppUpdate.completeFlexibleUpdate();
+              AppUpdateService.completeFlexibleUpdate();
             },
             child: const Text('RESTART', style: TextStyle(color: kCyan)),
           ),
