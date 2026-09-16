@@ -2,8 +2,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/station.dart';
 import '../models/tide_data.dart';
 import '../models/red_tide.dart';
+import '../models/respiratory_forecast.dart';
 import '../services/noaa_api.dart';
 import '../services/fwc_api.dart';
+import '../services/nccos_habs_api.dart';
 
 final selectedStationProvider = StateProvider<Station?>((_) => null);
 
@@ -43,6 +45,17 @@ final redTideProvider = FutureProvider<RedTideSample?>((ref) async {
   final station = ref.watch(selectedStationProvider);
   if (station == null) return null;
   return fetchNearbyRedTide(station.lat, station.lon);
+});
+
+/// Nearest NCCOS beach-level respiratory forecast (Florida + Texas; null
+/// everywhere else, including no error). Independent of [tideDataProvider]
+/// for the same reason as [redTideProvider] -- a slow NCCOS server should
+/// never delay the tide screen.
+final respiratoryForecastProvider =
+    FutureProvider<RespiratoryForecastSample?>((ref) async {
+  final station = ref.watch(selectedStationProvider);
+  if (station == null) return null;
+  return fetchNearbyRespiratoryForecast(station.lat, station.lon);
 });
 
 final showWeekProvider = StateProvider<bool>((_) => false);
