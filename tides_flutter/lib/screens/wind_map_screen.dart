@@ -1774,6 +1774,9 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
           'minLon': minLon, 'maxLon': maxLon,
           'minLat': minLat, 'maxLat': maxLat,
           'itemsPerPage': '100',
+          // Skip archive-only datasets with no recent data — they cost a
+          // request each and only ever 404.
+          'minTime': 'now-2days', 'maxTime': 'now',
         },
       );
       final table = searchResp.data['table'] as Map;
@@ -1810,12 +1813,30 @@ class _WindMapScreenState extends ConsumerState<WindMapScreen> {
         }
       }
 
-      final stations =
-          (await Future.wait(ids.map(fetchOne))).whereType<_OxygenStation>().toList();
+      // ERDDAP serialises a burst of per-buoy requests (34 in parallel took
+      // ~19s), so read them a few at a time and draw markers as they arrive
+      // instead of holding the spinner until the slowest buoy answers.
+      final stations = <_OxygenStation>[];
+      final queue = ids.toList();
+      Future<void> worker() async {
+        while (queue.isNotEmpty) {
+          final st = await fetchOne(queue.removeLast());
+          if (st == null || !mounted || _currentLayer != _Layer.oxygen) continue;
+          stations.add(st);
+          setState(() {
+            _oxygenStations = List.of(stations);
+            _loading = false;
+            _error = null;
+          });
+        }
+      }
+      await Future.wait(List.generate(6, (_) => worker()))
+          .timeout(const Duration(seconds: 12), onTimeout: () => <void>[]);
+      queue.clear();
 
-      if (!mounted) return;
+      if (!mounted || _currentLayer != _Layer.oxygen) return;
       setState(() {
-        _oxygenStations = stations;
+        _oxygenStations = List.of(stations);
         _loading = false;
         _error = null;
       });
