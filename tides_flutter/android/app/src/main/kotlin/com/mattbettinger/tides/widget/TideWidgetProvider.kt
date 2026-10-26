@@ -1,11 +1,13 @@
 package com.mattbettinger.tides.widget
 
+import android.app.AlarmManager
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.os.SystemClock
 import android.view.View
 import android.widget.RemoteViews
 import com.mattbettinger.tides.MainActivity
@@ -40,7 +42,7 @@ class TideWidgetProvider : AppWidgetProvider() {
         val pending = goAsync()
         Thread {
             try {
-                for (id in appWidgetIds) updateWidget(context, appWidgetManager, id)
+                for (id in appWidgetIds) updateWidget(context, appWidgetManager, id, blocking = true)
             } finally {
                 pending.finish()
             }
@@ -94,16 +96,21 @@ class TideWidgetProvider : AppWidgetProvider() {
          * fetches tides on a background thread and pushes a second update when
          * they arrive. Safe to call from any thread.
          */
-        fun updateWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
+        fun updateWidget(
+            context: Context,
+            appWidgetManager: AppWidgetManager,
+            appWidgetId: Int,
+            blocking: Boolean = false,
+        ) {
             val stations = readStations(context, appWidgetId)
             if (stations.isEmpty()) {
                 showUnconfigured(context, appWidgetManager, appWidgetId)
                 return
             }
             if (stations.size == 1) {
-                updateSingleStation(context, appWidgetManager, appWidgetId, stations[0])
+                updateSingleStation(context, appWidgetManager, appWidgetId, stations[0], blocking)
             } else {
-                updateMultiStation(context, appWidgetManager, appWidgetId, stations)
+                updateMultiStation(context, appWidgetManager, appWidgetId, stations, blocking)
             }
         }
 
@@ -114,6 +121,7 @@ class TideWidgetProvider : AppWidgetProvider() {
             appWidgetManager: AppWidgetManager,
             appWidgetId: Int,
             station: CarStation,
+            blocking: Boolean,
         ) {
             val openPendingIntent = openStationPendingIntent(context, appWidgetId, 0, station)
 
@@ -133,12 +141,8 @@ class TideWidgetProvider : AppWidgetProvider() {
             placeholder.setOnClickPendingIntent(R.id.widget_root, openPendingIntent)
             appWidgetManager.updateAppWidget(appWidgetId, placeholder)
 
-            Thread {
-                val points = try {
-                    NoaaRepo.fetchTides(station)
-                } catch (e: Exception) {
-                    emptyList()
-                }
+            runFetch(blocking) {
+                val points = loadTides(context, appWidgetId, station)
                 val views = RemoteViews(context.packageName, R.layout.widget_tides)
                 views.setTextViewText(R.id.widget_title, station.name)
                 views.setViewVisibility(R.id.widget_rows, View.VISIBLE)
@@ -150,7 +154,7 @@ class TideWidgetProvider : AppWidgetProvider() {
                 }
                 setSummaryRow(views, summaryLine)
                 appWidgetManager.updateAppWidget(appWidgetId, views)
-            }.start()
+            }
         }
 
         private fun setSummaryRow(views: RemoteViews, summaryLine: String?) {
@@ -189,6 +193,7 @@ class TideWidgetProvider : AppWidgetProvider() {
             appWidgetManager: AppWidgetManager,
             appWidgetId: Int,
             stations: List<CarStation>,
+            blocking: Boolean,
         ) {
             val genericOpenIntent = openAppPendingIntent(context, appWidgetId)
 
@@ -207,7 +212,7 @@ class TideWidgetProvider : AppWidgetProvider() {
             }
             appWidgetManager.updateAppWidget(appWidgetId, placeholder)
 
-            Thread {
+            runFetch(blocking) {
                 val views = RemoteViews(context.packageName, R.layout.widget_tides)
                 views.setTextViewText(R.id.widget_title, "My Tides")
                 views.setViewVisibility(R.id.widget_rows, View.VISIBLE)
@@ -218,11 +223,7 @@ class TideWidgetProvider : AppWidgetProvider() {
                         continue
                     }
                     val station = stations[i]
-                    val points = try {
-                        NoaaRepo.fetchTides(station)
-                    } catch (e: Exception) {
-                        emptyList()
-                    }
+                    val points = loadTides(context, appWidgetId, station)
                     views.setTextViewText(ROW_IDS[i], "${shortName(station)} — ${nextTideLine(points)}")
                     views.setViewVisibility(ROW_IDS[i], View.VISIBLE)
                     views.setOnClickPendingIntent(
@@ -230,7 +231,73 @@ class TideWidgetProvider : AppWidgetProvider() {
                     )
                 }
                 appWidgetManager.updateAppWidget(appWidgetId, views)
-            }.start()
+            }
+        }
+
+        // From onUpdate the fetch must finish inside the goAsync window — a
+        // detached thread there outlives the receiver and Android can freeze or
+        // kill the process mid-request, leaving the widget on "Loading…".
+        // Everywhere else (the config activity, on the main thread) it has to
+        // go to a background thread.
+        private fun runFetch(blocking: Boolean, block: () -> Unit) {
+            if (blocking) block() else Thread { block() }.start()
+        }
+
+        private fun tidesKey(station: CarStation) = "tides_${station.id}"
+
+        /**
+         * Fresh NOAA predictions, remembered per station. A failed fetch (no
+         * signal when the system woke the widget, a NOAA hiccup) falls back to
+         * the last good copy — the predictions span today + 2 days, so it stays
+         * useful for hours — instead of blanking the widget to "No tide data"
+         * until the next hourly refresh, and schedules a prompt retry.
+         */
+        private fun loadTides(
+            context: Context,
+            appWidgetId: Int,
+            station: CarStation,
+        ): List<TidePoint> {
+            val prefs = widgetPrefs(context)
+            val fresh = try {
+                NoaaRepo.fetchTides(station)
+            } catch (e: Exception) {
+                emptyList()
+            }
+            if (fresh.isNotEmpty()) {
+                val arr = JSONArray()
+                for (p in fresh) {
+                    arr.put(JSONArray().put(p.time.time).put(p.heightFt).put(p.high))
+                }
+                prefs.edit().putString(tidesKey(station), arr.toString()).apply()
+                return fresh
+            }
+            scheduleRetry(context, appWidgetId)
+            val raw = prefs.getString(tidesKey(station), null) ?: return emptyList()
+            return try {
+                val arr = JSONArray(raw)
+                (0 until arr.length()).map { i ->
+                    val a = arr.getJSONArray(i)
+                    val high = a.getBoolean(2)
+                    TidePoint(Date(a.getLong(0)), if (high) "High" else "Low", a.getDouble(1), high)
+                }
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+
+        // Inexact one-shot (no exact-alarm permission needed): re-run this
+        // widget's update in ~15 minutes rather than waiting out the hourly period.
+        private fun scheduleRetry(context: Context, appWidgetId: Int) {
+            val intent = Intent(context, TideWidgetProvider::class.java).apply {
+                action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, intArrayOf(appWidgetId))
+            }
+            val pi = PendingIntent.getBroadcast(
+                context, appWidgetId, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            am.set(AlarmManager.ELAPSED_REALTIME, SystemClock.elapsedRealtime() + 15 * 60 * 1000L, pi)
         }
 
         // Station names are long ("GALVESTON, Galveston Channel, TX") — just the

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:padding="12dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Galveston Channel, TX"
+            android:textColor="#4DD0E1"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="↓ 10:27 AM  0.2 ft"
+            android:textColor="#E0F7FA"
+            android:textSize="12sp"
+            android:paddingTop="2dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="↑ 6:32 PM  2.0 ft"
+            android:textColor="#E0F7FA"
+            android:textSize="12sp"
+            android:paddingTop="2dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="↓ 11:45 PM  1.7 ft"
+            android:textColor="#E0F7FA"
+            android:textSize="12sp"
+            android:paddingTop="2dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="↑ 7:49 AM  1.7 ft"
+            android:textColor="#E0F7FA"
+            android:textSize="12sp"
+            android:paddingTop="2dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="★★★★★ Excellent · ↑7:34 AM ↓6:32 PM"
+            android:textColor="#FFCA28"
+            android:textSize="11sp"
+            android:maxLines="1"
+            android:ellipsize="end" />
+    </LinearLayout>
+</FrameLayout>

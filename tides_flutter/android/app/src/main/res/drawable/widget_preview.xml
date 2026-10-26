@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Static fallback preview (pre-Android 12 pickers ignore previewLayout). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="180dp"
+    android:height="180dp"
+    android:viewportWidth="180"
+    android:viewportHeight="180">
+    <path android:fillColor="#0D1B2A"
+        android:pathData="M16,0h148a16,16 0 0 1 16,16v148a16,16 0 0 1 -16,16h-148a16,16 0 0 1 -16,-16v-148a16,16 0 0 1 16,-16z" />
+    <path android:fillColor="#4DD0E1"
+        android:pathData="M14,18h92v8h-92z" />
+    <path android:fillColor="#E0F7FA"
+        android:pathData="M14,40h64v6h-64z M14,58h64v6h-64z M14,76h64v6h-64z M14,94h64v6h-64z" />
+    <path android:fillColor="#FFCA28"
+        android:pathData="M14,116h120v6h-120z" />
+    <path android:strokeColor="#4DD0E1"
+        android:strokeWidth="3"
+        android:fillColor="#00000000"
+        android:pathData="M14,152 C44,126 74,178 104,152 C134,126 154,170 166,152" />
+</vector>
